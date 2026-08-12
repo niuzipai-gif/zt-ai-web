@@ -38,8 +38,8 @@
 ## 启动桌面 Agent
 
 1. 网关启动后，双击 `agent-desktop/start-agent-silent.vbs`。
-2. 工作台会在 `http://127.0.0.1:8788/` 打开，默认是执行模式，只开放读取权限。
-3. 工作区写入、命令执行需要在右侧面板打开，并且每个高风险动作仍会单独请求批准。
+2. 工作台默认是执行模式，不是闲聊窗口；Windows 上会优先以 Edge 应用窗口打开，没有 Edge 时退回默认浏览器。
+3. 第一次需要在“本机执行确认”中确认当前设备。确认后，才可以打开工作区写入、命令执行权限；每个高风险动作仍会单独请求批准。
 4. 也可以运行 `npm run agent:start`，或通过 `agent-desktop/start-agent.ps1` 指定 `ZT_AI_WORKSPACE` 和 `ZT_AI_GATEWAY_URL`。
 
 ## 迁移边界
@@ -47,6 +47,8 @@
 - 网页公开聊天的上下文保存在每个访问者自己的浏览器中，网关不保存聊天历史。
 - `aikey.env`、`node_modules`、构建目录、日志和 Git 历史不在迁移包中。
 - Agent 的任务记录与权限文件位于 `agent-desktop/data`，只保存在本机；迁移前可按需保留或删除。
+- Agent 通过 `/api/agent/plan` 请求所选模型生成受约束的 JSON 计划，再由本机权限层执行；MiniMax M3 与 DeepSeek v4 flash 只切换推理模型，不共享另一台设备的工作区或聊天上下文。
+- 面试官拿到迁移包后，授权的是自己运行 Agent 的那台电脑；系统没有远程控制蔡宙廷电脑的通道。
 - 如果需要重新部署 GitHub Pages/Render，请按照 `README.md` 的部署说明操作；公开网页不应直接放置 API key。
 
 ## 创建桌面快捷方式
