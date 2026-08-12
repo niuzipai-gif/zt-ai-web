@@ -1,0 +1,21 @@
+{
+  "name": "zt-ai-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "gateway": "node server/src/index.js",
+    "gateway:health": "node -e \"fetch('http://localhost:8790/api/health').then(r=>r.text()).then(console.log)\"",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "lucide-react": "latest"
+  },
+  "devDependencies": {}
+}
