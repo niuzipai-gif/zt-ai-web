@@ -5,7 +5,7 @@ import {
   LockKeyhole, Menu, MessageCircle, MoreHorizontal, MoveUpRight, Orbit,
   Paperclip, Send, ShieldCheck, Sparkles, UserRound, X
 } from 'lucide-react'
-import avatar from './assets/resume-avatar.jpeg'
+import avatar from './assets/resume-avatar.png'
 import logo from './assets/zt-logo.png'
 import mammoth from 'mammoth/mammoth.browser'
 import { loadSessionState, saveSessionState } from './lib/chat-session.js'
@@ -20,6 +20,77 @@ const projects = [
   { title: 'AI 选品与开品工作流', tag: 'AI 产品开发', desc: '结合飞书多维表格与多个选品逻辑，搭建从筛选、评估到开品的完整流程。月均精铺 8 个以上，开品速度约为其他同事的 2 倍。', metric: '8+ / 月', icon: Orbit },
   { title: '半小时套图生产方案', tag: 'AI × 内容生产', desc: '结合 LinkFox 等工具研究快速做图流程，半小时完成一套精美图片，为团队释放 3 个设计师的产能。', metric: '30 min / 套', icon: Sparkles },
   { title: '跨境电商利润闭环', tag: '业务系统化', desc: '围绕 Amazon 精铺业务，把选品、开品与利润跟踪串成可复用的执行链路，月度净利润毛利保持 2 万元以上。', metric: '¥2W+ / 月', icon: BriefcaseBusiness },
+]
+
+const resumeMetrics = [
+  { value: '8+', label: '每月精铺品数', note: '持续推进精铺开品' },
+  { value: '约 2 倍', label: '开品速度', note: '相较其他同事' },
+  { value: '30 分钟', label: '一套图片产出', note: '快速做图方案' },
+  { value: '≥ 2 万元', label: '月度利润贡献', note: '负责品持续不亏损' },
+]
+
+const resumeWork = [
+  {
+    date: '2026-04 至 2027-04',
+    company: '深圳市坤信科技有限公司',
+    role: 'AI 产品开发',
+    detail: '负责 AI 产品开发与 Amazon 精铺跨境电商流程落地；每月精铺 8 个品以上，负责品月度利润贡献 ≥ 2 万元且持续不亏损。',
+    current: true,
+  },
+  {
+    date: '2025-09 至 2026-01',
+    company: '冠仕医疗供应链有限公司',
+    role: '采购',
+    detail: '负责找货、采购、发货、供应商议价；月均降本 1-2 万元，推动 21 家供应商进入 ERP 长期合作。',
+  },
+  {
+    date: '2023-07 至 09',
+    company: '柔宇科技',
+    role: '数据分析（实习生）',
+    detail: '负责电商销售数据采集监控，使用 Python 爬取清洗并建立销售数据库；使用 SPSS 分析销售趋势、预测季度销量。',
+  },
+]
+
+const resumeDetailSections = [
+  {
+    index: '01',
+    title: '选品与开品流程设计',
+    items: [
+      ['业务问题', '针对选品判断分散、信息难追踪、开品环节依赖个人经验等问题，重新梳理从机会发现到产品落地的业务链路。'],
+      ['流程搭建', '以飞书多维表格作为业务中台，设计需求收集、竞品分析、关键词验证、利润测算、供应链核验、决策记录、开品任务和结果追踪等字段与节点。'],
+      ['逻辑沉淀', '将多套选品逻辑转化为统一的判断顺序和可复用的检查清单，让选品结论、关键证据、供应商信息与后续任务能够持续追踪。'],
+      ['协同方式', '把选品、采购、图片、Listing 内容和利润跟踪串联起来，减少信息反复整理，支持团队按同一套标准推进精铺项目。'],
+    ],
+  },
+  {
+    index: '02',
+    title: 'AI 做图提效方案',
+    items: [
+      ['方案研究', '结合 LinkFox 等工具研究商品图快速生产方式，拆解素材整理、产品卖点提炼、提示词与画面要求、生成筛选、尺寸检查和交付归档等环节。'],
+      ['流程标准化', '沉淀可复用的图片模板、素材清单和交付检查项，使不同产品能够按照统一标准快速完成套图，降低反复沟通成本。'],
+      ['团队价值', '将原本依赖个人经验的做图工作拆成清晰的分工和交付节点，提升设计资源利用率，并为后续批量化内容生产提供基础。'],
+    ],
+  },
+  {
+    index: '03',
+    title: 'AI 产品开发与业务落地',
+    items: [
+      ['需求拆解', '能够把业务目标拆解为字段、流程、工具、交付物和验收标准，优先解决影响效率与利润的关键环节。'],
+      ['工具落地', '熟悉飞书多维表格、SellerSprite、LinkFox 及 AI 辅助编程，能够把工具组合成可执行、可复盘的工作方案。'],
+      ['结果意识', '关注流程上线后的实际使用效果，通过数据记录、任务追踪和结果回看持续优化，而不是只停留在工具试用层面。'],
+    ],
+  },
+]
+
+const resumeProjects = [
+  { date: '2023-09 至 2024-02', title: '日本手机退差价项目', body: '负责与日本方苹果客服进行日语沟通，统筹每台手机的退差价操作、进度跟踪与结果核对；完成数百台业务，单台差价约 15,000 日元，累计带来近 200 万日元净利润。' },
+  { date: '2025-03 至 07', title: '中日高差价商品转卖与销售', body: '亲赴日本并结合跨境物流开展中日高差价商品转卖与销售，参与货源判断、采购协调、跨境运输和销售推进。' },
+]
+
+const transferableMethods = [
+  ['流程产品化', '把一次性经验沉淀为字段、规则、模板和检查清单，形成团队可以直接使用的工作资产。'],
+  ['效率工程化', '优先识别高频、重复、依赖人工判断的环节，再用 AI 和工具完成标准化、批量化与质量检查。'],
+  ['结果可验收', '以流程是否真正被使用、交付质量是否稳定、业务协作是否顺畅作为验收标准，持续根据结果复盘优化。'],
 ]
 
 const chatSeed = [
@@ -245,11 +316,11 @@ function PublicProfile() {
 }
 
 function ProjectsPage() {
-  return <section className="page-section projects-page"><div className="section-heading"><div><span className="eyebrow">SELECTED WORK</span><h2>精选项目</h2></div><span className="section-count">03 / 03</span></div><div className="project-grid">{projects.map(({ title, tag, desc, metric, icon: Icon }, index) => <article className="project-card" key={title}><div className="project-icon"><Icon size={18} /></div><div className="project-number">0{index + 1}</div><span className="project-tag">{tag}</span><h3>{title}</h3><p>{desc}</p><div className="project-bottom"><strong>{metric}</strong><span>查看项目 <ArrowUpRight size={14} /></span></div></article>)}</div><div className="github-card"><div className="github-icon"><GitBranch size={22} /></div><div><span className="eyebrow">OPEN SOURCE EVIDENCE</span><h3>GitHub 精选仓库</h3><p>精选公开项目与可验证的开发记录，欢迎在对话中了解我的技术实践。</p></div><button aria-label="查看 GitHub"><ArrowUpRight size={17} /></button></div></section>
+  return <section className="page-section projects-page"><div className="section-heading"><div><span className="eyebrow">SELECTED WORK</span><h2>精选项目</h2></div><span className="section-count">03 / 03</span></div><div className="project-grid">{projects.map(({ title, tag, desc, metric, icon: Icon }, index) => <article className="project-card" key={title}><div className="project-icon"><Icon size={18} /></div><div className="project-number">0{index + 1}</div><span className="project-tag">{tag}</span><h3>{title}</h3><p>{desc}</p><div className="project-bottom"><strong>{metric}</strong><span>查看项目 <ArrowUpRight size={14} /></span></div></article>)}</div><a className="github-card" href="https://github.com/niuzipai-gif?tab=repositories" target="_blank" rel="noreferrer"><div className="github-icon"><GitBranch size={22} /></div><div><span className="eyebrow">OPEN SOURCE EVIDENCE</span><h3>GitHub 精选仓库</h3><p>精选公开项目与可验证的开发记录，欢迎在对话中了解我的技术实践。</p></div><span className="github-link-icon" aria-label="打开 GitHub"><ArrowUpRight size={17} /></span></a></section>
 }
 
 function ResumePage() {
-  return <section className="page-section resume-page"><div className="section-heading"><div><span className="eyebrow">PROFILE DATA</span><h2>简历摘要</h2></div><FileText size={18} /></div><div className="resume-hero"><Avatar size="small" /><div><strong>AI 产品开发 · 蔡宙廷</strong><p>目标方向：AI 产品经理 / FDE / 电商 FDE</p></div></div><div className="timeline"><div><span>2026.04 — 2027.04</span><h3>深圳市坤信科技有限公司</h3><p>AI 产品开发 · Amazon 精铺跨境电商</p></div><div><span>核心能力</span><h3>业务问题 → AI 工作流 → 可验收结果</h3><p>选品流程、内容生产、利润跟踪、工具接入与项目落地。</p></div></div><div className="resume-lock"><ShieldCheck size={18} /><div><strong>公开摘要已开放</strong><p>在公开对话中了解我的经历、项目和未来方向。</p></div><a className="resume-download" href={resumeDoc} download>下载完整简历</a></div></section>
+  return <section className="page-section resume-page"><div className="section-heading"><div><span className="eyebrow">PROFILE DATA</span><h2>简历摘要</h2></div><a className="resume-heading-download" href={resumeDoc} download aria-label="下载完整简历"><FileText size={18} /></a></div><div className="resume-hero"><Avatar size="small" /><div><span className="eyebrow">AI PRODUCT DEVELOPMENT</span><strong>蔡宙廷</strong><p>23 岁 · 汉族 · 群众 · 数字经济（本科）</p><p className="resume-contact">18664695946 · niuzipai@gmail.com</p></div></div><div className="resume-target"><span className="eyebrow">TARGET ROLE</span><strong>AI 产品经理 / FDE / 电商 FDE</strong><p>把真实业务问题拆成可落地的 AI 流程与工具，兼顾数据、效率和商业结果，并为整个团队赋能。</p></div><div className="resume-metrics">{resumeMetrics.map(item => <div className="resume-metric" key={item.label}><strong>{item.value}</strong><span>{item.label}</span><small>{item.note}</small></div>)}</div><section className="resume-block"><div className="resume-block-heading"><span className="eyebrow">WORK EXPERIENCE</span><h3>工作经历</h3></div><div className="resume-work-list">{resumeWork.map(item => <article className={`resume-work-item ${item.current ? 'is-current' : ''}`} key={`${item.company}-${item.date}`}><div className="resume-work-marker" /><div><span className="resume-date">{item.date}</span><div className="resume-work-title"><h4>{item.company}</h4><strong>{item.role}</strong></div><p>{item.detail}</p></div></article>)}</div></section><section className="resume-block resume-detail-block"><div className="resume-block-heading"><span className="eyebrow">KUNXIN CASE STUDY</span><h3>坤信科技｜AI 产品开发工作详述</h3></div>{resumeDetailSections.map(section => <article className="resume-detail-section" key={section.index}><div className="resume-detail-number">{section.index}</div><div><h4>{section.title}</h4>{section.items.map(([label, body]) => <p key={label}><strong>{label}：</strong>{body}</p>)}</div></article>)}</section><section className="resume-block"><div className="resume-block-heading"><span className="eyebrow">PROJECT EXPERIENCE</span><h3>项目经历</h3></div><div className="resume-project-list">{resumeProjects.map(item => <article className="resume-project-item" key={item.title}><span className="resume-date">{item.date}</span><h4>{item.title}</h4><p>{item.body}</p></article>)}</div></section><div className="resume-two-column"><section className="resume-block compact-block"><div className="resume-block-heading"><span className="eyebrow">SKILLS & CERTIFICATES</span><h3>技能证书</h3></div><div className="skill-list"><span>日语 N1</span><span>CET-4</span><span>Python</span><span>SQL / MySQL</span><span>SPSS</span><span>AI 辅助编程</span><span>飞书多维表格</span><span>SellerSprite</span><span>LinkFox</span><span>剪映 / PS / AE</span></div><p className="resume-small-copy">具备日语口语、读写及商务沟通能力；可快速阅读英文产品与技术资料；熟悉数据分析与自动化。</p></section><section className="resume-block compact-block"><div className="resume-block-heading"><span className="eyebrow">EDUCATION</span><h3>教育背景</h3></div><span className="resume-date">2022.09 — 2026.06</span><h4>广东白云学院</h4><p>数字经济（本科）</p><p className="resume-small-copy">主修：Python 数据分析、MySQL、SPSS、Power BI、Tableau、国际市场营销</p></section></div><section className="resume-block methods-block"><div className="resume-block-heading"><span className="eyebrow">WORKING METHOD</span><h3>可迁移的工作方法</h3></div><div className="methods-grid">{transferableMethods.map(([title, body]) => <article key={title}><strong>{title}</strong><p>{body}</p></article>)}</div></section><div className="resume-lock"><ShieldCheck size={18} /><div><strong>公开摘要已开放</strong><p>欢迎在公开对话中继续了解我的经历、项目和未来方向。</p></div><a className="resume-download" href={resumeDoc} download>下载完整简历</a></div></section>
 }
 
 function HomePage({ onChat }) {

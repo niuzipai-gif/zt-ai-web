@@ -11,4 +11,6 @@ data/
 src/assets/*.docx
 vite.log
 vite.error.log
+server-gateway.log
+server-gateway.error.log
 resume.docx
