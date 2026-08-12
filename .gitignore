@@ -11,3 +11,4 @@ data/
 src/assets/*.docx
 vite.log
 vite.error.log
+resume.docx
