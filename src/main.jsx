@@ -9,13 +9,12 @@ import avatar from './assets/resume-avatar.png'
 import logo from './assets/zt-logo.png'
 import mammoth from 'mammoth/mammoth.browser'
 import { createChatSession, createSessionTitle, loadVisitorState, saveVisitorState } from './lib/chat-session.js'
+import { getInitialLanguage, LANGUAGE_OPTIONS, resumeDocumentByLanguage, siteCopy } from './lib/i18n.js'
 import { renderMarkdown } from './lib/markdown.js'
 import { getStreamBatchSize } from './lib/streaming.js'
 import './styles.css'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
-const resumeDoc = `${import.meta.env.BASE_URL}resume.docx`
-const greeting = '你好，我是 ZT.AI, 是蔡宙廷的 AI 数字分身, 我能替小蔡为你做什么吗？'
 
 const projects = [
   { title: 'AI 选品与开品工作流', tag: 'AI 产品开发', desc: '结合飞书多维表格与多个选品逻辑，搭建从筛选、评估到开品的完整流程。月均精铺 8 个以上，开品速度约为其他同事的 2 倍。', metric: '8+ / 月', icon: Orbit },
@@ -126,8 +125,15 @@ function Avatar({ size = 'large' }) {
   return <div className={`avatar-frame avatar-${size}`}><img src={avatar} alt="蔡宙廷简历头像" /><span className="avatar-ring" /></div>
 }
 
-function Brand({ compact = false }) {
-  return <div className={`brand ${compact ? 'brand-compact' : ''}`}><img className="brand-logo" src={logo} alt="ZT.AI 标志" /><span className="brand-word">ZT<span className="brand-dot">.</span>AI</span>{!compact && <small>digital twin</small>}</div>
+function Brand({ compact = false, copy }) {
+  return <div className={`brand ${compact ? 'brand-compact' : ''}`}><img className="brand-logo" src={logo} alt="ZT.AI logo" /><span className="brand-word">ZT<span className="brand-dot">.</span>AI</span>{!compact && <small>{copy?.digitalTwin || 'digital twin'}</small>}</div>
+}
+
+function LanguageSwitch({ language, setLanguage, copy }) {
+  return <div className="language-switch" aria-label={copy.languageAria}>
+    <span>{copy.languageLabel}</span>
+    {LANGUAGE_OPTIONS.map(([code, label]) => <button key={code} className={language === code ? 'active' : ''} onClick={() => setLanguage(code)}>{label}</button>)}
+  </div>
 }
 
 function ModelSwitch({ model, setModel }) {
@@ -211,20 +217,20 @@ function visitorShortId(visitorId) {
   return String(visitorId || 'visitor').replace(/^visitor-/, '').slice(-6).toUpperCase()
 }
 
-function ChatHistoryDrawer({ visitorId, sessions, activeSessionId, onSelectSession, onNewChat, onClose }) {
+function ChatHistoryDrawer({ visitorId, sessions, activeSessionId, onSelectSession, onNewChat, onClose, copy }) {
   return <>
-    <button className="drawer-backdrop" onClick={onClose} aria-label="关闭聊天记录" />
+    <button className="drawer-backdrop" onClick={onClose} aria-label={copy.historyTitle} />
     <aside className="chat-history-drawer" aria-label="聊天记录抽屉">
-      <div className="drawer-header"><div><span className="eyebrow">PRIVATE SESSIONS</span><h3>聊天记录</h3></div><button className="drawer-close" onClick={onClose} aria-label="关闭"><X size={17} /></button></div>
-      <button className="drawer-new-chat" onClick={onNewChat}><Plus size={15} />新建聊天</button>
-      <span className="drawer-section-label">当前访客的聊天</span>
-      <div className="drawer-session-list">{sessions.map(session => <button key={session.id} className={`drawer-session ${session.id === activeSessionId ? 'active' : ''}`} onClick={() => onSelectSession(session.id)}><strong>{session.title || '新建聊天'}</strong><span>{new Date(session.updatedAt || session.createdAt).toLocaleDateString('zh-CN')} · {session.messages.length} 条消息</span></button>)}</div>
-      <div className="drawer-privacy"><span /><div><strong>记录仅属于当前访客</strong><p>访客 ID · {visitorShortId(visitorId)}<br />不会与其他访问者共享聊天内容。</p></div></div>
+      <div className="drawer-header"><div><span className="eyebrow">{copy.historyEyebrow}</span><h3>{copy.historyTitle}</h3></div><button className="drawer-close" onClick={onClose} aria-label={copy.historyTitle}><X size={17} /></button></div>
+      <button className="drawer-new-chat" onClick={onNewChat}><Plus size={15} />{copy.newChat}</button>
+      <span className="drawer-section-label">{copy.historySection}</span>
+      <div className="drawer-session-list">{sessions.map(session => <button key={session.id} className={`drawer-session ${session.id === activeSessionId ? 'active' : ''}`} onClick={() => onSelectSession(session.id)}><strong>{session.title || copy.newChat}</strong><span>{new Date(session.updatedAt || session.createdAt).toLocaleDateString()} · {session.messages.length} {copy.sessionCount}</span></button>)}</div>
+      <div className="drawer-privacy"><span /><div><strong>{copy.privacyTitle}</strong><p>访客 ID · {visitorShortId(visitorId)}<br />{copy.privacyBody}</p></div></div>
     </aside>
   </>
 }
 
-function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSession, onNewChat }) {
+function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSession, onNewChat, copy, resumeDocument }) {
   const messages = session.messages || []
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState([])
@@ -331,44 +337,48 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     ? <span className="typing-indicator" aria-label="ZT.AI 正在思考"><i /><i /><i /></span>
     : <><MarkdownMessage text={message.text} /><AttachmentList attachments={message.attachments} /></>
   return <section className="chat-card">
-    <div className="chat-topline"><div><span className="eyebrow">OPEN CHAT · {visitorShortId(visitorId)}</span><h2>和 ZT.AI 聊聊</h2></div><div className="chat-top-actions"><button className="chat-history-button" onClick={() => setHistoryOpen(true)}><History size={14} />聊天记录</button><button className="chat-new-button" onClick={onNewChat}><Plus size={14} />新建聊天</button><a className="resume-inline-download" href={resumeDoc} download>简历文件</a><span className="free-pill"><span />无需登录 · 免费</span></div></div>
-    {messages.length ? <div className="messages" ref={messagesRef}>{messages.map((message, index) => <div key={message.id ?? `${message.role}-${index}`} className={`message-row ${message.role === 'user' ? 'from-user' : ''}`}><div className={`message-bubble ${message.status === 'thinking' ? 'is-thinking' : ''}`}><span className="message-label">{message.role === 'zt' ? 'ZT.AI' : '访客'}</span>{renderMessage(message)}{renderMedia(message.media)}</div></div>)}</div> : <div className="empty-chat" ref={messagesRef}><span className="empty-chat-mark"><MessageCircle size={20} /></span><span className="eyebrow">NEW PRIVATE SESSION</span><h3>你好，我是 ZT.AI</h3><p>我是蔡宙廷的 AI 数字分身。你可以问我项目经历、AI 产品开发或 FDE 方向。</p><button onClick={() => setInput('请介绍一下蔡宙廷目前的 AI 产品开发经历')}>从一个问题开始 <ArrowUpRight size={14} /></button></div>}
+    <div className="chat-topline"><div><span className="eyebrow">{copy.eyebrow} · {visitorShortId(visitorId)}</span><h2>{copy.title}</h2></div><div className="chat-top-actions"><button className="chat-history-button" onClick={() => setHistoryOpen(true)}><History size={14} />{copy.history}</button><button className="chat-new-button" onClick={onNewChat}><Plus size={14} />{copy.newChat}</button><a className="resume-inline-download" href={resumeDocument.url} download={resumeDocument.name}><FileText size={13} />{copy.resume}</a><span className="free-pill"><span />{copy.free}</span></div></div>
+    {messages.length ? <div className="messages" ref={messagesRef}>{messages.map((message, index) => <div key={message.id ?? `${message.role}-${index}`} className={`message-row ${message.role === 'user' ? 'from-user' : ''}`}><div className={`message-bubble ${message.status === 'thinking' ? 'is-thinking' : ''}`}><span className="message-label">{message.role === 'zt' ? 'ZT.AI' : copy.visitor}</span>{renderMessage(message)}{renderMedia(message.media)}</div></div>)}</div> : <div className="empty-chat" ref={messagesRef}><span className="empty-chat-mark"><MessageCircle size={20} /></span><span className="eyebrow">{copy.emptyEyebrow}</span><h3>{copy.emptyTitle}</h3><p>{copy.emptyBody}</p><button onClick={() => setInput(copy.startPrompt)}>{copy.emptyAction} <ArrowUpRight size={14} /></button></div>}
     {attachments.length > 0 && <div className="pending-attachments"><AttachmentList attachments={attachments} compact />{attachments.map(file => <button key={file.id} onClick={() => removeAttachment(file.id)} aria-label={`移除 ${file.name}`}><X size={13} /></button>)}</div>}
-    <div className="chat-compose"><label className="attach-button" title="上传文件或图片"><Paperclip size={16} /><input type="file" multiple accept="image/*,.txt,.md,.markdown,.json,.csv,.js,.jsx,.ts,.tsx,.py,.html,.css,.pdf,.doc,.docx" onChange={handleFiles} disabled={Boolean(activeMessageId)} /></label><input value={input} disabled={Boolean(activeMessageId)} onChange={event => setInput(event.target.value)} onKeyDown={event => event.key === 'Enter' && send()} placeholder={activeMessageId ? 'ZT.AI 正在生成回答…' : '向 ZT.AI 提问，或先上传文件/图片'} /><button onClick={send} disabled={Boolean(activeMessageId) || (!input.trim() && !attachments.length)} aria-label="发送"><Send size={16} /></button></div>
-    <div className="chat-footer"><ModelSwitch model={model} setModel={setModel} /><span className="chat-note"><MessageCircle size={14} /> 公开对话 · 内容来自 ZT.AI</span></div>
-    {historyOpen && <ChatHistoryDrawer visitorId={visitorId} sessions={sessions} activeSessionId={session.id} onSelectSession={id => { onSelectSession(id); setHistoryOpen(false) }} onNewChat={() => { onNewChat(); setHistoryOpen(false) }} onClose={() => setHistoryOpen(false)} />}
+    <div className="chat-compose"><label className="attach-button" title={copy.upload}><Paperclip size={16} /><input type="file" multiple accept="image/*,.txt,.md,.markdown,.json,.csv,.js,.jsx,.ts,.tsx,.py,.html,.css,.pdf,.doc,.docx" onChange={handleFiles} disabled={Boolean(activeMessageId)} /></label><input value={input} disabled={Boolean(activeMessageId)} onChange={event => setInput(event.target.value)} onKeyDown={event => event.key === 'Enter' && send()} placeholder={activeMessageId ? copy.generating : copy.placeholder} /><button onClick={send} disabled={Boolean(activeMessageId) || (!input.trim() && !attachments.length)} aria-label="发送"><Send size={16} /></button></div>
+    <div className="chat-footer"><ModelSwitch model={model} setModel={setModel} /><span className="chat-note"><MessageCircle size={14} /> {copy.publicNote}</span></div>
+    {historyOpen && <ChatHistoryDrawer visitorId={visitorId} sessions={sessions} activeSessionId={session.id} copy={copy} onSelectSession={id => { onSelectSession(id); setHistoryOpen(false) }} onNewChat={() => { onNewChat(); setHistoryOpen(false) }} onClose={() => setHistoryOpen(false)} />}
   </section>
 }
 
-function PublicProfile() {
+function PublicProfile({ copy }) {
   return <section className="profile-card">
-    <div className="profile-top"><Avatar /><span className="status-dot"><span />公开访问</span></div>
-    <div className="profile-name"><h1>蔡宙廷</h1><p>AI 产品开发 · Amazon 精铺业务</p><p className="muted">目标方向：AI 产品经理 / FDE / 电商 FDE</p></div>
-    <div className="tag-row"><span>AI 工作流</span><span>飞书多维表格</span><span>GitHub</span><span>Python</span></div>
-    <div className="profile-copy"><span className="eyebrow">ABOUT</span><p>能把业务目标拆成流程、工具和可验收结果，在选品、开品、内容生产和利润跟踪之间搭建可复用的 AI 工作流。</p></div>
-    <div className="profile-signature"><span>ZT.AI 是蔡宙廷的 AI 数字分身</span><strong>{greeting}</strong></div>
+    <div className="profile-top"><Avatar /><span className="status-dot"><span />{copy.status}</span></div>
+    <div className="profile-name"><h1>蔡宙廷</h1><p>{copy.role}</p><p className="muted">{copy.target}</p></div>
+    <div className="tag-row">{copy.tags.map(tag => <span key={tag}>{tag}</span>)}</div>
+    <div className="profile-copy"><span className="eyebrow">{copy.eyebrow}</span><p>{copy.about}</p></div>
+    <div className="profile-signature"><span>{copy.signature}</span><strong>{copy.greeting}</strong></div>
   </section>
 }
 
-function ProjectsPage() {
-  return <section className="page-section projects-page"><div className="section-heading"><div><span className="eyebrow">SELECTED WORK</span><h2>精选项目</h2></div><span className="section-count">03 / 03</span></div><div className="project-grid">{projects.map(({ title, tag, desc, metric, icon: Icon }, index) => <article className="project-card" key={title}><div className="project-icon"><Icon size={18} /></div><div className="project-number">0{index + 1}</div><span className="project-tag">{tag}</span><h3>{title}</h3><p>{desc}</p><div className="project-bottom"><strong>{metric}</strong><span>查看项目 <ArrowUpRight size={14} /></span></div></article>)}</div><a className="github-card" href="https://github.com/niuzipai-gif?tab=repositories" target="_blank" rel="noreferrer"><div className="github-icon"><GitBranch size={22} /></div><div><span className="eyebrow">OPEN SOURCE EVIDENCE</span><h3>GitHub 精选仓库</h3><p>精选公开项目与可验证的开发记录，欢迎在对话中了解我的技术实践。</p></div><span className="github-link-icon" aria-label="打开 GitHub"><ArrowUpRight size={17} /></span></a></section>
+function ProjectsPage({ copy }) {
+  return <section className="page-section projects-page"><div className="section-heading"><div><span className="eyebrow">{copy.eyebrow}</span><h2>{copy.title}</h2></div><span className="section-count">{copy.count}</span></div><div className="project-grid">{copy.cards.map(([title, tag, desc, metric], index) => { const Icon = [Orbit, Sparkles, BriefcaseBusiness][index]; return <article className="project-card" key={title}><div className="project-icon"><Icon size={18} /></div><div className="project-number">0{index + 1}</div><span className="project-tag">{tag}</span><h3>{title}</h3><p>{desc}</p><div className="project-bottom"><strong>{metric}</strong><span>{copy.view} <ArrowUpRight size={14} /></span></div></article> })}</div><a className="github-card" href="https://github.com/niuzipai-gif?tab=repositories" target="_blank" rel="noreferrer"><div className="github-icon"><GitBranch size={22} /></div><div><span className="eyebrow">{copy.githubEyebrow}</span><h3>{copy.githubTitle}</h3><p>{copy.githubBody}</p></div><span className="github-link-icon" aria-label={copy.githubTitle}><ArrowUpRight size={17} /></span></a></section>
 }
 
-function ResumePage() {
-  return <section className="page-section resume-page"><div className="section-heading"><div><span className="eyebrow">PROFILE DATA</span><h2>简历摘要</h2></div><a className="resume-heading-download" href={resumeDoc} download aria-label="下载完整简历"><FileText size={18} /></a></div><div className="resume-hero"><Avatar size="small" /><div><span className="eyebrow">AI PRODUCT DEVELOPMENT</span><strong>蔡宙廷</strong><p>23 岁 · 汉族 · 群众 · 数字经济（本科）</p><p className="resume-contact">18664695946 · niuzipai@gmail.com</p></div></div><div className="resume-target"><span className="eyebrow">TARGET ROLE</span><strong>AI 产品经理 / FDE / 电商 FDE</strong><p>把真实业务问题拆成可落地的 AI 流程与工具，兼顾数据、效率和商业结果，并为整个团队赋能。</p></div><div className="resume-metrics">{resumeMetrics.map(item => <div className="resume-metric" key={item.label}><strong>{item.value}</strong><span>{item.label}</span><small>{item.note}</small></div>)}</div><section className="resume-block"><div className="resume-block-heading"><span className="eyebrow">WORK EXPERIENCE</span><h3>工作经历</h3></div><div className="resume-work-list">{resumeWork.map(item => <article className={`resume-work-item ${item.current ? 'is-current' : ''}`} key={`${item.company}-${item.date}`}><div className="resume-work-marker" /><div><span className="resume-date">{item.date}</span><div className="resume-work-title"><h4>{item.company}</h4><strong>{item.role}</strong></div><p>{item.detail}</p></div></article>)}</div></section><section className="resume-block resume-detail-block"><div className="resume-block-heading"><span className="eyebrow">KUNXIN CASE STUDY</span><h3>坤信科技｜AI 产品开发工作详述</h3></div>{resumeDetailSections.map(section => <article className="resume-detail-section" key={section.index}><div className="resume-detail-number">{section.index}</div><div><h4>{section.title}</h4>{section.items.map(([label, body]) => <p key={label}><strong>{label}：</strong>{body}</p>)}</div></article>)}</section><section className="resume-block"><div className="resume-block-heading"><span className="eyebrow">PROJECT EXPERIENCE</span><h3>项目经历</h3></div><div className="resume-project-list">{resumeProjects.map(item => <article className="resume-project-item" key={item.title}><span className="resume-date">{item.date}</span><h4>{item.title}</h4><p>{item.body}</p></article>)}</div></section><div className="resume-two-column"><section className="resume-block compact-block"><div className="resume-block-heading"><span className="eyebrow">SKILLS & CERTIFICATES</span><h3>技能证书</h3></div><div className="skill-list"><span>日语 N1</span><span>CET-4</span><span>Python</span><span>SQL / MySQL</span><span>SPSS</span><span>AI 辅助编程</span><span>飞书多维表格</span><span>SellerSprite</span><span>LinkFox</span><span>剪映 / PS / AE</span></div><p className="resume-small-copy">具备日语口语、读写及商务沟通能力；可快速阅读英文产品与技术资料；熟悉数据分析与自动化。</p></section><section className="resume-block compact-block"><div className="resume-block-heading"><span className="eyebrow">EDUCATION</span><h3>教育背景</h3></div><span className="resume-date">2022.09 — 2026.06</span><h4>广东白云学院</h4><p>数字经济（本科）</p><p className="resume-small-copy">主修：Python 数据分析、MySQL、SPSS、Power BI、Tableau、国际市场营销</p></section></div><section className="resume-block methods-block"><div className="resume-block-heading"><span className="eyebrow">WORKING METHOD</span><h3>可迁移的工作方法</h3></div><div className="methods-grid">{transferableMethods.map(([title, body]) => <article key={title}><strong>{title}</strong><p>{body}</p></article>)}</div></section><div className="resume-lock"><ShieldCheck size={18} /><div><strong>公开摘要已开放</strong><p>欢迎在公开对话中继续了解我的经历、项目和未来方向。</p></div><a className="resume-download" href={resumeDoc} download>下载完整简历</a></div></section>
+function ResumePage({ copy, resumeDocument }) {
+  return <section className="page-section resume-page"><div className="section-heading"><div><span className="eyebrow">{copy.eyebrow}</span><h2>{copy.title}</h2></div><a className="resume-heading-download" href={resumeDocument.url} download={resumeDocument.name} aria-label={copy.download}><FileText size={18} /></a></div><div className="resume-hero"><Avatar size="small" /><div><span className="eyebrow">{copy.roleEyebrow}</span><strong>{copy.identity}</strong><p>{copy.basics}</p><p className="resume-contact">18664695946 · niuzip@gmail.com</p></div></div><div className="resume-target"><span className="eyebrow">{copy.targetEyebrow}</span><strong>{copy.targetTitle}</strong><p>{copy.targetBody}</p></div><div className="resume-metrics">{copy.metrics.map(([value, label, note]) => <div className="resume-metric" key={label}><strong>{value}</strong><span>{label}</span><small>{note}</small></div>)}</div><section className="resume-block"><div className="resume-block-heading"><span className="eyebrow">{copy.workEyebrow}</span><h3>{copy.workTitle}</h3></div><div className="resume-work-list">{copy.work.map(([date, company, role, detail, current]) => <article className={`resume-work-item ${current ? 'is-current' : ''}`} key={`${company}-${date}`}><div className="resume-work-marker" /><div><span className="resume-date">{date}</span><div className="resume-work-title"><h4>{company}</h4><strong>{role}</strong></div><p>{detail}</p></div></article>)}</div></section><section className="resume-block resume-detail-block"><div className="resume-block-heading"><span className="eyebrow">{copy.kunxinEyebrow}</span><h3>{copy.kunxinTitle}</h3></div>{copy.details.map(([index, title, items]) => <article className="resume-detail-section" key={index}><div className="resume-detail-number">{index}</div><div><h4>{title}</h4>{items.map(([label, body]) => <p key={label}><strong>{label}：</strong>{body}</p>)}</div></article>)}</section><section className="resume-block"><div className="resume-block-heading"><span className="eyebrow">{copy.projectEyebrow}</span><h3>{copy.projectTitle}</h3></div><div className="resume-project-list">{copy.projectList.map(([date, title, body]) => <article className="resume-project-item" key={title}><span className="resume-date">{date}</span><h4>{title}</h4><p>{body}</p></article>)}</div></section><div className="resume-two-column"><section className="resume-block compact-block"><div className="resume-block-heading"><span className="eyebrow">{copy.skillsEyebrow}</span><h3>{copy.skillsTitle}</h3></div><div className="skill-list">{copy.skills.map(skill => <span key={skill}>{skill}</span>)}</div><p className="resume-small-copy">{copy.skillsBody}</p></section><section className="resume-block compact-block"><div className="resume-block-heading"><span className="eyebrow">{copy.educationEyebrow}</span><h3>{copy.educationTitle}</h3></div><span className="resume-date">{copy.educationDate}</span><h4>{copy.educationSchool}</h4><p>{copy.educationDegree}</p><p className="resume-small-copy">{copy.educationBody}</p></section></div><section className="resume-block methods-block"><div className="resume-block-heading"><span className="eyebrow">{copy.methodsEyebrow}</span><h3>{copy.methodsTitle}</h3></div><div className="methods-grid">{copy.methods.map(([title, body]) => <article key={title}><strong>{title}</strong><p>{body}</p></article>)}</div></section><div className="resume-lock"><ShieldCheck size={18} /><div><strong>{copy.openTitle}</strong><p>{copy.openBody}</p></div><a className="resume-download" href={resumeDocument.url} download={resumeDocument.name}>{copy.download}</a></div></section>
 }
 
-function HomePage({ onChat }) {
-  return <section className="home-page"><div className="home-noise" /><div className="home-orbit orbit-one" /><div className="home-orbit orbit-two" /><div className="home-content"><div className="home-kicker"><span className="live-dot" /> PERSONAL AI AGENT · 2026</div><div className="home-brand"><img className="hero-logo" src={logo} alt="ZT.AI 标志" /><TypingTitle className="hero-typing" /></div><div className="home-reflection"><span>让经历被理解，让能力被看见</span><span>从真实业务中生长，用 AI 连接更多可能</span><i aria-hidden="true"><span>让经历被理解，让能力被看见</span><span>从真实业务中生长，用 AI 连接更多可能</span></i></div><div className="home-actions"><button className="primary-button" onClick={onChat}>和 ZT.AI 聊聊 <ArrowUpRight size={17} /></button><button className="text-button" onClick={() => document.getElementById('root').dispatchEvent(new CustomEvent('navigate', { detail: 'projects' }))}>查看精选项目 <MoveUpRight size={16} /></button></div></div></section>
+function HomePage({ onChat, copy }) {
+  return <section className="home-page"><div className="home-noise" /><div className="home-orbit orbit-one" /><div className="home-orbit orbit-two" /><div className="home-content"><div className="home-kicker"><span className="live-dot" /> {copy.kicker}</div><div className="home-brand"><img className="hero-logo" src={logo} alt="ZT.AI logo" /><TypingTitle className="hero-typing" /></div><div className="home-reflection"><span>{copy.reflection[0]}</span><span>{copy.reflection[1]}</span><i aria-hidden="true"><span>{copy.reflection[0]}</span><span>{copy.reflection[1]}</span></i></div><div className="home-actions"><button className="primary-button" onClick={onChat}>{copy.chat} <ArrowUpRight size={17} /></button><button className="text-button" onClick={() => document.getElementById('root').dispatchEvent(new CustomEvent('navigate', { detail: 'projects' }))}>{copy.projects} <MoveUpRight size={16} /></button></div></div></section>
 }
 
 function App() {
   const [page, setPage] = useState('home')
   const [visitorState, setVisitorState] = useState(() => loadVisitorState(localStorage))
   const [menuOpen, setMenuOpen] = useState(false)
-  const pages = useMemo(() => ({ home: '首页', chat: '公开聊天', projects: '精选项目', resume: '简历摘要' }), [])
+  const [language, setLanguage] = useState(() => getInitialLanguage(localStorage))
+  const copy = siteCopy[language]
+  const pages = copy.nav
+  const resumeDocument = { url: `${import.meta.env.BASE_URL}${resumeDocumentByLanguage[language].path}`, name: resumeDocumentByLanguage[language].name }
   const activeSession = visitorState.sessions.find(session => session.id === visitorState.activeSessionId) || visitorState.sessions[0]
   useEffect(() => { saveVisitorState(localStorage, visitorState) }, [visitorState])
+  useEffect(() => { try { localStorage.setItem('zt-ai:language', language) } catch {} }, [language])
   const selectSession = id => setVisitorState(current => current.sessions.some(session => session.id === id) ? { ...current, activeSessionId: id } : current)
   const newChat = () => { const session = createChatSession({ model: 'MINIMAX' }); setVisitorState(current => ({ ...current, activeSessionId: session.id, sessions: [session, ...current.sessions] })) }
   const updateSession = (sessionId, updater) => setVisitorState(current => {
@@ -378,12 +388,12 @@ function App() {
   useEffect(() => { const handler = event => setPage(event.detail); document.getElementById('root').addEventListener('navigate', handler); return () => document.getElementById('root').removeEventListener('navigate', handler) }, [])
   const navigate = value => { setPage(value); setMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   return <div className={`app-shell page-${page}`}>
-    <header className="topbar"><button className="mobile-menu" onClick={() => setMenuOpen(value => !value)} aria-label="打开菜单">{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><Brand compact /><nav className={menuOpen ? 'open' : ''}>{Object.entries(pages).map(([key, label]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => navigate(key)}>{label}</button>)}</nav><div className="topbar-right"><span className="availability"><span /> Available for conversation</span><button className="more-button"><MoreHorizontal size={20} /></button></div></header>
+    <header className="topbar"><button className="mobile-menu" onClick={() => setMenuOpen(value => !value)} aria-label={language === 'zh' ? '打开菜单' : 'Open menu'}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><Brand compact copy={copy} /><nav className={menuOpen ? 'open' : ''}>{Object.entries(pages).map(([key, label]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => navigate(key)}>{label}</button>)}</nav><div className="topbar-right"><LanguageSwitch language={language} setLanguage={setLanguage} copy={copy} /><span className="availability"><span /> {copy.availability}</span><button className="more-button" aria-label="More"><MoreHorizontal size={20} /></button></div></header>
     <main className="main-content">
-      {page === 'home' && <HomePage onChat={() => navigate('chat')} />}
-      {page === 'chat' && <div className="chat-layout"><PublicProfile /><ChatBox session={activeSession} visitorId={visitorState.visitorId} sessions={visitorState.sessions} onSessionChange={updateSession} onSelectSession={selectSession} onNewChat={newChat} /></div>}
-      {page === 'projects' && <ProjectsPage />}
-      {page === 'resume' && <ResumePage />}
+      {page === 'home' && <HomePage copy={copy.home} onChat={() => navigate('chat')} />}
+      {page === 'chat' && <div className="chat-layout"><PublicProfile copy={copy.profile} /><ChatBox copy={copy.chat} resumeDocument={resumeDocument} session={activeSession} visitorId={visitorState.visitorId} sessions={visitorState.sessions} onSessionChange={updateSession} onSelectSession={selectSession} onNewChat={newChat} /></div>}
+      {page === 'projects' && <ProjectsPage copy={copy.projects} />}
+      {page === 'resume' && <ResumePage copy={copy.resume} resumeDocument={resumeDocument} />}
     </main>
     <footer className="mobile-nav">{[['home', Home], ['chat', MessageCircle], ['projects', BriefcaseBusiness], ['resume', UserRound]].map(([key, Icon]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => navigate(key)}><Icon size={18} /><span>{pages[key]}</span></button>)}</footer>
   </div>
