@@ -35,10 +35,18 @@
 
 8. 浏览器访问 `http://localhost:4173/`。网关健康检查：`http://localhost:8790/api/health`。
 
+## 启动桌面 Agent
+
+1. 网关启动后，双击 `agent-desktop/start-agent-silent.vbs`。
+2. 工作台会在 `http://127.0.0.1:8788/` 打开，默认是执行模式，只开放读取权限。
+3. 工作区写入、命令执行需要在右侧面板打开，并且每个高风险动作仍会单独请求批准。
+4. 也可以运行 `npm run agent:start`，或通过 `agent-desktop/start-agent.ps1` 指定 `ZT_AI_WORKSPACE` 和 `ZT_AI_GATEWAY_URL`。
+
 ## 迁移边界
 
 - 网页公开聊天的上下文保存在每个访问者自己的浏览器中，网关不保存聊天历史。
 - `aikey.env`、`node_modules`、构建目录、日志和 Git 历史不在迁移包中。
+- Agent 的任务记录与权限文件位于 `agent-desktop/data`，只保存在本机；迁移前可按需保留或删除。
 - 如果需要重新部署 GitHub Pages/Render，请按照 `README.md` 的部署说明操作；公开网页不应直接放置 API key。
 
 ## 创建桌面快捷方式
@@ -52,3 +60,13 @@ powershell -ExecutionPolicy Bypass -File .\tools\install-gateway-shortcut.ps1
 ```
 
 快捷方式会自动使用当前项目路径，不依赖原电脑的 E 盘路径。
+
+## 生成离职迁移包
+
+在项目根目录运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\package-agent.ps1
+```
+
+脚本会在桌面生成 `ZT.AI-Desktop-Agent-Portable.zip`，包含网页、网关、简历、Agent 和启动脚本，不包含真实 API key、`node_modules`、Git 历史和日志。

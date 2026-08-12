@@ -1,6 +1,6 @@
 # ZT.AI
 
-蔡宙廷的公开 AI 数字分身网页：公开对话、个人经历摘要、精选项目与 GitHub Pages 静态部署。网页支持中文、English、日本語切换，界面语言和简历下载文件会同步切换。
+蔡宙廷的 ZT.AI 个人 AI 系统：公开网页负责多语言对话、个人经历摘要、精选项目与 GitHub Pages 静态部署；桌面端负责默认执行型 Agent 工作台。网页支持中文、English、日本語切换，界面语言和简历下载文件会同步切换。
 
 ## 本地运行
 
@@ -26,6 +26,12 @@ API 密钥只放在项目根目录的 `aikey.env`，该文件已被 `.gitignore`
 部署过程不会读取 `aikey.env`，也不会把任何模型密钥打进前端产物。
 
 公开聊天支持 Markdown 回复、MiniMax/DeepSeek 模型切换、图片与文本/DOCX 附件、按语言切换的公开简历下载，以及按访客 ID 隔离的多会话聊天记录。每个浏览器会生成独立 visitorId；聊天记录只存在该访客的浏览器本地，网关不保存或广播历史。切换模型只改变当前会话下一次请求使用的模型，不会清空历史消息；“新建聊天”会创建当前访客下的独立会话。
+
+## 桌面 Agent
+
+`agent-desktop/` 是独立的本机执行型工作台。它默认执行任务而不是闲聊，支持任务拆解、工作区读取、工作区写入、命令执行、权限审批、工具日志、MiniMax M3 / DeepSeek V4 Flash 切换和本机任务记录。执行权限只作用于启动 Agent 的那台电脑，不会控制蔡宙廷的设备。
+
+双击 `agent-desktop/start-agent-silent.vbs` 可静默启动；更完整的迁移说明见 `agent-desktop/README.md` 与 `PORTABLE-SETUP.md`。推理通过 Gateway 的 `/api/agent/chat` 路由完成，密钥只保留在本机 `aikey.env`。
 
 简历下载文件位于 `public/`：`resume.docx` 为中文 FDE 简历，`resume-en.docx` 为英文版，`resume-ja.docx` 为日文版。三份文件均基于同一份 FDE 简历的原始版式生成。
 

@@ -8,6 +8,9 @@ server/.env
 server-gateway.log
 server-gateway.error.log
 data/
+agent-desktop/data/
+.qa-resume-*/
+.playwright-cli/
 src/assets/*.docx
 vite.log
 vite.error.log

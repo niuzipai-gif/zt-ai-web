@@ -4,7 +4,7 @@ import { CHAT_MODELS, contentToText, isMediaIntent, normalizeChatRequest } from 
 import { streamMinimax } from './providers/minimax.js'
 import { streamDeepseek } from './providers/deepseek.js'
 import { runHiddenMediaRequest } from './providers/mmx.js'
-import { CHAT_LANGUAGE_PROMPTS, ZT_PROFILE, ZT_SYSTEM_PROMPT } from './profile.js'
+import { AGENT_SYSTEM_PROMPT, CHAT_LANGUAGE_PROMPTS, ZT_PROFILE, ZT_SYSTEM_PROMPT } from './profile.js'
 
 function loadEnvFile(path) {
   try {
@@ -124,11 +124,32 @@ async function handleChat(request, response) {
   response.end()
 }
 
+async function handleAgentChat(request, response) {
+  if (!rateLimit(request)) { sendJson(request, response, 429, { error: '请求过于频繁，请稍后再试' }); return }
+  const body = await readBody(request)
+  const { model, messages } = normalizeChatRequest(body)
+  const language = ['zh', 'en', 'ja'].includes(body.language) ? body.language : 'zh'
+  const providerMessages = [{ role: 'system', content: `${AGENT_SYSTEM_PROMPT}\n${CHAT_LANGUAGE_PROMPTS[language]}` }, ...messages.filter(message => message.role !== 'system')]
+  sseStart(request, response)
+  sse(response, 'message.start', { model: CHAT_MODELS[model], mode: 'execute' })
+  try {
+    const stream = model === 'deepseek'
+      ? streamDeepseek({ model: CHAT_MODELS.deepseek, messages: providerMessages })
+      : streamMinimax({ model: CHAT_MODELS.minimax, messages: providerMessages })
+    for await (const text of stream) sse(response, 'message.delta', { text })
+  } catch (error) {
+    sse(response, 'message.error', { message: error.message })
+  }
+  sse(response, 'message.done', {})
+  response.end()
+}
+
 const server = http.createServer(async (request, response) => {
   if (request.method === 'OPTIONS') { response.writeHead(204, { 'access-control-allow-origin': corsOrigin(request), 'access-control-allow-methods': 'POST, GET, OPTIONS', 'access-control-allow-headers': 'content-type', vary: 'Origin' }); response.end(); return }
   try {
     if (request.method === 'GET' && request.url === '/api/health') return sendJson(request, response, 200, { ok: true, service: 'zt-ai-gateway', profile: { name: ZT_PROFILE.name, identity: ZT_PROFILE.identity }, models: CHAT_MODELS, providers: { minimax: Boolean(process.env.MINIMAX_API_KEY), deepseek: Boolean(process.env.DEEPSEEK_API_KEY) } })
     if (request.method === 'POST' && request.url === '/api/chat') return await handleChat(request, response)
+    if (request.method === 'POST' && request.url === '/api/agent/chat') return await handleAgentChat(request, response)
     sendJson(request, response, 404, { error: 'Not found' })
   } catch (error) {
     sendJson(request, response, 400, { error: error.message })

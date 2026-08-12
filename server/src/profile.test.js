@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { CHAT_LANGUAGE_PROMPTS, ZT_PROFILE, ZT_SYSTEM_PROMPT } from './profile.js'
+import { AGENT_SYSTEM_PROMPT, CHAT_LANGUAGE_PROMPTS, ZT_PROFILE, ZT_SYSTEM_PROMPT } from './profile.js'
 
 test('profile keeps the configured digital-twin facts', () => {
   assert.equal(ZT_PROFILE.company, '深圳市坤信科技有限公司')
@@ -11,4 +11,10 @@ test('chat language prompts are explicit for every supported locale', () => {
   assert.match(CHAT_LANGUAGE_PROMPTS.zh, /简体中文/)
   assert.match(CHAT_LANGUAGE_PROMPTS.en, /English/)
   assert.match(CHAT_LANGUAGE_PROMPTS.ja, /日本語/)
+})
+
+test('desktop agent prompt is execution-first and permission-aware', () => {
+  assert.match(AGENT_SYSTEM_PROMPT, /执行任务/)
+  assert.match(AGENT_SYSTEM_PROMPT, /权限/)
+  assert.match(AGENT_SYSTEM_PROMPT, /批准/)
 })
