@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: zt-ai-gateway
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: CORS_ORIGIN
+        sync: false
+      - key: DEMO_FALLBACK
+        value: "false"
+      - key: MINIMAX_API_KEY
+        sync: false
+      - key: MINIMAX_TEXT_MODEL
+        value: MiniMax-M3
+      - key: MINIMAX_BASE_URL
+        value: https://api.minimaxi.com/v1
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_TEXT_MODEL
+        value: deepseek-v4-flash
+      - key: DEEPSEEK_BASE_URL
+        value: https://api.deepseek.com
+      - key: MMX_ENABLED
+        value: "true"
+      - key: MMX_IMAGE_MODEL
+        value: image-01
+      - key: MMX_VIDEO_MODEL
+        value: MiniMax-Hailuo-2.3
