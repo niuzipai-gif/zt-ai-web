@@ -44,3 +44,11 @@
 ## 创建桌面快捷方式
 
 在新电脑上可以右键 `start-gateway-silent.vbs` → “发送到” → “桌面快捷方式”。项目内的 `tools/zt-ai.ico` 是 ZT.AI Logo 图标，可在快捷方式属性中更换图标。
+
+也可以在项目根目录运行下面的命令，自动创建带 ZT.AI 图标的桌面快捷方式：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\install-gateway-shortcut.ps1
+```
+
+快捷方式会自动使用当前项目路径，不依赖原电脑的 E 盘路径。
