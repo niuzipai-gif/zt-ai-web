@@ -224,7 +224,7 @@ function ChatHistoryDrawer({ visitorId, sessions, activeSessionId, onSelectSessi
   </>
 }
 
-function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSession, onNewChat, copy, resumeDocument }) {
+function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSession, onNewChat, copy, resumeDocument, language }) {
   const messages = session.messages || []
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState([])
@@ -288,10 +288,10 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     if ((!value && !attachments.length) || activeMessageId) return
     const now = Date.now()
     const attachmentText = attachments.map(file => `[附件：${file.name}，类型：${file.type}，大小：${formatBytes(file.size)}]${file.text ? `\n${file.text}` : ''}`).join('\n')
-    const contentText = [value || '请查看我上传的附件。', attachmentText].filter(Boolean).join('\n\n')
+    const contentText = [value || copy.sendFallback, attachmentText].filter(Boolean).join('\n\n')
     const imageParts = attachments.filter(file => file.preview).map(file => ({ type: 'image_url', image_url: { url: file.preview } }))
     const content = imageParts.length ? [{ type: 'text', text: contentText }, ...imageParts] : contentText
-    const userMessage = { id: `user-${now}`, role: 'user', text: value || '请查看我上传的附件。', content, attachments, status: 'done' }
+    const userMessage = { id: `user-${now}`, role: 'user', text: value || copy.sendFallback, content, attachments, status: 'done' }
     const responseId = `response-${now}`
     const history = [...messages, userMessage].map(message => ({ role: message.role === 'zt' ? 'assistant' : message.role, content: message.content || message.text })).filter(message => message.content)
     streamQueueRef.current = []
@@ -302,22 +302,22 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     setAttachments([])
     void (async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, messages: history, attachments: userMessage.attachments.map(({ name, type, size }) => ({ name, type, size })) }) })
+        const response = await fetch(`${API_BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, language, messages: history, attachments: userMessage.attachments.map(({ name, type, size }) => ({ name, type, size })) }) })
         await consumeSse(response, (event, data) => {
           if (event === 'message.delta' && data.text) streamQueueRef.current.push(...String(data.text))
-          if (event === 'media.started') streamQueueRef.current.push(...'正在准备创作，请稍候…')
+          if (event === 'media.started') streamQueueRef.current.push(...copy.mediaPreparing)
           if (event === 'media.completed' && data.url) {
             updateMessages(items => items.map(message => message.id === responseId
               ? { ...message, media: { kind: data.kind, url: data.url }, status: 'streaming' }
               : message))
-            streamQueueRef.current.push(...'创作结果已完成：')
+            streamQueueRef.current.push(...copy.mediaCompleted)
           }
-          if (event === 'message.error') streamQueueRef.current.push(...`这次对话没有完成：${data.message || '请稍后重试。'}`)
+          if (event === 'message.error') streamQueueRef.current.push(...`${copy.responseError}${data.message ? `: ${data.message}` : ''}`)
           if (event === 'message.done') streamFinishedRef.current = true
         })
         streamFinishedRef.current = true
       } catch (error) {
-        streamQueueRef.current.push(...`暂时无法连接 ZT.AI 网关：${error.message || '请稍后重试。'}`)
+        streamQueueRef.current.push(...`${copy.gatewayError}${error.message ? ` (${error.message})` : ''}`)
         streamFinishedRef.current = true
       }
     })()
@@ -334,7 +334,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     <div className="chat-topline"><div><span className="eyebrow">{copy.eyebrow} · {visitorShortId(visitorId)}</span><h2>{copy.title}</h2></div><div className="chat-top-actions"><button className="chat-history-button" onClick={() => setHistoryOpen(true)}><History size={14} />{copy.history}</button><button className="chat-new-button" onClick={onNewChat}><Plus size={14} />{copy.newChat}</button><a className="resume-inline-download" href={resumeDocument.url} download={resumeDocument.name}><FileText size={13} />{copy.resume}</a><span className="free-pill"><span />{copy.free}</span></div></div>
     {messages.length ? <div className="messages" ref={messagesRef}>{messages.map((message, index) => <div key={message.id ?? `${message.role}-${index}`} className={`message-row ${message.role === 'user' ? 'from-user' : ''}`}><div className={`message-bubble ${message.status === 'thinking' ? 'is-thinking' : ''}`}><span className="message-label">{message.role === 'zt' ? 'ZT.AI' : copy.visitor}</span>{renderMessage(message)}{renderMedia(message.media)}</div></div>)}</div> : <div className="empty-chat" ref={messagesRef}><span className="empty-chat-mark"><MessageCircle size={20} /></span><span className="eyebrow">{copy.emptyEyebrow}</span><h3>{copy.emptyTitle}</h3><p>{copy.emptyBody}</p><button onClick={() => setInput(copy.startPrompt)}>{copy.emptyAction} <ArrowUpRight size={14} /></button></div>}
     {attachments.length > 0 && <div className="pending-attachments"><AttachmentList attachments={attachments} compact />{attachments.map(file => <button key={file.id} onClick={() => removeAttachment(file.id)} aria-label={`移除 ${file.name}`}><X size={13} /></button>)}</div>}
-    <div className="chat-compose"><label className="attach-button" title={copy.upload}><Paperclip size={16} /><input type="file" multiple accept="image/*,.txt,.md,.markdown,.json,.csv,.js,.jsx,.ts,.tsx,.py,.html,.css,.pdf,.doc,.docx" onChange={handleFiles} disabled={Boolean(activeMessageId)} /></label><input value={input} disabled={Boolean(activeMessageId)} onChange={event => setInput(event.target.value)} onKeyDown={event => event.key === 'Enter' && send()} placeholder={activeMessageId ? copy.generating : copy.placeholder} /><button onClick={send} disabled={Boolean(activeMessageId) || (!input.trim() && !attachments.length)} aria-label="发送"><Send size={16} /></button></div>
+    <div className="chat-compose"><label className="attach-button" title={copy.upload}><Paperclip size={16} /><input type="file" multiple accept="image/*,.txt,.md,.markdown,.json,.csv,.js,.jsx,.ts,.tsx,.py,.html,.css,.pdf,.doc,.docx" onChange={handleFiles} disabled={Boolean(activeMessageId)} /></label><input value={input} disabled={Boolean(activeMessageId)} onChange={event => setInput(event.target.value)} onKeyDown={event => event.key === 'Enter' && send()} placeholder={activeMessageId ? copy.generating : copy.placeholder} /><button onClick={send} disabled={Boolean(activeMessageId) || (!input.trim() && !attachments.length)} aria-label={copy.send}><Send size={16} /></button></div>
     <div className="chat-footer"><ModelSwitch model={model} setModel={setModel} /><span className="chat-note"><MessageCircle size={14} /> {copy.publicNote}</span></div>
     {historyOpen && <ChatHistoryDrawer visitorId={visitorId} sessions={sessions} activeSessionId={session.id} copy={copy} onSelectSession={id => { onSelectSession(id); setHistoryOpen(false) }} onNewChat={() => { onNewChat(); setHistoryOpen(false) }} onClose={() => setHistoryOpen(false)} />}
   </section>
@@ -385,7 +385,7 @@ function App() {
     <header className="topbar"><button className="mobile-menu" onClick={() => setMenuOpen(value => !value)} aria-label={language === 'zh' ? '打开菜单' : 'Open menu'}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><Brand compact copy={copy} /><nav className={menuOpen ? 'open' : ''}>{Object.entries(pages).map(([key, label]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => navigate(key)}>{label}</button>)}</nav><div className="topbar-right"><LanguageSwitch language={language} setLanguage={setLanguage} copy={copy} /><span className="availability"><span /> {copy.availability}</span><button className="more-button" aria-label="More"><MoreHorizontal size={20} /></button></div></header>
     <main className="main-content">
       {page === 'home' && <HomePage copy={copy.home} onChat={() => navigate('chat')} />}
-      {page === 'chat' && <div className="chat-layout"><PublicProfile copy={copy.profile} /><ChatBox copy={copy.chat} resumeDocument={resumeDocument} session={activeSession} visitorId={visitorState.visitorId} sessions={visitorState.sessions} onSessionChange={updateSession} onSelectSession={selectSession} onNewChat={newChat} /></div>}
+      {page === 'chat' && <div className="chat-layout"><PublicProfile copy={copy.profile} /><ChatBox copy={copy.chat} language={language} resumeDocument={resumeDocument} session={activeSession} visitorId={visitorState.visitorId} sessions={visitorState.sessions} onSessionChange={updateSession} onSelectSession={selectSession} onNewChat={newChat} /></div>}
       {page === 'projects' && <ProjectsPage copy={copy.projects} />}
       {page === 'resume' && <ResumePage copy={copy.resume} resumeDocument={resumeDocument} />}
     </main>

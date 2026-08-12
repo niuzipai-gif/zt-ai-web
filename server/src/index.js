@@ -4,7 +4,7 @@ import { CHAT_MODELS, contentToText, isMediaIntent, normalizeChatRequest } from 
 import { streamMinimax } from './providers/minimax.js'
 import { streamDeepseek } from './providers/deepseek.js'
 import { runHiddenMediaRequest } from './providers/mmx.js'
-import { ZT_PROFILE, ZT_SYSTEM_PROMPT } from './profile.js'
+import { CHAT_LANGUAGE_PROMPTS, ZT_PROFILE, ZT_SYSTEM_PROMPT } from './profile.js'
 
 function loadEnvFile(path) {
   try {
@@ -79,7 +79,8 @@ async function handleChat(request, response) {
   if (!rateLimit(request)) { sendJson(request, response, 429, { error: '请求过于频繁，请稍后再试' }); return }
   const body = await readBody(request)
   const { model, messages } = normalizeChatRequest(body)
-  const providerMessages = [{ role: 'system', content: ZT_SYSTEM_PROMPT }, ...messages.filter(message => message.role !== 'system')]
+  const language = ['zh', 'en', 'ja'].includes(body.language) ? body.language : 'zh'
+  const providerMessages = [{ role: 'system', content: `${ZT_SYSTEM_PROMPT}\n${CHAT_LANGUAGE_PROMPTS[language]}` }, ...messages.filter(message => message.role !== 'system')]
   const incomingAttachments = Array.isArray(body.attachments) ? body.attachments.slice(0, 8) : []
   const attachmentNotes = incomingAttachments
     .filter(file => file && file.name)
