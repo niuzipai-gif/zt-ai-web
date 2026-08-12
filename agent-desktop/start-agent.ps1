@@ -7,4 +7,10 @@ $env:ZT_AI_AGENT_PORT = if ($env:ZT_AI_AGENT_PORT) { $env:ZT_AI_AGENT_PORT } els
 $env:ZT_AI_GATEWAY_URL = if ($env:ZT_AI_GATEWAY_URL) { $env:ZT_AI_GATEWAY_URL } else { 'http://localhost:8790' }
 Start-Process -FilePath 'node.exe' -ArgumentList 'src/server.mjs' -WorkingDirectory $agentRoot -WindowStyle Hidden
 Start-Sleep -Milliseconds 900
-Start-Process "http://127.0.0.1:$($env:ZT_AI_AGENT_PORT)/"
+$agentUrl = "http://127.0.0.1:$($env:ZT_AI_AGENT_PORT)/"
+$edge = Get-Command 'msedge.exe' -ErrorAction SilentlyContinue
+if ($edge) {
+  Start-Process -FilePath $edge.Source -ArgumentList "--app=$agentUrl"
+} else {
+  Start-Process $agentUrl
+}

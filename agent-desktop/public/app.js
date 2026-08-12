@@ -6,6 +6,7 @@ const els = {
   plan: $('#plan'), log: $('#activity-log'), logCount: $('#log-count'), title: $('#execution-title'), status: $('#execution-status'),
   taskId: $('#current-task-id'), resultPanel: $('#result-panel'), resultText: $('#result-text'), approval: $('#approval-card'), approvalTitle: $('#approval-title'),
   approvalPreview: $('#approval-preview'), gateway: $('#gateway-url'), workspace: $('#workspace-path'), workspaceShort: $('#workspace-short'), gatewayStatus: $('#gateway-status'),
+  authorize: $('#authorize-device'), authorizationStatus: $('#authorization-status'),
 }
 
 function escapeHtml(value) { return String(value).replace(/[&<>'\"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character])) }
@@ -85,6 +86,14 @@ async function updatePermission(capability, enabled) {
   const body = await readJson(response); if (!response.ok) addLog(body.error || '权限更新失败', 'warning'); else addLog(`${enabled ? '已开启' : '已关闭'}权限：${capability}`, enabled ? 'warning' : '')
 }
 
+async function updateAuthorization() {
+  const response = await fetch('/api/authorization', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ authorized: true }) })
+  const body = await readJson(response)
+  if (!response.ok) { addLog(body.error || '本机授权失败', 'warning'); return }
+  addLog('已确认：Agent 只可在当前设备执行', 'result')
+  refreshState()
+}
+
 function renderHistory(items = []) {
   const data = items.slice().reverse(); if (!data.length) { els.history.innerHTML = '<div class="empty-history">还没有执行记录</div>'; return }
   els.history.innerHTML = data.map(item => `<div class="history-item"><strong>${escapeHtml(item.task)}</strong><small>${escapeHtml(item.status)} · ${new Date(item.createdAt).toLocaleString()}</small></div>`).join('')
@@ -92,7 +101,11 @@ function renderHistory(items = []) {
 async function refreshState() {
   try {
     const response = await fetch('/api/state'); const data = await response.json(); renderHistory(data.history); els.gateway.textContent = data.gatewayUrl.replace(/^https?:\/\//, ''); els.workspace.textContent = data.workspaceRoot; els.workspaceShort.textContent = data.workspaceRoot; els.gatewayStatus.textContent = `本机工作台 · ${data.mode === 'execute' ? '执行模式' : '待机'}`
-    document.querySelectorAll('[data-capability]').forEach(input => { if (!input.disabled && data.permissions[input.dataset.capability] !== undefined) input.checked = data.permissions[input.dataset.capability] })
+    const authorized = data.deviceAuthorization?.authorized === true
+    els.authorizationStatus.textContent = authorized ? `已确认本机 · ${new Date(data.deviceAuthorization.authorizedAt).toLocaleString()}` : '尚未确认本机执行'
+    els.authorize.textContent = authorized ? '已确认' : '确认这台设备'
+    els.authorize.disabled = authorized
+    document.querySelectorAll('[data-capability]').forEach(input => { if (input.dataset.capability !== 'read') input.disabled = !authorized; if (data.permissions[input.dataset.capability] !== undefined) input.checked = data.permissions[input.dataset.capability] })
   } catch (error) { els.gatewayStatus.textContent = '本机 Agent 未连接'; addLog(error.message, 'warning') }
 }
 
@@ -100,5 +113,6 @@ document.querySelectorAll('[data-model]').forEach(button => button.addEventListe
 document.querySelectorAll('[data-task]').forEach(button => button.addEventListener('click', () => { els.taskInput.value = button.dataset.task; els.taskInput.focus() }))
 document.querySelectorAll('[data-capability]').forEach(input => input.addEventListener('change', () => updatePermission(input.dataset.capability, input.checked)))
 els.run.addEventListener('click', runTask); els.taskInput.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') runTask() }); els.newTask.addEventListener('click', () => { els.taskInput.value = ''; resetExecution(); els.taskInput.focus() }); els.refresh.addEventListener('click', refreshState)
+els.authorize.addEventListener('click', updateAuthorization)
 $('#approve-once').addEventListener('click', () => approve(false)); $('#approve-always').addEventListener('click', () => approve(true)); $('#reject').addEventListener('click', reject)
 setInterval(() => { $('#clock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, 1000); refreshState(); document.querySelector(`[data-model="${state.model}"]`)?.classList.add('active')

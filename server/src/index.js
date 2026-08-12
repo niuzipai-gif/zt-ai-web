@@ -4,7 +4,7 @@ import { CHAT_MODELS, contentToText, isMediaIntent, normalizeChatRequest } from 
 import { streamMinimax } from './providers/minimax.js'
 import { streamDeepseek } from './providers/deepseek.js'
 import { runHiddenMediaRequest } from './providers/mmx.js'
-import { AGENT_SYSTEM_PROMPT, CHAT_LANGUAGE_PROMPTS, ZT_PROFILE, ZT_SYSTEM_PROMPT } from './profile.js'
+import { AGENT_PLANNER_PROMPT, AGENT_SYSTEM_PROMPT, CHAT_LANGUAGE_PROMPTS, ZT_PROFILE, ZT_SYSTEM_PROMPT } from './profile.js'
 
 function loadEnvFile(path) {
   try {
@@ -144,12 +144,36 @@ async function handleAgentChat(request, response) {
   response.end()
 }
 
+async function handleAgentPlan(request, response) {
+  if (!rateLimit(request)) { sendJson(request, response, 429, { error: '请求过于频繁，请稍后再试' }); return }
+  const body = await readBody(request)
+  const task = String(body.task || '').trim().slice(0, 8_000)
+  if (!task) { sendJson(request, response, 400, { error: '缺少 Agent 任务目标' }); return }
+  const model = String(body.model || '').toLowerCase() === 'deepseek' ? 'deepseek' : 'minimax'
+  const language = ['zh', 'en', 'ja'].includes(body.language) ? body.language : 'zh'
+  const providerMessages = [
+    { role: 'system', content: `${AGENT_SYSTEM_PROMPT}\n${AGENT_PLANNER_PROMPT}\n${CHAT_LANGUAGE_PROMPTS[language]}` },
+    { role: 'user', content: `工作目标：\n${task}\n\n请只返回符合约束的 JSON 计划。` },
+  ]
+  try {
+    const stream = model === 'deepseek'
+      ? streamDeepseek({ model: CHAT_MODELS.deepseek, messages: providerMessages })
+      : streamMinimax({ model: CHAT_MODELS.minimax, messages: providerMessages })
+    let text = ''
+    for await (const chunk of stream) text += chunk
+    sendJson(request, response, 200, { ok: true, model: CHAT_MODELS[model], text })
+  } catch (error) {
+    sendJson(request, response, 502, { error: error.message })
+  }
+}
+
 const server = http.createServer(async (request, response) => {
   if (request.method === 'OPTIONS') { response.writeHead(204, { 'access-control-allow-origin': corsOrigin(request), 'access-control-allow-methods': 'POST, GET, OPTIONS', 'access-control-allow-headers': 'content-type', vary: 'Origin' }); response.end(); return }
   try {
     if (request.method === 'GET' && request.url === '/api/health') return sendJson(request, response, 200, { ok: true, service: 'zt-ai-gateway', profile: { name: ZT_PROFILE.name, identity: ZT_PROFILE.identity }, models: CHAT_MODELS, providers: { minimax: Boolean(process.env.MINIMAX_API_KEY), deepseek: Boolean(process.env.DEEPSEEK_API_KEY) } })
     if (request.method === 'POST' && request.url === '/api/chat') return await handleChat(request, response)
     if (request.method === 'POST' && request.url === '/api/agent/chat') return await handleAgentChat(request, response)
+    if (request.method === 'POST' && request.url === '/api/agent/plan') return await handleAgentPlan(request, response)
     sendJson(request, response, 404, { error: 'Not found' })
   } catch (error) {
     sendJson(request, response, 400, { error: error.message })

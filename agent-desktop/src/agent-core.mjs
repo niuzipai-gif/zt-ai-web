@@ -2,7 +2,8 @@ import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { capabilityForTool, CAPABILITY_LABELS } from './permissions.mjs'
-import { executeTool } from './tools.mjs'
+import { requiresDeviceAuthorization } from './authorization.mjs'
+import { executeTool, resolveWorkspacePath } from './tools.mjs'
 
 const TOOL_LABELS = Object.freeze({
   list_workspace: '查看工作区',
@@ -10,6 +11,10 @@ const TOOL_LABELS = Object.freeze({
   write_file: '写入文件',
   run_command: '执行命令',
 })
+
+const ALLOWED_TOOLS = new Set(Object.keys(TOOL_LABELS))
+const MAX_PLAN_STEPS = 8
+const MAX_GENERATED_FILE_BYTES = 250_000
 
 function compact(value, max = 2_000) {
   const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
@@ -19,6 +24,52 @@ function compact(value, max = 2_000) {
 export function extractFilePath(text) {
   const candidates = String(text || '').match(/(?:[A-Za-z]:[\\/][^\s，。；;：:]+|(?:[\w./-]+\.(?:md|txt|json|csv|js|jsx|ts|tsx|py|html|css|yml|yaml|docx?)))/g) || []
   return candidates[0] || null
+}
+
+function parseJsonText(raw) {
+  const source = String(raw || '').trim().replace(/^```(?:json)?\s*/iu, '').replace(/\s*```$/u, '')
+  try { return JSON.parse(source) } catch {
+    const start = source.indexOf('{')
+    const end = source.lastIndexOf('}')
+    if (start < 0 || end <= start) throw new Error('模型没有返回有效 JSON 计划')
+    try { return JSON.parse(source.slice(start, end + 1)) } catch { throw new Error('模型返回的 Agent 计划无法解析') }
+  }
+}
+
+export function parseAgentPlan(raw, { workspaceRoot = '.' } = {}) {
+  const parsed = parseJsonText(raw)
+  const rawSteps = Array.isArray(parsed) ? parsed : parsed?.steps
+  if (!Array.isArray(rawSteps) || !rawSteps.length) throw new Error('模型计划没有 steps')
+  if (rawSteps.length > MAX_PLAN_STEPS) throw new Error(`模型计划最多允许 ${MAX_PLAN_STEPS} 步`)
+  const steps = rawSteps.map((rawStep, index) => {
+    const tool = String(rawStep?.tool || '')
+    if (!ALLOWED_TOOLS.has(tool)) throw new Error(`模型计划包含不支持的工具：${tool || '空值'}`)
+    const label = String(rawStep.label || TOOL_LABELS[tool]).slice(0, 180)
+    const step = { id: String(rawStep.id || `model-step-${index + 1}`), tool, label }
+    if (tool === 'list_workspace' || tool === 'read_file' || tool === 'write_file') {
+      step.inputPath = String(rawStep.inputPath || '.')
+      resolveWorkspacePath(workspaceRoot, step.inputPath)
+    }
+    if (tool === 'write_file') {
+      step.content = String(rawStep.content ?? '')
+      if (!step.content.trim()) throw new Error('模型写入步骤缺少完整文件内容')
+      if (Buffer.byteLength(step.content, 'utf8') > MAX_GENERATED_FILE_BYTES) throw new Error('模型生成文件超过 250 KB 上限')
+      step.overwrite = rawStep.overwrite === true
+    }
+    if (tool === 'run_command') {
+      step.command = String(rawStep.command || '').trim().slice(0, 600)
+      if (!step.command) throw new Error('模型执行步骤缺少 command')
+    }
+    return step
+  })
+  const listIndex = steps.findIndex(step => step.tool === 'list_workspace')
+  if (listIndex > 0) {
+    const [listStep] = steps.splice(listIndex, 1)
+    steps.unshift(listStep)
+  } else if (listIndex < 0) {
+    steps.unshift({ id: 'context-list', tool: 'list_workspace', label: '检查工作区上下文', inputPath: '.' })
+  }
+  return steps
 }
 
 export function buildPlan(task, taskId = 'task') {
@@ -33,10 +84,11 @@ export function buildPlan(task, taskId = 'task') {
     plan.push({
       id: 'step-write',
       tool: 'write_file',
-      label: `准备写入 ${target}`,
+      label: `等待模型生成 ${target}`,
       inputPath: target,
       overwrite: Boolean(filePath),
-      content: `# ZT.AI Agent draft\n\nTask: ${text}\n\nThis file was prepared by the execution-first desktop agent and is waiting for your review.\n`,
+      content: null,
+      requiresModel: true,
     })
   }
   if (/(测试|构建|运行|执行|检查|test|build|run|lint|verify)/iu.test(text)) {
@@ -46,14 +98,19 @@ export function buildPlan(task, taskId = 'task') {
   return plan
 }
 
+function buildSafeFallbackPlan(task, taskId) {
+  return buildPlan(task, taskId).filter(step => step.tool !== 'write_file')
+}
+
 function modelForGateway(model) {
   return String(model || '').toUpperCase() === 'DEEPSEEK' ? 'deepseek' : 'minimax'
 }
 
 export class AgentTaskManager {
-  constructor({ workspaceRoot, permissionStore, gatewayUrl, historyPath }) {
+  constructor({ workspaceRoot, permissionStore, deviceAuthorization, gatewayUrl, historyPath }) {
     this.workspaceRoot = workspaceRoot
     this.permissionStore = permissionStore
+    this.deviceAuthorization = deviceAuthorization
     this.gatewayUrl = gatewayUrl.replace(/\/$/, '')
     this.historyPath = historyPath
     this.tasks = new Map()
@@ -87,7 +144,7 @@ export class AgentTaskManager {
       model: model === 'DEEPSEEK' ? 'DEEPSEEK' : 'MINIMAX',
       response,
       createdAt: new Date().toISOString(),
-      plan: buildPlan(task, id),
+      plan: [],
       index: 0,
       results: [],
       approvedOnce: new Set(),
@@ -98,15 +155,41 @@ export class AgentTaskManager {
     response.on('close', () => { state.closed = true })
     this.tasks.set(id, state)
     this.send(state, 'task.start', { id, task: state.task, model: state.model, mode: 'execute' })
-    this.send(state, 'plan.ready', { steps: state.plan.map(step => ({ id: step.id, tool: step.tool, label: step.label, capability: capabilityForTool(step.tool) })) })
-    void this.advance(state)
+    void this.preparePlan(state)
     return id
+  }
+
+  async preparePlan(state) {
+    try {
+      state.plan = await this.requestAgentPlan(state)
+      state.planSource = 'model'
+    } catch (error) {
+      state.plan = buildSafeFallbackPlan(state.task, state.id)
+      state.planSource = 'safe-fallback'
+      this.send(state, 'agent.warning', { message: `模型计划不可用，已切换为安全本地计划：${error.message}` })
+    }
+    if (state.closed) return
+    this.send(state, 'plan.ready', { source: state.planSource, steps: state.plan.map(step => ({ id: step.id, tool: step.tool, label: step.label, capability: capabilityForTool(step.tool) })) })
+    void this.advance(state)
+  }
+
+  async requestAgentPlan(state) {
+    const response = await fetch(`${this.gatewayUrl}/api/agent/plan`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: modelForGateway(state.model), language: 'zh', task: state.task }),
+      signal: AbortSignal.timeout(90_000),
+    })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(body.error || `Agent 规划网关不可用（${response.status}）`)
+    return parseAgentPlan(body.text, { workspaceRoot: this.workspaceRoot })
   }
 
   async approve(id, capability, remember = false) {
     const state = this.tasks.get(id)
     if (!state || !state.waiting) throw new Error('没有找到待批准的动作')
     if (state.waiting.capability !== capability) throw new Error('批准的权限与待执行动作不一致')
+    if (requiresDeviceAuthorization(capability) && !this.deviceAuthorization.isAuthorized()) throw new Error('请先确认 Agent 只在当前设备执行')
     if (remember) await this.permissionStore.set(capability, true)
     else state.approvedOnce.add(capability)
     state.waiting = null
