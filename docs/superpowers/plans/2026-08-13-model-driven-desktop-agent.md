@@ -18,10 +18,10 @@
 - Modify: `agent-desktop/src/agent-core.mjs`
 - Test: `agent-desktop/src/agent-core.test.mjs`
 
-- [ ] Add a strict JSON-only planner prompt and a plan parser that accepts only the four local tools.
-- [ ] Ask the gateway for the plan before execution; fall back to the safe local plan if the model is unavailable or returns invalid JSON.
-- [ ] Preserve path containment and permission approval before every write or command.
-- [ ] Add tests for valid plans, invalid tools, and fenced JSON.
+- [x] Add a strict JSON-only planner prompt and a plan parser that accepts only the four local tools.
+- [x] Ask the gateway for the plan before execution; fall back to the safe local plan if the model is unavailable or returns invalid JSON.
+- [x] Preserve path containment and permission approval before every write or command.
+- [x] Add tests for valid plans, invalid tools, and fenced JSON.
 
 ### Task 2: Real code/file collaboration
 
@@ -31,9 +31,9 @@
 - Modify: `agent-desktop/public/app.js`
 - Modify: `docs/desktop-agent-design.md`
 
-- [ ] Let the model return actual file content for a requested implementation instead of a fixed placeholder draft.
-- [ ] Show the model-generated plan and write preview in the existing approval card.
-- [ ] Explain that the workspace and permissions belong to the machine running the desktop Agent.
+- [x] Let the model return actual file content for a requested implementation instead of a fixed placeholder draft.
+- [x] Show the model-generated plan and write preview in the existing approval card.
+- [x] Explain that the workspace and permissions belong to the machine running the desktop Agent.
 
 ### Task 3: Lightweight desktop and authorization UX
 
@@ -43,15 +43,15 @@
 - Modify: `agent-desktop/public/app.js`
 - Modify: `docs/desktop-agent-design.md`
 
-- [ ] Add a first-run local-device confirmation before enabling write or command permissions.
-- [ ] Prefer an Edge app window, with a browser fallback, while keeping the portable package dependency-free.
+- [x] Add a first-run local-device confirmation before enabling write or command permissions.
+- [x] Prefer an Edge app window, with a browser fallback, while keeping the portable package dependency-free.
 
 ### Task 4: Verification and delivery
 
 **Files:**
 - Modify: `tools/package-agent.ps1` only if packaging verification requires it.
 
-- [ ] Run website tests, Agent tests, and production build.
-- [ ] Run a real read task and a real model-generated file-writing task through the local Agent with approvals.
-- [ ] Rebuild the portable archive and verify it excludes keys, node_modules, Git metadata, and runtime history.
-- [ ] Push the verified changes and check the live gateway/Pages endpoints.
+- [x] Run website tests, Agent tests, and production build.
+- [x] Run a real read task and a real model-generated file-writing task through the local Agent with approvals.
+- [x] Rebuild the portable archive and verify it excludes keys, node_modules, Git metadata, and runtime history.
+- [x] Push the verified changes and check the live gateway/Pages endpoints.
