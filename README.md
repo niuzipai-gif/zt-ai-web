@@ -19,8 +19,8 @@ API 密钥只放在项目根目录的 `aikey.env`，该文件已被 `.gitignore`
 
 ## GitHub Pages
 
-推送 `main` 后，`.github/workflows/deploy-pages.yml` 会自动构建并部署到：
+当前网页构建产物发布到 `pages` 分支，访问地址为：
 
 `https://niuzipai-gif.github.io/zt-ai-web/`
 
-工作流不会读取 `aikey.env`，也不会把任何模型密钥打进前端产物。
+部署过程不会读取 `aikey.env`，也不会把任何模型密钥打进前端产物。仓库中保留了后续可启用的 Actions 工作流配置。
