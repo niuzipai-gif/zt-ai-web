@@ -93,12 +93,6 @@ const transferableMethods = [
   ['结果可验收', '以流程是否真正被使用、交付质量是否稳定、业务协作是否顺畅作为验收标准，持续根据结果复盘优化。'],
 ]
 
-const chatSeed = [
-  { id: 'seed-1', role: 'zt', text: greeting, status: 'done' },
-  { id: 'seed-2', role: 'user', text: '你为什么想做 AI 产品经理或 FDE？', status: 'done' },
-  { id: 'seed-3', role: 'zt', text: '因为我更擅长把真实业务问题拆成可执行的流程、工具和结果。我目前在 Amazon 精铺业务中研发选品与开品流程，也在用 AI 和 LinkFox 提升内容生产效率。', status: 'done' },
-]
-
 function TypingTitle({ className = '' }) {
   const phrase = 'ZT.AI'
   const [text, setText] = useState('')
