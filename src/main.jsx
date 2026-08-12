@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
-  ArrowUpRight, BriefcaseBusiness, Check, FileText, GitBranch, Home,
+  ArrowUpRight, BriefcaseBusiness, Check, FileText, GitBranch, History, Home,
   LockKeyhole, Menu, MessageCircle, MoreHorizontal, MoveUpRight, Orbit,
-  Paperclip, Send, ShieldCheck, Sparkles, UserRound, X
+  Paperclip, Plus, Send, ShieldCheck, Sparkles, UserRound, X
 } from 'lucide-react'
 import avatar from './assets/resume-avatar.png'
 import logo from './assets/zt-logo.png'
 import mammoth from 'mammoth/mammoth.browser'
-import { loadSessionState, saveSessionState } from './lib/chat-session.js'
+import { createChatSession, createSessionTitle, loadVisitorState, saveVisitorState } from './lib/chat-session.js'
 import { renderMarkdown } from './lib/markdown.js'
 import './styles.css'
 
@@ -206,28 +206,58 @@ function AttachmentList({ attachments = [], compact = false }) {
   return <div className={`attachment-list ${compact ? 'is-compact' : ''}`}>{attachments.map(file => <div className="attachment-chip" key={file.id}>{file.preview ? <img src={file.preview} alt={file.name} /> : <FileText size={14} />}<span title={file.name}>{file.name}</span><small>{formatBytes(file.size)}</small></div>)}</div>
 }
 
-function ChatBox({ model, setModel }) {
-  const savedSession = loadSessionState()
-  const [messages, setMessages] = useState(() => savedSession?.messages?.length ? savedSession.messages : chatSeed)
+function visitorShortId(visitorId) {
+  return String(visitorId || 'visitor').replace(/^visitor-/, '').slice(-6).toUpperCase()
+}
+
+function ChatHistoryDrawer({ visitorId, sessions, activeSessionId, onSelectSession, onNewChat, onClose }) {
+  return <>
+    <button className="drawer-backdrop" onClick={onClose} aria-label="关闭聊天记录" />
+    <aside className="chat-history-drawer" aria-label="聊天记录抽屉">
+      <div className="drawer-header"><div><span className="eyebrow">PRIVATE SESSIONS</span><h3>聊天记录</h3></div><button className="drawer-close" onClick={onClose} aria-label="关闭"><X size={17} /></button></div>
+      <button className="drawer-new-chat" onClick={onNewChat}><Plus size={15} />新建聊天</button>
+      <span className="drawer-section-label">当前访客的聊天</span>
+      <div className="drawer-session-list">{sessions.map(session => <button key={session.id} className={`drawer-session ${session.id === activeSessionId ? 'active' : ''}`} onClick={() => onSelectSession(session.id)}><strong>{session.title || '新建聊天'}</strong><span>{new Date(session.updatedAt || session.createdAt).toLocaleDateString('zh-CN')} · {session.messages.length} 条消息</span></button>)}</div>
+      <div className="drawer-privacy"><span /><div><strong>记录仅属于当前访客</strong><p>访客 ID · {visitorShortId(visitorId)}<br />不会与其他访问者共享聊天内容。</p></div></div>
+    </aside>
+  </>
+}
+
+function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSession, onNewChat }) {
+  const messages = session.messages || []
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState([])
   const [activeMessageId, setActiveMessageId] = useState(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const messagesRef = useRef(null)
   const streamQueueRef = useRef([])
   const streamFinishedRef = useRef(false)
 
-  useEffect(() => { saveSessionState(localStorage, { messages, model }) }, [messages, model])
+  const model = session.model || 'MINIMAX'
+  const updateMessages = updater => onSessionChange(session.id, current => {
+    const nextMessages = typeof updater === 'function' ? updater(current.messages || []) : updater
+    return { ...current, messages: nextMessages, title: createSessionTitle(nextMessages), updatedAt: Date.now() }
+  })
+  const setModel = nextModel => onSessionChange(session.id, current => ({ ...current, model: nextModel, updatedAt: Date.now() }))
+
+  useEffect(() => {
+    setInput('')
+    setAttachments([])
+    setActiveMessageId(null)
+    streamQueueRef.current = []
+    streamFinishedRef.current = false
+  }, [session.id])
 
   useEffect(() => {
     if (!activeMessageId) return undefined
     const timer = window.setInterval(() => {
       if (streamQueueRef.current.length) {
         const character = streamQueueRef.current.shift()
-        setMessages(items => items.map(message => message.id === activeMessageId
+        updateMessages(items => items.map(message => message.id === activeMessageId
           ? { ...message, text: `${message.text}${character}`, status: 'streaming' }
           : message))
       } else if (streamFinishedRef.current) {
-        setMessages(items => items.map(message => message.id === activeMessageId ? { ...message, status: 'done' } : message))
+        updateMessages(items => items.map(message => message.id === activeMessageId ? { ...message, status: 'done' } : message))
         setActiveMessageId(null)
       }
     }, 30)
@@ -262,7 +292,7 @@ function ChatBox({ model, setModel }) {
     const history = [...messages, userMessage].map(message => ({ role: message.role === 'zt' ? 'assistant' : message.role, content: message.content || message.text })).filter(message => message.content)
     streamQueueRef.current = []
     streamFinishedRef.current = false
-    setMessages(items => [...items, userMessage, { id: responseId, role: 'zt', text: '', status: 'thinking' }])
+    updateMessages(items => [...items, userMessage, { id: responseId, role: 'zt', text: '', status: 'thinking' }])
     setActiveMessageId(responseId)
     setInput('')
     setAttachments([])
@@ -273,7 +303,7 @@ function ChatBox({ model, setModel }) {
           if (event === 'message.delta' && data.text) streamQueueRef.current.push(...String(data.text))
           if (event === 'media.started') streamQueueRef.current.push(...'正在准备创作，请稍候…')
           if (event === 'media.completed' && data.url) {
-            setMessages(items => items.map(message => message.id === responseId
+            updateMessages(items => items.map(message => message.id === responseId
               ? { ...message, media: { kind: data.kind, url: data.url }, status: 'streaming' }
               : message))
             streamQueueRef.current.push(...'创作结果已完成：')
@@ -297,11 +327,12 @@ function ChatBox({ model, setModel }) {
     ? <span className="typing-indicator" aria-label="ZT.AI 正在思考"><i /><i /><i /></span>
     : <><MarkdownMessage text={message.text} /><AttachmentList attachments={message.attachments} /></>
   return <section className="chat-card">
-    <div className="chat-topline"><div><span className="eyebrow">OPEN CHAT</span><h2>和 ZT.AI 聊聊</h2></div><div className="chat-top-actions"><a className="resume-inline-download" href={resumeDoc} download>简历文件</a><span className="free-pill"><span />无需登录 · 免费</span></div></div>
-    <div className="messages" ref={messagesRef}>{messages.map((message, index) => <div key={message.id ?? `${message.role}-${index}`} className={`message-row ${message.role === 'user' ? 'from-user' : ''}`}><div className={`message-bubble ${message.status === 'thinking' ? 'is-thinking' : ''}`}><span className="message-label">{message.role === 'zt' ? 'ZT.AI' : '访客'}</span>{renderMessage(message)}{renderMedia(message.media)}</div></div>)}</div>
+    <div className="chat-topline"><div><span className="eyebrow">OPEN CHAT · {visitorShortId(visitorId)}</span><h2>和 ZT.AI 聊聊</h2></div><div className="chat-top-actions"><button className="chat-history-button" onClick={() => setHistoryOpen(true)}><History size={14} />聊天记录</button><button className="chat-new-button" onClick={onNewChat}><Plus size={14} />新建聊天</button><a className="resume-inline-download" href={resumeDoc} download>简历文件</a><span className="free-pill"><span />无需登录 · 免费</span></div></div>
+    {messages.length ? <div className="messages" ref={messagesRef}>{messages.map((message, index) => <div key={message.id ?? `${message.role}-${index}`} className={`message-row ${message.role === 'user' ? 'from-user' : ''}`}><div className={`message-bubble ${message.status === 'thinking' ? 'is-thinking' : ''}`}><span className="message-label">{message.role === 'zt' ? 'ZT.AI' : '访客'}</span>{renderMessage(message)}{renderMedia(message.media)}</div></div>)}</div> : <div className="empty-chat" ref={messagesRef}><span className="empty-chat-mark"><MessageCircle size={20} /></span><span className="eyebrow">NEW PRIVATE SESSION</span><h3>你好，我是 ZT.AI</h3><p>我是蔡宙廷的 AI 数字分身。你可以问我项目经历、AI 产品开发或 FDE 方向。</p><button onClick={() => setInput('请介绍一下蔡宙廷目前的 AI 产品开发经历')}>从一个问题开始 <ArrowUpRight size={14} /></button></div>}
     {attachments.length > 0 && <div className="pending-attachments"><AttachmentList attachments={attachments} compact />{attachments.map(file => <button key={file.id} onClick={() => removeAttachment(file.id)} aria-label={`移除 ${file.name}`}><X size={13} /></button>)}</div>}
     <div className="chat-compose"><label className="attach-button" title="上传文件或图片"><Paperclip size={16} /><input type="file" multiple accept="image/*,.txt,.md,.markdown,.json,.csv,.js,.jsx,.ts,.tsx,.py,.html,.css,.pdf,.doc,.docx" onChange={handleFiles} disabled={Boolean(activeMessageId)} /></label><input value={input} disabled={Boolean(activeMessageId)} onChange={event => setInput(event.target.value)} onKeyDown={event => event.key === 'Enter' && send()} placeholder={activeMessageId ? 'ZT.AI 正在生成回答…' : '向 ZT.AI 提问，或先上传文件/图片'} /><button onClick={send} disabled={Boolean(activeMessageId) || (!input.trim() && !attachments.length)} aria-label="发送"><Send size={16} /></button></div>
     <div className="chat-footer"><ModelSwitch model={model} setModel={setModel} /><span className="chat-note"><MessageCircle size={14} /> 公开对话 · 内容来自 ZT.AI</span></div>
+    {historyOpen && <ChatHistoryDrawer visitorId={visitorId} sessions={sessions} activeSessionId={session.id} onSelectSession={id => { onSelectSession(id); setHistoryOpen(false) }} onNewChat={() => { onNewChat(); setHistoryOpen(false) }} onClose={() => setHistoryOpen(false)} />}
   </section>
 }
 
@@ -329,16 +360,24 @@ function HomePage({ onChat }) {
 
 function App() {
   const [page, setPage] = useState('home')
-  const [model, setModel] = useState(() => loadSessionState()?.model || 'MINIMAX')
+  const [visitorState, setVisitorState] = useState(() => loadVisitorState(localStorage))
   const [menuOpen, setMenuOpen] = useState(false)
   const pages = useMemo(() => ({ home: '首页', chat: '公开聊天', projects: '精选项目', resume: '简历摘要' }), [])
+  const activeSession = visitorState.sessions.find(session => session.id === visitorState.activeSessionId) || visitorState.sessions[0]
+  useEffect(() => { saveVisitorState(localStorage, visitorState) }, [visitorState])
+  const selectSession = id => setVisitorState(current => current.sessions.some(session => session.id === id) ? { ...current, activeSessionId: id } : current)
+  const newChat = () => { const session = createChatSession({ model: 'MINIMAX' }); setVisitorState(current => ({ ...current, activeSessionId: session.id, sessions: [session, ...current.sessions] })) }
+  const updateSession = (sessionId, updater) => setVisitorState(current => {
+    if (current.activeSessionId !== sessionId) return current
+    return { ...current, sessions: current.sessions.map(session => session.id === sessionId ? updater(session) : session) }
+  })
   useEffect(() => { const handler = event => setPage(event.detail); document.getElementById('root').addEventListener('navigate', handler); return () => document.getElementById('root').removeEventListener('navigate', handler) }, [])
   const navigate = value => { setPage(value); setMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   return <div className={`app-shell page-${page}`}>
     <header className="topbar"><button className="mobile-menu" onClick={() => setMenuOpen(value => !value)} aria-label="打开菜单">{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><Brand compact /><nav className={menuOpen ? 'open' : ''}>{Object.entries(pages).map(([key, label]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => navigate(key)}>{label}</button>)}</nav><div className="topbar-right"><span className="availability"><span /> Available for conversation</span><button className="more-button"><MoreHorizontal size={20} /></button></div></header>
     <main className="main-content">
       {page === 'home' && <HomePage onChat={() => navigate('chat')} />}
-      {page === 'chat' && <div className="chat-layout"><PublicProfile /><ChatBox model={model} setModel={setModel} /></div>}
+      {page === 'chat' && <div className="chat-layout"><PublicProfile /><ChatBox session={activeSession} visitorId={visitorState.visitorId} sessions={visitorState.sessions} onSessionChange={updateSession} onSelectSession={selectSession} onNewChat={newChat} /></div>}
       {page === 'projects' && <ProjectsPage />}
       {page === 'resume' && <ResumePage />}
     </main>

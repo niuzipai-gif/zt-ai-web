@@ -13,4 +13,8 @@ vite.log
 vite.error.log
 server-gateway.log
 server-gateway.error.log
+zt-ai-web.log
+zt-ai-web.error.log
 resume.docx
+.superpowers/
+.portable-staging/

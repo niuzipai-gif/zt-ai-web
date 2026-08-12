@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$projectRoot = 'E:\ZT.AI\zt-ai-web'
+$projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $port = 8790
 $logPath = Join-Path $projectRoot 'server-gateway.log'
 $errorLogPath = Join-Path $projectRoot 'server-gateway.error.log'

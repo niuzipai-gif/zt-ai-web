@@ -25,7 +25,11 @@ API 密钥只放在项目根目录的 `aikey.env`，该文件已被 `.gitignore`
 
 部署过程不会读取 `aikey.env`，也不会把任何模型密钥打进前端产物。
 
-公开聊天支持 Markdown 回复、MiniMax/DeepSeek 模型切换、图片与文本/DOCX 附件、公开简历下载，以及跨页面的本地会话恢复。切换模型只改变下一次请求使用的模型，不会清空历史消息。
+公开聊天支持 Markdown 回复、MiniMax/DeepSeek 模型切换、图片与文本/DOCX 附件、公开简历下载，以及按访客 ID 隔离的多会话聊天记录。每个浏览器会生成独立 visitorId；聊天记录只存在该访客的浏览器本地，网关不保存或广播历史。切换模型只改变当前会话下一次请求使用的模型，不会清空历史消息；“新建聊天”会创建当前访客下的独立会话。
+
+## 离职迁移
+
+项目根目录的 `PORTABLE-SETUP.md` 说明了换电脑运行方式。迁移包不包含真实 API key，使用前需要复制 `aikey.env.example` 为 `aikey.env` 并填写密钥，然后运行 `npm install`。`start-gateway-silent.vbs` 使用自身所在目录定位网关，不依赖原来的 E 盘路径。
 
 ## 让面试官直接使用真实对话
 
