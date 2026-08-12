@@ -23,4 +23,4 @@ API 密钥只放在项目根目录的 `aikey.env`，该文件已被 `.gitignore`
 
 `https://niuzipai-gif.github.io/zt-ai-web/`
 
-部署过程不会读取 `aikey.env`，也不会把任何模型密钥打进前端产物。仓库中保留了后续可启用的 Actions 工作流配置。
+部署过程不会读取 `aikey.env`，也不会把任何模型密钥打进前端产物。
