@@ -7,15 +7,16 @@
     "dev": "vite",
     "gateway": "node server/src/index.js",
     "gateway:health": "node -e \"fetch('http://localhost:8790/api/health').then(r=>r.text()).then(console.log)\"",
+    "test": "node --test \"server/src/**/*.test.js\" \"src/**/*.test.js\"",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
+    "lucide-react": "latest",
+    "mammoth": "^1.12.1",
     "react": "latest",
     "react-dom": "latest",
-    "lucide-react": "latest"
-  },
-  "devDependencies": {}
+    "vite": "latest"
+  }
 }

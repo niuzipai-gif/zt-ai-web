@@ -1,6 +1,6 @@
 import http from 'node:http'
 import fs from 'node:fs'
-import { CHAT_MODELS, isMediaIntent, normalizeChatRequest } from './contracts/chat.js'
+import { CHAT_MODELS, contentToText, isMediaIntent, normalizeChatRequest } from './contracts/chat.js'
 import { streamMinimax } from './providers/minimax.js'
 import { streamDeepseek } from './providers/deepseek.js'
 import { runHiddenMediaRequest } from './providers/mmx.js'
@@ -61,7 +61,7 @@ function sse(response, event, data) {
 function readBody(request) {
   return new Promise((resolve, reject) => {
     let raw = ''
-    request.on('data', chunk => { raw += chunk; if (raw.length > 700_000) reject(new Error('请求过大')) })
+    request.on('data', chunk => { raw += chunk; if (raw.length > 12_000_000) reject(new Error('请求过大，请压缩图片后再上传')) })
     request.on('end', () => { try { resolve(JSON.parse(raw || '{}')) } catch { reject(new Error('请求不是有效 JSON')) } })
     request.on('error', reject)
   })
@@ -72,8 +72,19 @@ async function handleChat(request, response) {
   const body = await readBody(request)
   const { model, messages } = normalizeChatRequest(body)
   const providerMessages = [{ role: 'system', content: ZT_SYSTEM_PROMPT }, ...messages.filter(message => message.role !== 'system')]
+  const incomingAttachments = Array.isArray(body.attachments) ? body.attachments.slice(0, 8) : []
+  const attachmentNotes = incomingAttachments
+    .filter(file => file && file.name)
+    .map(file => `[附件：${String(file.name).slice(0, 160)}，类型：${String(file.type || '未知').slice(0, 80)}]`)
+  const latestUser = providerMessages.findLast(message => message.role === 'user')
+  if (latestUser && attachmentNotes.length) {
+    const note = `\n\n${attachmentNotes.join('\n')}`
+    latestUser.content = typeof latestUser.content === 'string'
+      ? `${latestUser.content}${note}`
+      : [{ type: 'text', text: note }, ...(latestUser.content || [])]
+  }
   sseStart(request, response)
-  const latest = providerMessages.filter(message => message.role === 'user').at(-1)?.content || ''
+  const latest = contentToText(providerMessages.findLast(message => message.role === 'user')?.content || '')
   sse(response, 'message.start', { model: CHAT_MODELS[model], media: isMediaIntent(latest) })
   if (isMediaIntent(latest)) {
     try {

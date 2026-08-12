@@ -3,13 +3,17 @@ import { createRoot } from 'react-dom/client'
 import {
   ArrowUpRight, BriefcaseBusiness, Check, FileText, GitBranch, Home,
   LockKeyhole, Menu, MessageCircle, MoreHorizontal, MoveUpRight, Orbit,
-  Send, ShieldCheck, Sparkles, UserRound, X
+  Paperclip, Send, ShieldCheck, Sparkles, UserRound, X
 } from 'lucide-react'
 import avatar from './assets/resume-avatar.jpeg'
 import logo from './assets/zt-logo.png'
+import mammoth from 'mammoth/mammoth.browser'
+import { loadSessionState, saveSessionState } from './lib/chat-session.js'
+import { renderMarkdown } from './lib/markdown.js'
 import './styles.css'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+const resumeDoc = `${import.meta.env.BASE_URL}resume.docx`
 const greeting = '你好，我是 ZT.AI, 是蔡宙廷的 AI 数字分身, 我能替小蔡为你做什么吗？'
 
 const projects = [
@@ -88,13 +92,60 @@ async function consumeSse(response, onEvent) {
   }
 }
 
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function prepareImage(file) {
+  return new Promise(resolve => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const image = new Image()
+      image.onload = () => {
+        const scale = Math.min(1, 1400 / Math.max(image.width, image.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(image.width * scale))
+        canvas.height = Math.max(1, Math.round(image.height * scale))
+        canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/jpeg', 0.82))
+      }
+      image.onerror = () => resolve(reader.result)
+      image.src = reader.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+async function prepareAttachment(file) {
+  const attachment = { id: `${file.name}-${file.lastModified}-${Math.random()}`, name: file.name, type: file.type || 'application/octet-stream', size: file.size }
+  if (file.type.startsWith('image/')) attachment.preview = await prepareImage(file)
+  else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || /\.docx$/i.test(file.name)) attachment.text = (await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value.slice(0, 16000)
+  else if (file.type.startsWith('text/') || /\.(md|markdown|txt|json|csv|js|jsx|ts|tsx|py|html|css)$/i.test(file.name)) attachment.text = (await file.text()).slice(0, 16000)
+  return attachment
+}
+
+function MarkdownMessage({ text }) {
+  return <div className="markdown-message" dangerouslySetInnerHTML={{ __html: renderMarkdown(text || '') }} />
+}
+
+function AttachmentList({ attachments = [], compact = false }) {
+  if (!attachments.length) return null
+  return <div className={`attachment-list ${compact ? 'is-compact' : ''}`}>{attachments.map(file => <div className="attachment-chip" key={file.id}>{file.preview ? <img src={file.preview} alt={file.name} /> : <FileText size={14} />}<span title={file.name}>{file.name}</span><small>{formatBytes(file.size)}</small></div>)}</div>
+}
+
 function ChatBox({ model, setModel }) {
-  const [messages, setMessages] = useState(chatSeed)
+  const savedSession = loadSessionState()
+  const [messages, setMessages] = useState(() => savedSession?.messages?.length ? savedSession.messages : chatSeed)
   const [input, setInput] = useState('')
+  const [attachments, setAttachments] = useState([])
   const [activeMessageId, setActiveMessageId] = useState(null)
   const messagesRef = useRef(null)
   const streamQueueRef = useRef([])
   const streamFinishedRef = useRef(false)
+
+  useEffect(() => { saveSessionState(localStorage, { messages, model }) }, [messages, model])
 
   useEffect(() => {
     if (!activeMessageId) return undefined
@@ -116,21 +167,37 @@ function ChatBox({ model, setModel }) {
     if (messagesRef.current) messagesRef.current.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
 
+  const handleFiles = async event => {
+    const files = Array.from(event.target.files || []).slice(0, 4)
+    if (files.length) {
+      const prepared = await Promise.all(files.map(prepareAttachment))
+      setAttachments(current => [...current, ...prepared].slice(0, 4))
+    }
+    event.target.value = ''
+  }
+
+  const removeAttachment = id => setAttachments(current => current.filter(file => file.id !== id))
+
   const send = () => {
     const value = input.trim()
-    if (!value || activeMessageId) return
+    if ((!value && !attachments.length) || activeMessageId) return
     const now = Date.now()
-    const userMessage = { id: `user-${now}`, role: 'user', text: value, status: 'done' }
+    const attachmentText = attachments.map(file => `[附件：${file.name}，类型：${file.type}，大小：${formatBytes(file.size)}]${file.text ? `\n${file.text}` : ''}`).join('\n')
+    const contentText = [value || '请查看我上传的附件。', attachmentText].filter(Boolean).join('\n\n')
+    const imageParts = attachments.filter(file => file.preview).map(file => ({ type: 'image_url', image_url: { url: file.preview } }))
+    const content = imageParts.length ? [{ type: 'text', text: contentText }, ...imageParts] : contentText
+    const userMessage = { id: `user-${now}`, role: 'user', text: value || '请查看我上传的附件。', content, attachments, status: 'done' }
     const responseId = `response-${now}`
-    const history = [...messages, userMessage].map(message => ({ role: message.role === 'zt' ? 'assistant' : message.role, content: message.text })).filter(message => message.content)
+    const history = [...messages, userMessage].map(message => ({ role: message.role === 'zt' ? 'assistant' : message.role, content: message.content || message.text })).filter(message => message.content)
     streamQueueRef.current = []
     streamFinishedRef.current = false
     setMessages(items => [...items, userMessage, { id: responseId, role: 'zt', text: '', status: 'thinking' }])
     setActiveMessageId(responseId)
     setInput('')
+    setAttachments([])
     void (async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, messages: history }) })
+        const response = await fetch(`${API_BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, messages: history, attachments: userMessage.attachments.map(({ name, type, size }) => ({ name, type, size })) }) })
         await consumeSse(response, (event, data) => {
           if (event === 'message.delta' && data.text) streamQueueRef.current.push(...String(data.text))
           if (event === 'media.started') streamQueueRef.current.push(...'正在准备创作，请稍候…')
@@ -155,10 +222,14 @@ function ChatBox({ model, setModel }) {
     if (media.kind === 'video') return <div className="media-output"><video controls preload="metadata" src={media.url} /><a href={media.url} target="_blank" rel="noreferrer">打开视频</a></div>
     return <div className="media-output"><a href={media.url} target="_blank" rel="noreferrer"><img src={media.url} alt="ZT.AI 创作结果" /></a><a href={media.url} target="_blank" rel="noreferrer">打开原图</a></div>
   }
+  const renderMessage = message => message.status === 'thinking'
+    ? <span className="typing-indicator" aria-label="ZT.AI 正在思考"><i /><i /><i /></span>
+    : <><MarkdownMessage text={message.text} /><AttachmentList attachments={message.attachments} /></>
   return <section className="chat-card">
-    <div className="chat-topline"><div><span className="eyebrow">OPEN CHAT</span><h2>和 ZT.AI 聊聊</h2></div><span className="free-pill"><span />无需登录 · 免费</span></div>
-    <div className="messages" ref={messagesRef}>{messages.map((message, index) => <div key={message.id ?? `${message.role}-${index}`} className={`message-row ${message.role === 'user' ? 'from-user' : ''}`}><div className={`message-bubble ${message.status === 'thinking' ? 'is-thinking' : ''}`}><span className="message-label">{message.role === 'zt' ? 'ZT.AI' : '访客'}</span>{message.status === 'thinking' ? <span className="typing-indicator" aria-label="ZT.AI 正在思考"><i /><i /><i /></span> : message.text}{renderMedia(message.media)}</div></div>)}</div>
-    <div className="chat-compose"><input value={input} disabled={Boolean(activeMessageId)} onChange={event => setInput(event.target.value)} onKeyDown={event => event.key === 'Enter' && send()} placeholder={activeMessageId ? 'ZT.AI 正在生成回答…' : '向 ZT.AI 提问，例如：请介绍一个最能代表蔡宙廷的项目'} /><button onClick={send} disabled={Boolean(activeMessageId)} aria-label="发送"><Send size={16} /></button></div>
+    <div className="chat-topline"><div><span className="eyebrow">OPEN CHAT</span><h2>和 ZT.AI 聊聊</h2></div><div className="chat-top-actions"><a className="resume-inline-download" href={resumeDoc} download>简历文件</a><span className="free-pill"><span />无需登录 · 免费</span></div></div>
+    <div className="messages" ref={messagesRef}>{messages.map((message, index) => <div key={message.id ?? `${message.role}-${index}`} className={`message-row ${message.role === 'user' ? 'from-user' : ''}`}><div className={`message-bubble ${message.status === 'thinking' ? 'is-thinking' : ''}`}><span className="message-label">{message.role === 'zt' ? 'ZT.AI' : '访客'}</span>{renderMessage(message)}{renderMedia(message.media)}</div></div>)}</div>
+    {attachments.length > 0 && <div className="pending-attachments"><AttachmentList attachments={attachments} compact />{attachments.map(file => <button key={file.id} onClick={() => removeAttachment(file.id)} aria-label={`移除 ${file.name}`}><X size={13} /></button>)}</div>}
+    <div className="chat-compose"><label className="attach-button" title="上传文件或图片"><Paperclip size={16} /><input type="file" multiple accept="image/*,.txt,.md,.markdown,.json,.csv,.js,.jsx,.ts,.tsx,.py,.html,.css,.pdf,.doc,.docx" onChange={handleFiles} disabled={Boolean(activeMessageId)} /></label><input value={input} disabled={Boolean(activeMessageId)} onChange={event => setInput(event.target.value)} onKeyDown={event => event.key === 'Enter' && send()} placeholder={activeMessageId ? 'ZT.AI 正在生成回答…' : '向 ZT.AI 提问，或先上传文件/图片'} /><button onClick={send} disabled={Boolean(activeMessageId) || (!input.trim() && !attachments.length)} aria-label="发送"><Send size={16} /></button></div>
     <div className="chat-footer"><ModelSwitch model={model} setModel={setModel} /><span className="chat-note"><MessageCircle size={14} /> 公开对话 · 内容来自 ZT.AI</span></div>
   </section>
 }
@@ -178,7 +249,7 @@ function ProjectsPage() {
 }
 
 function ResumePage() {
-  return <section className="page-section resume-page"><div className="section-heading"><div><span className="eyebrow">PROFILE DATA</span><h2>简历摘要</h2></div><FileText size={18} /></div><div className="resume-hero"><Avatar size="small" /><div><strong>AI 产品开发 · 蔡宙廷</strong><p>目标方向：AI 产品经理 / FDE / 电商 FDE</p></div></div><div className="timeline"><div><span>2026.04 — 2027.04</span><h3>深圳市坤信科技有限公司</h3><p>AI 产品开发 · Amazon 精铺跨境电商</p></div><div><span>核心能力</span><h3>业务问题 → AI 工作流 → 可验收结果</h3><p>选品流程、内容生产、利润跟踪、工具接入与项目落地。</p></div></div><div className="resume-lock"><ShieldCheck size={18} /><div><strong>公开摘要已开放</strong><p>在公开对话中了解我的经历、项目和未来方向。</p></div><Check size={16} /></div></section>
+  return <section className="page-section resume-page"><div className="section-heading"><div><span className="eyebrow">PROFILE DATA</span><h2>简历摘要</h2></div><FileText size={18} /></div><div className="resume-hero"><Avatar size="small" /><div><strong>AI 产品开发 · 蔡宙廷</strong><p>目标方向：AI 产品经理 / FDE / 电商 FDE</p></div></div><div className="timeline"><div><span>2026.04 — 2027.04</span><h3>深圳市坤信科技有限公司</h3><p>AI 产品开发 · Amazon 精铺跨境电商</p></div><div><span>核心能力</span><h3>业务问题 → AI 工作流 → 可验收结果</h3><p>选品流程、内容生产、利润跟踪、工具接入与项目落地。</p></div></div><div className="resume-lock"><ShieldCheck size={18} /><div><strong>公开摘要已开放</strong><p>在公开对话中了解我的经历、项目和未来方向。</p></div><a className="resume-download" href={resumeDoc} download>下载完整简历</a></div></section>
 }
 
 function HomePage({ onChat }) {
@@ -187,7 +258,7 @@ function HomePage({ onChat }) {
 
 function App() {
   const [page, setPage] = useState('home')
-  const [model, setModel] = useState('MINIMAX')
+  const [model, setModel] = useState(() => loadSessionState()?.model || 'MINIMAX')
   const [menuOpen, setMenuOpen] = useState(false)
   const pages = useMemo(() => ({ home: '首页', chat: '公开聊天', projects: '精选项目', resume: '简历摘要' }), [])
   useEffect(() => { const handler = event => setPage(event.detail); document.getElementById('root').addEventListener('navigate', handler); return () => document.getElementById('root').removeEventListener('navigate', handler) }, [])

@@ -25,6 +25,8 @@ API 密钥只放在项目根目录的 `aikey.env`，该文件已被 `.gitignore`
 
 部署过程不会读取 `aikey.env`，也不会把任何模型密钥打进前端产物。
 
+公开聊天支持 Markdown 回复、MiniMax/DeepSeek 模型切换、图片与文本/DOCX 附件、公开简历下载，以及跨页面的本地会话恢复。切换模型只改变下一次请求使用的模型，不会清空历史消息。
+
 ## 让面试官直接使用真实对话
 
 GitHub Pages 负责前端，`render.yaml` 负责把 `server` 部署成独立网关。第一次部署时，在 Render 中连接本仓库并选择 Blueprint，填入三个私密环境变量：

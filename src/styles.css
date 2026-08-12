@@ -25,6 +25,8 @@
 .hero-typing span{min-width:0;text-align:left}.hero-typing i{height:.7em;width:4px;margin-left:10px;background:#42ad73}
 .home-content .home-actions{margin-top:0}
 @media(max-width:800px){.home-content{padding-top:9vh}.home-brand{gap:16px;margin-bottom:38px}.hero-logo{width:clamp(76px,24vw,104px);height:clamp(76px,24vw,104px);border-radius:16px}.hero-typing{font-size:clamp(52px,17vw,76px);width:5.1ch;min-width:5.1ch}.hero-typing i{width:3px;margin-left:6px}.home-content .home-actions{margin-top:0}}
+.chat-top-actions{display:flex;align-items:center;gap:8px}.resume-inline-download{color:#68777b;font-size:10px;text-decoration:none;padding:8px 9px;border:1px solid #dce3e1;border-radius:8px;background:#f7f8f7}.resume-inline-download:hover{color:#303840;background:#fff}.resume-download{margin-left:auto;border-radius:8px;background:#303840;color:#fff;padding:9px 11px;font-size:10px;text-decoration:none;white-space:nowrap}
+.resume-download{margin-left:auto;border-radius:8px;background:#303840;color:#fff;padding:9px 11px;font-size:10px;text-decoration:none;white-space:nowrap}
 
 /* Subtle brand motion and a reflective manifesto beneath the main lockup. */
 .hero-logo{animation:logoBreath 4.6s ease-in-out infinite;transform-origin:center;position:relative}
@@ -42,6 +44,11 @@
 .message-bubble{color:#525e66;font-family:'Manrope','Noto Sans SC',sans-serif;font-size:13px;font-weight:450;letter-spacing:.01em;line-height:1.85;white-space:pre-wrap;word-break:break-word;min-height:47px}
 .from-user .message-bubble{color:#303940}
 .message-label{letter-spacing:.08em}
+.markdown-message{white-space:normal}
+.markdown-message p{margin:0 0 10px}.markdown-message p:last-child{margin-bottom:0}
+.markdown-message h1,.markdown-message h2,.markdown-message h3,.markdown-message h4{color:#303940;line-height:1.35;letter-spacing:-.035em;margin:15px 0 8px}.markdown-message h1{font-size:21px}.markdown-message h2{font-size:18px}.markdown-message h3{font-size:16px}.markdown-message h4{font-size:14px}
+.markdown-message ul{margin:7px 0 11px;padding-left:20px}.markdown-message li{margin:3px 0}.markdown-message strong{color:#303840;font-weight:750}.markdown-message em{color:#68747b}.markdown-message code{padding:2px 5px;border-radius:5px;background:#eef1f0;color:#4d6260;font:12px/1.4 'DM Mono',monospace}.markdown-message pre{overflow:auto;margin:10px 0;padding:11px 12px;border-radius:9px;background:#303840;color:#eef2f1}.markdown-message pre code{padding:0;background:transparent;color:inherit}.markdown-message a{color:#4e7970;text-decoration:underline;text-underline-offset:2px}
+.attachment-list{display:flex;flex-direction:column;gap:6px;margin-top:10px}.attachment-chip{display:flex;align-items:center;gap:7px;min-width:0;padding:7px 9px;border:1px solid #dce3e1;border-radius:8px;background:#f5f7f6;color:#5e6c72;font-size:10px}.attachment-chip img{width:27px;height:27px;border-radius:5px;object-fit:cover}.attachment-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.attachment-chip small{margin-left:auto;color:#9aa3a7;white-space:nowrap}.pending-attachments{display:flex;align-items:center;gap:7px;margin:0 0 9px;padding:7px 9px;border:1px solid #dce3e1;border-radius:10px;background:#f5f7f6}.pending-attachments .attachment-list{flex:1;margin:0}.pending-attachments>button{border:0;background:transparent;color:#899397;display:grid;place-items:center}.attach-button{width:42px;min-height:42px;border:1px solid #dce1e2;border-radius:10px;background:#fff;color:#66737a;display:grid;place-items:center;cursor:pointer}.attach-button input{display:none}
 .media-output{display:flex;flex-direction:column;gap:7px;margin-top:11px;max-width:360px}
 .media-output img,.media-output video{display:block;width:min(100%,340px);max-height:340px;object-fit:contain;border-radius:11px;background:#edf0ef;box-shadow:0 8px 20px rgba(39,48,58,.1)}
 .media-output video{aspect-ratio:16/9}

@@ -8,3 +8,6 @@ server/.env
 server-gateway.log
 server-gateway.error.log
 data/
+src/assets/*.docx
+vite.log
+vite.error.log
