@@ -10,6 +10,7 @@ import logo from './assets/zt-logo.png'
 import mammoth from 'mammoth/mammoth.browser'
 import { createChatSession, createSessionTitle, loadVisitorState, saveVisitorState } from './lib/chat-session.js'
 import { renderMarkdown } from './lib/markdown.js'
+import { getStreamBatchSize } from './lib/streaming.js'
 import './styles.css'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
@@ -252,9 +253,9 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     if (!activeMessageId) return undefined
     const timer = window.setInterval(() => {
       if (streamQueueRef.current.length) {
-        const character = streamQueueRef.current.shift()
+        const batch = streamQueueRef.current.splice(0, getStreamBatchSize(streamQueueRef.current.length)).join('')
         updateMessages(items => items.map(message => message.id === activeMessageId
-          ? { ...message, text: `${message.text}${character}`, status: 'streaming' }
+          ? { ...message, text: `${message.text}${batch}`, status: 'streaming' }
           : message))
       } else if (streamFinishedRef.current) {
         updateMessages(items => items.map(message => message.id === activeMessageId ? { ...message, status: 'done' } : message))
@@ -265,8 +266,11 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
   }, [activeMessageId])
 
   useEffect(() => {
-    if (messagesRef.current) messagesRef.current.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages])
+    if (messagesRef.current) messagesRef.current.scrollTo({
+      top: messagesRef.current.scrollHeight,
+      behavior: activeMessageId ? 'auto' : 'smooth',
+    })
+  }, [messages, activeMessageId])
 
   const handleFiles = async event => {
     const files = Array.from(event.target.files || []).slice(0, 4)

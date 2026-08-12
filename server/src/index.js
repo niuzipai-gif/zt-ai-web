@@ -51,7 +51,15 @@ function sendJson(request, response, status, payload) {
 }
 
 function sseStart(request, response) {
-  response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache', connection: 'keep-alive', 'access-control-allow-origin': corsOrigin(request), vary: 'Origin' })
+  response.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache, no-transform',
+    'x-accel-buffering': 'no',
+    connection: 'keep-alive',
+    'access-control-allow-origin': corsOrigin(request),
+    vary: 'Origin',
+  })
+  response.flushHeaders?.()
 }
 
 function sse(response, event, data) {
