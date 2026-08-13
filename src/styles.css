@@ -86,3 +86,34 @@
 .desktop-download{display:flex;align-items:center;gap:6px;border:1px solid rgba(48,56,64,.16);border-radius:999px;padding:7px 11px;background:rgba(255,255,255,.7);color:#4d5960;font-size:10px;text-decoration:none;white-space:nowrap;transition:transform .18s ease,background .18s ease,border-color .18s ease,box-shadow .18s ease}
 .desktop-download:hover{transform:translateY(-1px);background:#fff;border-color:rgba(48,56,64,.3);box-shadow:0 7px 16px rgba(39,48,58,.1);color:#20252b}
 @media(max-width:800px){.desktop-download{padding:7px;width:31px;justify-content:center}.desktop-download span{display:none}}
+.desktop-download.active{background:#303840;color:#fff;border-color:#303840}
+.download-page{max-width:1120px;margin:0 auto;padding:8px 0 26px;color:#242b31}
+.download-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:24px 4px 30px;border-bottom:1px solid rgba(87,101,108,.16)}
+.download-kicker{font:10px 'DM Mono',ui-monospace,monospace;letter-spacing:.16em;color:#9b7748;text-transform:uppercase}
+.download-hero h1{margin:10px 0 8px;font-size:clamp(32px,5vw,62px);letter-spacing:-.075em;line-height:1}
+.download-hero p{max-width:610px;margin:0;color:#7a858b;font-size:13px;line-height:1.8}
+.download-version{display:flex;align-items:center;gap:8px;padding:8px 11px;border:1px solid #d9e1df;border-radius:999px;background:rgba(255,255,255,.7);color:#6d7a80;font:10px 'DM Mono',ui-monospace,monospace;white-space:nowrap}
+.download-version>span{width:6px;height:6px;border-radius:50%;background:#48ae78;box-shadow:0 0 0 4px rgba(72,174,120,.13)}
+.platform-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:22px}
+.platform-card{position:relative;min-height:260px;padding:24px;border:1px solid rgba(211,220,220,.95);border-radius:22px;background:rgba(255,255,255,.78);box-shadow:0 18px 42px rgba(39,48,58,.07);overflow:hidden;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}
+.platform-card:after{content:'';position:absolute;width:210px;height:210px;right:-92px;bottom:-100px;border:1px solid rgba(87,101,108,.1);border-radius:50%;box-shadow:0 0 0 32px rgba(255,255,255,.2),0 0 0 64px rgba(255,255,255,.13);pointer-events:none}
+.platform-card.is-available:hover{transform:translateY(-3px);border-color:#c8d6cf;box-shadow:0 24px 50px rgba(39,48,58,.12)}
+.platform-card.is-disabled{background:rgba(232,235,235,.58);border-color:rgba(199,205,205,.82);color:#8f999d;box-shadow:none}
+.platform-card.is-disabled:before{content:'';position:absolute;inset:0;background:linear-gradient(125deg,rgba(255,255,255,.22),transparent 50%,rgba(189,196,197,.12));pointer-events:none}
+.platform-top{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:1}
+.platform-icon{width:54px;height:54px;display:grid;place-items:center;border-radius:16px;background:#eef2f1;color:#4e5d63}
+.platform-card.windows .platform-icon{background:#e8f1ec;color:#39865e}
+.platform-card.is-disabled .platform-icon{background:rgba(213,218,218,.75);color:#9ca4a7}
+.platform-state{padding:6px 8px;border-radius:999px;background:#edf5ef;color:#4b956a;font:9px 'DM Mono',ui-monospace,monospace;letter-spacing:.05em}
+.platform-card.is-disabled .platform-state{background:rgba(212,217,217,.7);color:#9aa2a5}
+.platform-card h2{position:relative;z-index:1;margin:31px 0 7px;font-size:25px;letter-spacing:-.06em}
+.platform-card p{position:relative;z-index:1;margin:0;max-width:390px;color:#77838a;font-size:12px;line-height:1.75}
+.platform-card.is-disabled p{color:#9ba4a7}
+.platform-bottom{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:28px}
+.platform-meta{color:#9aa3a6;font:9px 'DM Mono',ui-monospace,monospace;letter-spacing:.06em}
+.platform-download{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:10px;background:#242b31;color:#fff;padding:11px 14px;font-size:11px;text-decoration:none;box-shadow:0 9px 18px rgba(36,43,49,.15);transition:transform .18s ease,background .18s ease}
+.platform-download:hover{transform:translateY(-1px);background:#39454c}
+.coming-soon{color:#9da5a8;font:10px 'DM Mono',ui-monospace,monospace;letter-spacing:.08em}
+.download-footnote{display:flex;align-items:center;gap:9px;margin:22px 4px 0;color:#9aa3a7;font-size:10px;line-height:1.6}
+.download-footnote>span{width:6px;height:6px;border-radius:50%;background:#b2915e}
+@media(max-width:800px){.download-page{padding:0 0 22px}.download-hero{display:block;padding:18px 4px 22px}.download-version{display:inline-flex;margin-top:18px}.platform-grid{grid-template-columns:1fr;gap:12px}.platform-card{min-height:230px;padding:20px}.platform-card h2{margin-top:25px;font-size:23px}}

@@ -1,0 +1,27 @@
+# ZT.AI Android
+
+这是 ZT.AI 公共聊天网页的 Android 原生 WebView 壳，应用启动后打开：
+
+`https://niuzipai-gif.github.io/zt-ai-web/`
+
+它不内置任何模型 API Key，聊天请求仍由网页端配置的公开网关处理。应用支持网页端文件选择、返回键和外部下载链接。
+
+## 构建
+
+在仓库根目录 PowerShell 执行（脚本会在 `android-toolchain` 下准备 Android SDK，并使用官方 SDK 工具直接构建，避免依赖本机全局 Android Studio）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\build-android.ps1
+```
+
+产物：
+
+`android-app/app/build/outputs/apk/release/app-release.apk`
+
+## 公共下载
+
+构建并发布后，下载中心使用 GitHub Release 的稳定地址：
+
+`https://github.com/niuzipai-gif/zt-ai-web/releases/latest/download/ZT.AI-Android-0.2.1.apk`
+
+当前构建校验：41,438 bytes · SHA-256 `A7AD753ABF1D4C5E4F01851C3E1241323687D65719AB0527B24479422059D01E`
