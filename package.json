@@ -13,6 +13,7 @@
     "desktop:test": "node --test desktop-app/renderer/*.test.mjs",
     "desktop:dist": "electron-builder --config desktop-app/electron-builder.yml",
     "integration:test": "node tools/integration-smoke.mjs",
+    "publish:pages": "powershell -ExecutionPolicy Bypass -File .\\tools\\publish-pages.ps1",
     "test": "node --test \"server/src/**/*.test.js\" \"src/**/*.test.js\"",
     "build": "vite build",
     "preview": "vite preview"
