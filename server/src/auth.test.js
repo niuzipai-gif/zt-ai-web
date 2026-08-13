@@ -84,3 +84,15 @@ test('admin identity has a username and accepts the configured permanent account
   const session = await auth.getSession(result.token, 'admin')
   assert.equal(session.user.username, 'shali')
 })
+
+test('permanent administrator credentials bootstrap a desktop workspace account', async () => {
+  const auth = await service()
+  const result = await auth.login({ username: 'shali', password: 'local-test-only' })
+  assert.ok(result.token)
+  assert.equal(result.user.username, 'shali')
+  assert.equal(result.user.status, 'active')
+  const data = await auth.store.read()
+  assert.equal(data.users.length, 1)
+  assert.equal(data.users[0].status, 'active')
+  assert.equal(JSON.stringify(data).includes('local-test-only'), false)
+})

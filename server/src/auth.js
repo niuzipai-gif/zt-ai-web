@@ -48,6 +48,14 @@ export function createAuthService({ store = getDataStore(), now = () => Date.now
     ? { salt: adminSalt, hash: adminHash }
     : adminPassword ? null : null
 
+  async function isValidAdminPassword(password) {
+    if (configuredAdmin) return (await hashPassword(password, configuredAdmin.salt)).hash === configuredAdmin.hash
+    if (!adminPassword) return false
+    const supplied = crypto.createHash('sha256').update(String(password)).digest()
+    const expected = crypto.createHash('sha256').update(String(adminPassword)).digest()
+    return crypto.timingSafeEqual(supplied, expected)
+  }
+
   async function createSession(userId, type, duration) {
     const token = crypto.randomBytes(32).toString('base64url')
     await store.update(data => {
@@ -101,7 +109,15 @@ export function createAuthService({ store = getDataStore(), now = () => Date.now
     async login(input) {
       const { username, password } = validateCredentials(input)
       const data = await store.read()
-      const user = data.users.find(item => item.username === username)
+      let user = data.users.find(item => item.username === username)
+      if (!user && username === normalizeUsername(adminUsername) && await isValidAdminPassword(password)) {
+        const credentials = await hashPassword(password)
+        const bootstrapUser = { id: crypto.randomUUID(), username, passwordHash: credentials.hash, passwordSalt: credentials.salt, createdAt: now(), requestedAt: now(), status: 'active', approvedAt: now(), revokedAt: null, lastLoginAt: null }
+        await store.update(next => {
+          if (!next.users.some(item => item.username === username)) next.users.push(bootstrapUser)
+        })
+        user = bootstrapUser
+      }
       if (!user || (await hashPassword(password, user.passwordSalt)).hash !== user.passwordHash) throw new Error('用户名或密码错误')
       if (userStatus(user) === 'pending') throw new Error('账号正在等待管理员审核')
       if (userStatus(user) === 'revoked') throw new Error('账号已被注销')
@@ -116,14 +132,7 @@ export function createAuthService({ store = getDataStore(), now = () => Date.now
       const username = normalizeUsername(typeof input === 'string' ? adminUsername : input?.username)
       const password = typeof input === 'string' ? input : input?.password
       if (username !== normalizeUsername(adminUsername)) throw new Error('管理员账号或密码错误')
-      let valid = false
-      if (configuredAdmin) valid = (await hashPassword(password, configuredAdmin.salt)).hash === configuredAdmin.hash
-      else if (adminPassword) {
-        const supplied = crypto.createHash('sha256').update(String(password)).digest()
-        const expected = crypto.createHash('sha256').update(String(adminPassword)).digest()
-        valid = crypto.timingSafeEqual(supplied, expected)
-      }
-      if (!valid) throw new Error('管理员账号或密码错误')
+      if (!await isValidAdminPassword(password)) throw new Error('管理员账号或密码错误')
       const token = await createSession('admin', 'admin', adminSessionMs)
       return { token, username: normalizeUsername(adminUsername), expiresIn: adminSessionMs }
     },
