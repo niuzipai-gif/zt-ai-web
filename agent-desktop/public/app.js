@@ -1,5 +1,7 @@
 import { contextMeter, nextMode, normalizeModel } from './chat-state.mjs'
 import { addConversationMessage, conversationTitle, createConversation, normalizeConversations } from './conversation-state.mjs'
+import { createSmoothStream } from './streaming.mjs'
+import { renderMarkdown } from './markdown.mjs'
 
 const $ = selector => document.querySelector(selector)
 const state = {
@@ -17,6 +19,8 @@ const state = {
   chatSessions: [],
   activeChatId: '',
   activeSkills: [],
+  activeAgentMessage: null,
+  agentStream: null,
 }
 
 const els = {
@@ -73,6 +77,7 @@ function renderChatHistory() {
 }
 function startNewChat() {
   if (state.reader) { state.reader.cancel?.(); state.reader = null }
+  state.agentStream?.cancel?.(); state.agentStream = null; state.activeAgentMessage = null
   const conversation = createConversation(newChatId())
   state.chatSessions = [conversation, ...state.chatSessions.filter(item => item.id !== state.activeChatId)].slice(0, 30)
   state.activeChatId = conversation.id
@@ -117,10 +122,94 @@ function setMode(mode) {
 function appendMessage(role, content, streaming = false) {
   const row = document.createElement('div'); row.className = `message ${role === 'user' ? 'user-message' : 'assistant-message'}`
   const bubble = document.createElement('div'); bubble.className = 'bubble'
-  if (role === 'assistant') { const label = document.createElement('div'); label.className = 'message-label'; label.textContent = state.mode === 'BUDDY' ? 'ZT.BUDDY' : 'ZT.AI'; bubble.appendChild(label) }
-  const body = document.createElement('div'); body.className = 'message-body'; body.textContent = content || (streaming ? '正在思考…' : '')
+  if (role === 'assistant') { const label = document.createElement('div'); label.className = 'message-label'; label.textContent = 'ZT.AI'; bubble.appendChild(label) }
+  const body = document.createElement('div'); body.className = 'message-body markdown-message'
+  if (streaming) body.innerHTML = '<span class="typing-indicator" aria-label="ZT.AI 正在思考"><i></i><i></i><i></i></span>'
+  else body.innerHTML = renderMarkdown(content || '')
   bubble.appendChild(body); row.appendChild(bubble); els.messages.appendChild(row); els.messages.scrollTop = els.messages.scrollHeight
   return body
+}
+
+function appendAgentMessage(task) {
+  const row = document.createElement('div'); row.className = 'message assistant-message agent-message'
+  const bubble = document.createElement('div'); bubble.className = 'bubble agent-bubble'
+  const label = document.createElement('div'); label.className = 'message-label'; label.textContent = 'ZT.BUDDY · EXECUTION'
+  const status = document.createElement('div'); status.className = 'agent-statusline running'; status.innerHTML = '<span class="pulse"></span><span>正在理解任务并规划执行步骤…</span>'
+  const taskLine = document.createElement('div'); taskLine.className = 'agent-taskline'; taskLine.textContent = task
+  const plan = document.createElement('div'); plan.className = 'agent-plan-inline'
+  const activity = document.createElement('div'); activity.className = 'agent-activity-inline'
+  const result = document.createElement('div'); result.className = 'agent-result-inline markdown-message'
+  const approval = document.createElement('div'); approval.className = 'agent-approval-inline hidden'
+  bubble.append(label, status, taskLine, plan, activity, result, approval)
+  row.appendChild(bubble); els.messages.appendChild(row); els.messages.scrollTop = els.messages.scrollHeight
+  const live = { row, status, plan, activity, result, approval, output: '', persisted: false }
+  state.activeAgentMessage = live
+  return live
+}
+
+function setAgentStatus(text, kind = 'running') {
+  const live = state.activeAgentMessage
+  if (!live) return
+  live.status.className = `agent-statusline ${kind}`
+  live.status.innerHTML = `<span class="pulse"></span><span>${escapeHtml(text)}</span>`
+  els.messages.scrollTop = els.messages.scrollHeight
+}
+
+function renderInlinePlan(steps = []) {
+  const live = state.activeAgentMessage
+  if (!live) return
+  live.plan.innerHTML = steps.map((step, index) => `<div class="inline-plan-step" data-step="${escapeHtml(step.id)}"><span>${String(index + 1).padStart(2, '0')}</span><strong>${escapeHtml(step.label)}</strong><small>${escapeHtml(step.tool)} · ${escapeHtml(step.capability)}</small></div>`).join('')
+  els.messages.scrollTop = els.messages.scrollHeight
+}
+
+function markInlineStep(id, stateName) {
+  const live = state.activeAgentMessage
+  const step = live?.plan.querySelector(`[data-step="${CSS.escape(id)}"]`)
+  if (!step) return
+  step.classList.toggle('active', stateName === 'active')
+  step.classList.toggle('done', stateName === 'done')
+}
+
+function addInlineActivity(text, kind = '') {
+  const live = state.activeAgentMessage
+  if (!live) return
+  const line = document.createElement('div'); line.className = `inline-activity-line ${kind}`; line.textContent = text
+  live.activity.appendChild(line); live.activity.scrollTop = live.activity.scrollHeight; els.messages.scrollTop = els.messages.scrollHeight
+}
+
+function showInlineApproval(data) {
+  const live = state.activeAgentMessage
+  if (!live) return
+  state.pendingApproval = data
+  live.approval.classList.remove('hidden')
+  live.approval.innerHTML = `<strong>${escapeHtml(data.capabilityLabel)} · 需要你的确认</strong><p>${escapeHtml(data.preview || data.label)}</p><div class="inline-approval-actions"><button type="button" data-approval="once">允许一次</button><button type="button" data-approval="always">记住权限</button><button type="button" data-approval="reject">拒绝</button></div>`
+  live.approval.querySelector('[data-approval="once"]').addEventListener('click', () => approve(false))
+  live.approval.querySelector('[data-approval="always"]').addEventListener('click', () => approve(true))
+  live.approval.querySelector('[data-approval="reject"]').addEventListener('click', reject)
+  setAgentStatus('等待你确认本机执行权限…', 'waiting')
+  els.messages.scrollTop = els.messages.scrollHeight
+}
+
+function hideInlineApproval() {
+  const live = state.activeAgentMessage
+  if (live?.approval) { live.approval.classList.add('hidden'); live.approval.innerHTML = '' }
+  state.pendingApproval = null
+}
+
+function completeAgentMessage(summary, status = 'done') {
+  const live = state.activeAgentMessage
+  if (!live) return
+  live.output = summary || live.output || '本机执行已完成。'
+  live.result.innerHTML = renderMarkdown(live.output)
+  live.result.classList.add('is-visible')
+  setAgentStatus(status === 'done' ? '任务已完成' : `任务${status === 'blocked' ? '已暂停' : '执行失败'}`, status === 'done' ? 'done' : 'error')
+  hideInlineApproval()
+  if (!live.persisted) {
+    recordChatMessage('assistant', live.output)
+    live.persisted = true
+    renderChatHistory()
+  }
+  els.messages.scrollTop = els.messages.scrollHeight
 }
 function resetExecution() {
   state.taskId = null; state.eventCount = 0; if (els.taskId) els.taskId.textContent = 'READY'; if (els.title) els.title.textContent = '等待新的任务'; if (els.status) setStatus('IDLE')
@@ -133,7 +222,7 @@ function resetExecution() {
 }
 function renderPlan(steps) { els.plan.innerHTML = steps.map((step, index) => `<div class="plan-step" data-step="${escapeHtml(step.id)}"><span class="step-index">${String(index + 1).padStart(2, '0')}</span><div><strong>${escapeHtml(step.label)}</strong><small>${escapeHtml(step.tool)}</small></div><span class="step-cap">${escapeHtml(step.capability)}</span></div>`).join('') }
 function markStep(id, stateName) { const step = els.plan.querySelector(`[data-step="${CSS.escape(id)}"]`); if (step) { step.classList.toggle('active', stateName === 'active'); step.classList.toggle('done', stateName === 'done') } }
-function showApproval(data) { state.pendingApproval = data; els.approvalTitle.textContent = `${data.capabilityLabel} · 需要你的确认`; els.approvalPreview.textContent = data.preview || data.label; els.approval.classList.remove('hidden'); setStatus('WAITING', 'waiting'); addLog(`等待批准：${data.label}`, 'warning') }
+function showApproval(data) { state.pendingApproval = data; els.approval.classList.add('hidden'); setStatus('WAITING', 'waiting'); addLog(`等待批准：${data.label}`, 'warning') }
 function hideApproval() { state.pendingApproval = null; els.approval.classList.add('hidden') }
 async function readJson(response) { const text = await response.text(); try { return JSON.parse(text) } catch { return { error: text } } }
 async function apiFetch(path, options = {}) { const headers = { ...(options.headers || {}), 'x-zt-agent-secret': state.localSecret }; if (state.authToken) headers.authorization = `Bearer ${state.authToken}`; return fetch(path, { ...options, headers }) }
@@ -177,17 +266,79 @@ async function consumeSse(response, onEvent) {
 async function runChat() {
   const task = els.taskInput.value.trim(); if (!task || els.run.disabled) return
   recordChatMessage('user', task); renderMessages(); els.taskInput.value = ''; els.taskInput.disabled = true; els.run.disabled = true
-  const body = appendMessage('assistant', '', true); let output = ''
+  const body = appendMessage('assistant', '', true)
+  const smooth = createSmoothStream({ onUpdate: output => { body.innerHTML = renderMarkdown(output); els.messages.scrollTop = els.messages.scrollHeight; state.usedTokens += 1; renderContext() } })
+  state.agentStream = smooth
   try {
     const conversation = currentConversation()
     const messages = conversation?.messages || [{ role: 'user', content: task }]
     const response = await fetch(`${state.gatewayUrl}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: state.model === 'DEEPSEEK' ? 'deepseek' : 'minimax', language: 'zh', skills: state.activeSkills.map(skill => skill.name), messages }) })
-    await consumeSse(response, (event, data) => { if (event === 'message.delta') { output += data.text || ''; body.textContent = output; els.messages.scrollTop = els.messages.scrollHeight; state.usedTokens += Math.max(1, Math.round(String(data.text || '').length / 4)); renderContext() } if (event === 'message.error') body.textContent = data.message || '模型请求失败' })
+    await consumeSse(response, (event, data) => { if (event === 'message.delta') smooth.push(data.text || ''); if (event === 'message.error') smooth.push(data.message || '模型请求失败') })
+    smooth.finish()
+    const output = await smooth.done
     recordChatMessage('assistant', output)
-  } catch (error) { body.textContent = describeNetworkError(error, '发送消息') } finally { state.reader = null; els.taskInput.disabled = false; els.run.disabled = false; renderChatHistory(); els.taskInput.focus() }
+  } catch (error) { smooth.push(describeNetworkError(error, '发送消息')); smooth.finish(); const output = await smooth.done; recordChatMessage('assistant', output) } finally { state.reader = null; state.agentStream = null; els.taskInput.disabled = false; els.run.disabled = false; renderChatHistory(); els.taskInput.focus() }
 }
-function handleAgentEvent(event, data) { if (event === 'task.start') { state.taskId = data.id; if (els.taskId) els.taskId.textContent = data.id.slice(0, 8).toUpperCase(); if (els.title) els.title.textContent = data.task; setStatus('RUNNING', 'running'); addLog(`任务开始 · ${data.model} · 执行模式`, 'tool') } else if (event === 'plan.ready') { renderPlan(data.steps || []); addLog(`已拆解 ${data.steps?.length || 0} 个执行步骤`, 'tool') } else if (event === 'tool.start') { markStep(data.id, 'active'); addLog(`调用 ${data.label} · ${data.capability}`, 'tool') } else if (event === 'tool.result') { markStep(data.id, 'done'); addLog(data.result || '工具已返回结果', 'result') } else if (event === 'approval.required') showApproval(data); else if (event === 'agent.start') { els.resultPanel.classList.remove('hidden'); els.resultText.textContent = ''; addLog(`正在用 ${data.model} 汇总执行结果`, 'tool') } else if (event === 'agent.delta') { els.resultPanel.classList.remove('hidden'); els.resultText.textContent += data.text || ''; els.resultText.scrollIntoView({ block: 'nearest' }) } else if (event === 'agent.warning') addLog(data.message, 'warning'); else if (event === 'task.blocked') { setStatus('BLOCKED', 'blocked'); addLog(data.reason, 'warning'); hideApproval() } else if (event === 'task.error') { setStatus('ERROR', 'error'); addLog(data.message, 'warning') } else if (event === 'task.done') { setStatus(data.status === 'done' ? 'DONE' : data.status.toUpperCase(), data.status === 'done' ? 'done' : 'blocked'); hideApproval(); refreshState() } }
-async function runAgentTask() { const task = els.taskInput.value.trim(); if (!task || els.run.disabled) return; resetExecution(); els.taskInput.disabled = true; els.run.disabled = true; try { const response = await apiFetch('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ task, model: state.model, accountToken: state.authToken }) }); await consumeSse(response, handleAgentEvent) } catch (error) { setStatus('ERROR', 'error'); addLog(error.message, 'warning') } finally { state.reader = null; els.taskInput.disabled = false; els.run.disabled = false; els.taskInput.focus() } }
+function handleAgentEvent(event, data) {
+  if (event === 'task.start') {
+    state.taskId = data.id
+    if (els.taskId) els.taskId.textContent = data.id.slice(0, 8).toUpperCase()
+    if (els.title) els.title.textContent = data.task
+    setAgentStatus('任务已接收，正在准备执行…', 'running')
+    setStatus('RUNNING', 'running')
+    addInlineActivity(`任务开始 · ${data.model} · 执行模式`, 'tool')
+  } else if (event === 'plan.ready') {
+    renderInlinePlan(data.steps || [])
+    renderPlan(data.steps || [])
+    setAgentStatus('执行计划已生成，正在按步骤推进…', 'running')
+    addInlineActivity(`已拆解 ${data.steps?.length || 0} 个执行步骤`, 'tool')
+  } else if (event === 'tool.start') {
+    markInlineStep(data.id, 'active'); markStep(data.id, 'active')
+    addInlineActivity(`调用 ${data.label} · ${data.capability}`, 'tool')
+    addLog(`调用 ${data.label} · ${data.capability}`, 'tool')
+  } else if (event === 'tool.result') {
+    markInlineStep(data.id, 'done'); markStep(data.id, 'done')
+    addInlineActivity(data.result || '工具已返回结果', 'result')
+    addLog(data.result || '工具已返回结果', 'result')
+  } else if (event === 'approval.required') {
+    showInlineApproval(data); showApproval(data)
+  } else if (event === 'agent.start') {
+    if (!state.agentStream) state.agentStream = createSmoothStream({ onUpdate: output => { const live = state.activeAgentMessage; if (live) { live.output = output; live.result.innerHTML = renderMarkdown(output); live.result.classList.add('is-visible'); els.messages.scrollTop = els.messages.scrollHeight } } })
+    setAgentStatus('执行步骤已完成，正在整理结果…', 'running')
+    addInlineActivity(`正在用 ${data.model} 汇总执行结果`, 'tool')
+  } else if (event === 'agent.delta') {
+    if (!state.agentStream) state.agentStream = createSmoothStream({ onUpdate: output => { const live = state.activeAgentMessage; if (live) { live.output = output; live.result.innerHTML = renderMarkdown(output); live.result.classList.add('is-visible'); els.messages.scrollTop = els.messages.scrollHeight } } })
+    state.agentStream.push(data.text || '')
+  } else if (event === 'agent.warning') {
+    addInlineActivity(data.message, 'warning'); addLog(data.message, 'warning')
+  } else if (event === 'task.blocked') {
+    setStatus('BLOCKED', 'blocked'); addInlineActivity(data.reason, 'warning'); setAgentStatus('任务已暂停，等待后续操作…', 'error'); hideApproval(); hideInlineApproval(); completeAgentMessage(data.reason, 'blocked')
+  } else if (event === 'task.error') {
+    setStatus('ERROR', 'error'); addInlineActivity(data.message, 'warning'); setAgentStatus('执行失败，请检查权限或网关状态。', 'error'); completeAgentMessage(data.message, 'error')
+  } else if (event === 'task.done') {
+    if (state.agentStream) { state.agentStream.finish(); void state.agentStream.done.then(output => { const summary = data.summary || output; completeAgentMessage(summary, data.status); state.agentStream = null }) } else completeAgentMessage(data.summary, data.status)
+    setStatus(data.status === 'done' ? 'DONE' : data.status.toUpperCase(), data.status === 'done' ? 'done' : 'blocked')
+    hideApproval(); hideInlineApproval(); refreshState()
+  }
+}
+
+async function runAgentTask() {
+  const task = els.taskInput.value.trim(); if (!task || els.run.disabled) return
+  recordChatMessage('user', task); renderMessages(); renderChatHistory(); els.taskInput.value = ''
+  const live = appendAgentMessage(task)
+  resetExecution()
+  state.activeAgentMessage = live
+  els.taskInput.disabled = true; els.run.disabled = true
+  try {
+    const response = await apiFetch('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ task, model: state.model, accountToken: state.authToken }) })
+    await consumeSse(response, handleAgentEvent)
+  } catch (error) {
+    const message = describeNetworkError(error, '执行任务')
+    addInlineActivity(message, 'warning'); setAgentStatus(message, 'error'); completeAgentMessage(message, 'error'); setStatus('ERROR', 'error')
+  } finally {
+    state.reader = null; els.taskInput.disabled = false; els.run.disabled = false; els.taskInput.focus()
+  }
+}
 async function approve(remember) { if (!state.taskId || !state.pendingApproval) return; const { capability } = state.pendingApproval; const response = await apiFetch(`/api/tasks/${state.taskId}/approve`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ capability, remember }) }); const body = await readJson(response); if (!response.ok) addLog(body.error || '批准失败', 'warning'); else { addLog(remember ? `已记住权限：${capability}` : `已允许一次：${capability}`, 'result'); hideApproval() } }
 async function reject() { if (!state.taskId) return; const response = await apiFetch(`/api/tasks/${state.taskId}/reject`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason: '用户拒绝了这一步' }) }); const body = await readJson(response); if (!response.ok) addLog(body.error || '拒绝失败', 'warning'); else hideApproval() }
 async function updatePermission(capability, enabled) { const response = await apiFetch('/api/permissions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ capability, enabled }) }); const body = await readJson(response); if (!response.ok) addLog(body.error || '权限更新失败', 'warning'); else addLog(`${enabled ? '已开启' : '已关闭'}权限：${capability}`, enabled ? 'warning' : '') }

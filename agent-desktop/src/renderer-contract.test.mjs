@@ -25,3 +25,18 @@ test('desktop renderer keeps tools in the plus drawer and uses a microphone cont
   assert.match(html.slice(drawerStart), /插件/)
   assert.match(html, /aria-label="语音输入"/)
 })
+
+test('desktop Buddy renders execution progress inside the conversation timeline', async () => {
+  const html = await fs.readFile(path.join(root, 'app.js'), 'utf8')
+  assert.match(html, /agent-message/)
+  assert.match(html, /agent-plan-inline/)
+  assert.match(html, /agent-activity-inline/)
+  assert.match(html, /agent-result-inline/)
+  assert.match(html, /recordChatMessage\('assistant'/)
+})
+
+test('desktop renderer uses the same smooth stream queue for chat and Buddy summaries', async () => {
+  const html = await fs.readFile(path.join(root, 'app.js'), 'utf8')
+  assert.match(html, /createSmoothStream/)
+  assert.match(html, /agentStream/)
+})
