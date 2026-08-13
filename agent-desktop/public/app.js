@@ -39,6 +39,11 @@ async function apiFetch(path, options = {}) {
 function showAuthError(message = '') { els.authError.textContent = message }
 function showWorkspace() { els.authGate.classList.add('hidden'); els.taskInput.disabled = false; els.accountLabel.textContent = 'ACCOUNT ACTIVE' }
 function showLogin() { els.authGate.classList.remove('hidden'); els.taskInput.disabled = true; showAuthError('') }
+function describeNetworkError(error, action = '连接 ZT.AI 网关') {
+  const message = String(error?.message || error || '')
+  if (/failed to fetch|networkerror|load failed/i.test(message)) return `${action}失败：当前无法访问 ${state.gatewayUrl || 'ZT.AI 网关'}，请确认网络正常或稍后重试。`
+  return message || `${action}失败`
+}
 
 async function submitAuth(event) {
   event.preventDefault(); showAuthError(''); els.authSubmit.disabled = true
@@ -47,7 +52,7 @@ async function submitAuth(event) {
     const body = await readJson(response)
     if (!response.ok) throw new Error(body.error || '登录失败')
     state.authToken = body.token; localStorage.setItem('zt-ai:desktop-token', state.authToken); els.authPassword.value = ''; showWorkspace(); refreshState()
-  } catch (error) { showAuthError(error.message) } finally { els.authSubmit.disabled = false }
+  } catch (error) { showAuthError(describeNetworkError(error, state.registering ? '注册账户' : '登录账户')) } finally { els.authSubmit.disabled = false }
 }
 
 async function logout() {
@@ -149,7 +154,7 @@ async function bootstrap() {
       if (session.ok) { showWorkspace(); await refreshState(); return }
       localStorage.removeItem('zt-ai:desktop-token'); state.authToken = ''
     }
-  } catch (error) { showAuthError(`工作台启动失败：${error.message}`) }
+  } catch (error) { showAuthError(describeNetworkError(error, '工作台启动')) }
   showLogin()
 }
 setInterval(() => { $('#clock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, 1000); document.querySelector(`[data-model="${state.model}"]`)?.classList.add('active'); bootstrap()

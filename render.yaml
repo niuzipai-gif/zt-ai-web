@@ -33,7 +33,7 @@ services:
       - key: DATA_RETENTION_DAYS
         value: "90"
       - key: ZT_AI_DATA_PATH
-        value: /var/data/zt-ai.json
+        value: data/zt-ai.json
       - key: MMX_ENABLED
         value: "true"
       - key: MMX_IMAGE_MODEL
