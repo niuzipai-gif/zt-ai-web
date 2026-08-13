@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>ZT.AI Control Room</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="login-view" class="login-view"><div class="login-card"><div class="brand-mark">R</div><span class="eyebrow">ZT.AI · PRIVATE CONTROL ROOM</span><h1>产品监控中枢</h1><p>仅限管理员使用。这里记录 ZT.AI 各产品的访问、模型用量和授权审计。</p><form id="login-form"><label>管理员密码<input id="admin-password" type="password" autocomplete="current-password" required /></label><button class="primary" type="submit">进入控制台 <span>↗</span></button></form><div id="login-error" class="error"></div><small>访问记录用于产品运维与成本估算；消息详情仅在管理员登录后显示。</small></div></div>
+    <div id="app-view" class="app-view hidden">
+      <aside class="sidebar"><div class="brand"><div class="brand-mark">R</div><div><strong>ZT.AI</strong><span>CONTROL ROOM</span></div></div><nav><button class="active" data-nav="overview">总览 <span>01</span></button><button data-nav="visitors">访客与会话 <span>02</span></button><button data-nav="usage">模型用量 <span>03</span></button></nav><div class="sidebar-foot"><span class="status-dot"></span><div><strong>监控在线</strong><small id="last-sync">等待同步</small></div><button id="logout" title="退出">↗</button></div></aside>
+      <main class="main"><header class="topbar"><div><span class="eyebrow">ADMIN CONSOLE · 2026</span><h1>产品监控中枢</h1></div><div class="top-actions"><span class="secure-pill">● ENCRYPTED VIEW</span><button id="refresh" class="ghost">刷新数据 ↻</button></div></header>
+        <section class="notice"><strong>隐私边界</strong><span>列表默认显示脱敏 IP；完整 IP 与消息内容只在本控制台认证后查看。token 与费用为估算值，供应商未返回 usage 时可能存在误差。</span></section>
+        <section class="kpis"><article><span>访问访客</span><strong id="kpi-visitors">—</strong><small>按产品隔离 ID</small></article><article><span>记录请求</span><strong id="kpi-requests">—</strong><small>聊天与 Agent 调用</small></article><article><span>估算 tokens</span><strong id="kpi-tokens">—</strong><small>输入 + 输出近似值</small></article><article><span>估算成本</span><strong id="kpi-cost">—</strong><small>需配置模型价格</small></article></section>
+        <section class="dashboard-grid"><article class="panel chart-panel"><div class="panel-head"><div><span class="eyebrow">PRODUCT MIX</span><h2>产品调用分布</h2></div><span class="mini-status">LIVE</span></div><div id="product-chart" class="product-chart"></div></article><article class="panel model-panel"><div class="panel-head"><div><span class="eyebrow">MODEL ROUTING</span><h2>模型路由</h2></div></div><div id="model-list" class="model-list"></div></article></section>
+        <section class="panel visitors-panel"><div class="panel-head"><div><span class="eyebrow">IDENTITY INDEX</span><h2>最近访问者</h2><p>点击一行查看授权范围内的消息时间线。</p></div><div class="filters"><select id="product-filter"><option value="">全部产品</option><option value="web">公开网页</option><option value="desktop-agent">桌面 Agent</option></select><input id="visitor-query" placeholder="搜索 ID / 脱敏 IP" /></div></div><div class="table-wrap"><table><thead><tr><th>访客 ID</th><th>产品</th><th>最近 IP</th><th>请求数</th><th>使用模型</th><th>最近访问</th><th></th></tr></thead><tbody id="visitor-table"><tr><td colspan="7" class="empty">正在读取…</td></tr></tbody></table></div></section>
+      </main>
+    </div>
+    <div id="detail-drawer" class="drawer hidden"><div class="drawer-backdrop" id="drawer-close"></div><aside class="drawer-panel"><div class="drawer-head"><div><span class="eyebrow">VISITOR DETAIL</span><h2 id="detail-title">访客详情</h2></div><button id="drawer-x" class="close">×</button></div><div id="detail-content"></div></aside></div>
+    <script>window.ZT_AI_ADMIN_API_BASE='https://zt-ai-gateway.onrender.com'</script>
+    <script src='./app.js'></script>
+  </body>
+</html>
