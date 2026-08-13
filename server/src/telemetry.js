@@ -91,6 +91,15 @@ export function createTelemetry({ store = getDataStore(), now = () => Date.now()
       const data = await store.read()
       return data.visitors.filter(item => (!product || item.product === product) && (!query || `${item.id} ${item.maskedIp} ${item.product}`.toLowerCase().includes(String(query).toLowerCase()))).map(({ lastIp, ...safe }) => safe).sort((a, b) => b.lastSeenAt - a.lastSeenAt)
     },
+    async listUsage({ product, model, query, limit = 200 } = {}) {
+      const data = await store.read()
+      const normalizedQuery = String(query || '').toLowerCase()
+      return data.usageEvents
+        .filter(item => (!product || item.product === product) && (!model || item.model === model) && (!normalizedQuery || `${item.visitorId} ${item.requestType} ${item.status}`.toLowerCase().includes(normalizedQuery)))
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, Math.max(1, Math.min(Number(limit) || 200, 500)))
+        .map(({ ip, userAgent, ...safe }) => safe)
+    },
     async visitorDetail(id) {
       const data = await store.read()
       const visitor = data.visitors.find(item => item.id === id)
@@ -102,4 +111,3 @@ export function createTelemetry({ store = getDataStore(), now = () => Date.now()
     },
   }
 }
-

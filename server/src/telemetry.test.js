@@ -8,7 +8,8 @@ import { createTelemetry, estimateTokens, maskIp, scopedVisitorId } from './tele
 
 async function telemetry() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'zt-ai-telemetry-'))
-  return createTelemetry({ store: new JsonDataStore(path.join(dir, 'data.json')), now: () => 1_700_000_000_000 })
+  let clock = 1_700_000_000_000
+  return createTelemetry({ store: new JsonDataStore(path.join(dir, 'data.json')), now: () => ++clock })
 }
 
 test('IP display is masked by default', () => {
@@ -36,4 +37,15 @@ test('telemetry records a message, usage event, and aggregate visitor', async ()
   assert.equal(data.messages.length, 2)
   assert.equal(data.usageEvents[0].estimatedTotalTokens, 4)
   assert.equal(data.visitors[0].maskedIp, '203.0.*.*')
+})
+
+test('lists usage events newest first with product and model filters', async () => {
+  const audit = await telemetry()
+  await audit.recordRequest({ product: 'web', visitorId: 'browser-1', model: 'MiniMax-M3', requestType: 'chat', status: 'success', inputText: 'one', outputText: 'two' })
+  await audit.recordRequest({ product: 'desktop-agent', visitorId: 'desktop-1', model: 'deepseek-v4-flash', requestType: 'agent-plan', status: 'success', inputText: 'three', outputText: 'four' })
+  const all = await audit.listUsage()
+  assert.equal(all.length, 2)
+  assert.equal(all[0].product, 'desktop-agent')
+  assert.equal((await audit.listUsage({ product: 'web' }))[0].model, 'MiniMax-M3')
+  assert.equal((await audit.listUsage({ model: 'deepseek-v4-flash' }))[0].requestType, 'agent-plan')
 })

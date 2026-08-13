@@ -262,6 +262,10 @@ export function createServer() {
         try { const query = new URL(request.url, 'http://localhost').searchParams; return sendJson(request, response, 200, await adminApi.visitors(adminToken(request), { product: query.get('product') || undefined, query: query.get('q') || undefined })) }
         catch (error) { return sendJson(request, response, 401, { error: error.message }) }
       }
+      if (request.method === 'GET' && route === '/api/admin/usage') {
+        try { const query = new URL(request.url, 'http://localhost').searchParams; return sendJson(request, response, 200, await adminApi.usage(adminToken(request), { product: query.get('product') || undefined, model: query.get('model') || undefined, query: query.get('q') || undefined, limit: query.get('limit') || undefined })) }
+        catch (error) { return sendJson(request, response, 401, { error: error.message }) }
+      }
       const visitorMatch = route.match(/^\/api\/admin\/visitors\/([^/]+)$/)
       if (request.method === 'GET' && visitorMatch) {
         try { return sendJson(request, response, 200, await adminApi.detail(adminToken(request), decodeURIComponent(visitorMatch[1]))) }

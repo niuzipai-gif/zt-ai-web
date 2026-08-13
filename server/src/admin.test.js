@@ -40,3 +40,13 @@ test('admin detail contains full IP while visitor list is masked', async () => {
   assert.equal(detail.visitor.lastIp, '203.0.113.42')
   assert.equal(detail.messages.length, 2)
 })
+
+test('admin usage requires authentication and returns filtered audit events', async () => {
+  const { admin, telemetry } = await setup()
+  await telemetry.recordRequest({ product: 'web', visitorId: 'browser-1', model: 'MiniMax-M3', requestType: 'chat', status: 'success', inputText: 'hello', outputText: 'world' })
+  await assert.rejects(() => admin.usage('', { model: 'MiniMax-M3' }), /需要管理员登录/)
+  const { token } = await admin.login('admin-test-password')
+  const result = await admin.usage(token, { model: 'MiniMax-M3' })
+  assert.equal(result.length, 1)
+  assert.equal(result[0].estimatedTotalTokens, 4)
+})
