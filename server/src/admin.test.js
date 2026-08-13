@@ -24,7 +24,7 @@ test('admin routes reject unauthenticated overview and detail access', async () 
 
 test('wrong admin password does not create a session', async () => {
   const { admin, auth } = await setup()
-  await assert.rejects(() => admin.login('wrong-password'), /管理员密码错误/)
+  await assert.rejects(() => admin.login('wrong-password'), /管理员账号或密码错误/)
   const data = await auth.store.read()
   assert.equal(data.adminSessions.length, 0)
 })
@@ -49,4 +49,17 @@ test('admin usage requires authentication and returns filtered audit events', as
   const result = await admin.usage(token, { model: 'MiniMax-M3' })
   assert.equal(result.length, 1)
   assert.equal(result[0].estimatedTotalTokens, 4)
+})
+
+test('admin can review, approve, and revoke registered users', async () => {
+  const { admin, auth } = await setup()
+  const created = await auth.register({ username: 'review-me', password: 'strong-pass-123' })
+  const { token } = await admin.login('admin-test-password')
+  const pending = await admin.users(token, { status: 'pending' })
+  assert.equal(pending.length, 1)
+  assert.equal(pending[0].username, 'review-me')
+  const approved = await admin.approveUser(token, created.user.id)
+  assert.equal(approved.status, 'active')
+  const revoked = await admin.revokeUser(token, created.user.id)
+  assert.equal(revoked.status, 'revoked')
 })

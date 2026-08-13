@@ -135,7 +135,7 @@ async function serveControlRoom(request, response) {
 }
 
 function adminErrorStatus(error) {
-  return /需要管理员登录|管理员密码错误|访客不存在/.test(error.message) ? 401 : 400
+  return /需要管理员登录|管理员账号或密码错误|管理员密码错误|访客不存在/.test(error.message) ? 401 : 400
 }
 
 function attachmentMetadata(attachments) {
@@ -243,7 +243,7 @@ export function createServer() {
       if (request.method === 'GET' && route === '/api/auth/me') { const session = await auth.getSession(bearerToken(request), 'user'); return session ? sendJson(request, response, 200, { user: session.user }) : sendJson(request, response, 401, { error: '未登录' }) }
       if (request.method === 'POST' && route === '/api/auth/logout') { await auth.revoke(bearerToken(request), 'user'); return sendJson(request, response, 200, { ok: true }) }
       if (request.method === 'POST' && route === '/api/admin/login') {
-        try { const body = await readBody(request); return sendJson(request, response, 200, await adminApi.login(String(body.password || ''))) }
+        try { const body = await readBody(request); return sendJson(request, response, 200, await adminApi.login({ username: String(body.username || ''), password: String(body.password || '') })) }
         catch (error) { return sendJson(request, response, 401, { error: error.message }) }
       }
       if (request.method === 'POST' && route === '/api/admin/logout') {
@@ -265,6 +265,18 @@ export function createServer() {
       if (request.method === 'GET' && route === '/api/admin/usage') {
         try { const query = new URL(request.url, 'http://localhost').searchParams; return sendJson(request, response, 200, await adminApi.usage(adminToken(request), { product: query.get('product') || undefined, model: query.get('model') || undefined, query: query.get('q') || undefined, limit: query.get('limit') || undefined })) }
         catch (error) { return sendJson(request, response, 401, { error: error.message }) }
+      }
+      if (request.method === 'GET' && route === '/api/admin/users') {
+        try { const query = new URL(request.url, 'http://localhost').searchParams; return sendJson(request, response, 200, await adminApi.users(adminToken(request), { status: query.get('status') || undefined, query: query.get('q') || undefined })) }
+        catch (error) { return sendJson(request, response, adminErrorStatus(error), { error: error.message }) }
+      }
+      const userActionMatch = route.match(/^\/api\/admin\/users\/([^/]+)\/(approve|revoke)$/)
+      if (request.method === 'POST' && userActionMatch) {
+        try {
+          const userId = decodeURIComponent(userActionMatch[1])
+          const result = userActionMatch[2] === 'approve' ? await adminApi.approveUser(adminToken(request), userId) : await adminApi.revokeUser(adminToken(request), userId)
+          return sendJson(request, response, 200, result)
+        } catch (error) { return sendJson(request, response, adminErrorStatus(error), { error: error.message }) }
       }
       const visitorMatch = route.match(/^\/api\/admin\/visitors\/([^/]+)$/)
       if (request.method === 'GET' && visitorMatch) {

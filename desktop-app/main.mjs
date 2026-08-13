@@ -65,7 +65,7 @@ function createWindow(config) {
     minWidth: 980,
     minHeight: 680,
     backgroundColor: '#eef0ee',
-    title: 'ZT.AI Desktop Agent',
+    title: 'ZT.buddy',
     icon: path.join(__dirname, 'icon.ico'),
     webPreferences: { preload: path.join(__dirname, 'preload.mjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   })

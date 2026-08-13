@@ -27,10 +27,23 @@ function hashToken(token) {
 }
 
 function publicUser(user) {
-  return { id: user.id, username: user.username, createdAt: user.createdAt }
+  return {
+    id: user.id,
+    username: user.username,
+    status: user.status || 'active',
+    createdAt: user.createdAt,
+    requestedAt: user.requestedAt || user.createdAt,
+    approvedAt: user.approvedAt || null,
+    revokedAt: user.revokedAt || null,
+    lastLoginAt: user.lastLoginAt || null,
+  }
 }
 
-export function createAuthService({ store = getDataStore(), now = () => Date.now(), adminPassword = process.env.ADMIN_PASSWORD || '', adminSalt = process.env.ADMIN_PASSWORD_SALT, adminHash = process.env.ADMIN_PASSWORD_HASH } = {}) {
+function userStatus(user) {
+  return user?.status || 'active'
+}
+
+export function createAuthService({ store = getDataStore(), now = () => Date.now(), adminUsername = process.env.ADMIN_USERNAME || 'shali', adminPassword = process.env.ADMIN_PASSWORD || '', adminSalt = process.env.ADMIN_PASSWORD_SALT, adminHash = process.env.ADMIN_PASSWORD_HASH, adminSessionMs = Number(process.env.ADMIN_SESSION_MS || ADMIN_SESSION_MS) } = {}) {
   const configuredAdmin = adminHash && adminSalt
     ? { salt: adminSalt, hash: adminHash }
     : adminPassword ? null : null
@@ -51,9 +64,27 @@ export function createAuthService({ store = getDataStore(), now = () => Date.now
     const collection = type === 'admin' ? data.adminSessions : data.sessions
     const session = collection.find(item => item.tokenHash === tokenHash && item.type === type)
     if (!session || session.expiresAt <= now()) return null
-    if (type === 'admin') return { ...session, user: { id: 'admin', username: 'admin' } }
+    if (type === 'admin') return { ...session, user: { id: 'admin', username: normalizeUsername(adminUsername) } }
     const user = data.users.find(item => item.id === session.userId)
-    return user ? { ...session, user: publicUser(user) } : null
+    return user && userStatus(user) === 'active' ? { ...session, user: publicUser(user) } : null
+  }
+
+  async function updateUserStatus(userId, status) {
+    let updated
+    await store.update(data => {
+      const user = data.users.find(item => item.id === userId)
+      if (!user) throw new Error('用户不存在')
+      user.status = status
+      if (status === 'active') {
+        user.approvedAt = user.approvedAt || now()
+        user.revokedAt = null
+      } else if (status === 'revoked') {
+        user.revokedAt = now()
+      }
+      updated = publicUser(user)
+      if (status === 'revoked') data.sessions = data.sessions.filter(session => session.userId !== userId)
+    })
+    return updated
   }
 
   return {
@@ -63,20 +94,28 @@ export function createAuthService({ store = getDataStore(), now = () => Date.now
       const data = await store.read()
       if (data.users.some(user => user.username === username)) throw new Error('用户名已存在')
       const credentials = await hashPassword(password)
-      const user = { id: crypto.randomUUID(), username, ...{ passwordHash: credentials.hash, passwordSalt: credentials.salt }, createdAt: now() }
+      const user = { id: crypto.randomUUID(), username, ...{ passwordHash: credentials.hash, passwordSalt: credentials.salt }, createdAt: now(), requestedAt: now(), status: 'pending', approvedAt: null, revokedAt: null, lastLoginAt: null }
       await store.update(next => { next.users.push(user) })
-      const token = await createSession(user.id, 'user', USER_SESSION_MS)
-      return { token, user: publicUser(user) }
+      return { pending: true, user: publicUser(user) }
     },
     async login(input) {
       const { username, password } = validateCredentials(input)
       const data = await store.read()
       const user = data.users.find(item => item.username === username)
       if (!user || (await hashPassword(password, user.passwordSalt)).hash !== user.passwordHash) throw new Error('用户名或密码错误')
+      if (userStatus(user) === 'pending') throw new Error('账号正在等待管理员审核')
+      if (userStatus(user) === 'revoked') throw new Error('账号已被注销')
+      await store.update(next => {
+        const current = next.users.find(item => item.id === user.id)
+        if (current) current.lastLoginAt = now()
+      })
       const token = await createSession(user.id, 'user', USER_SESSION_MS)
-      return { token, user: publicUser(user) }
+      return { token, user: publicUser({ ...user, lastLoginAt: now() }) }
     },
-    async loginAdmin(password) {
+    async loginAdmin(input) {
+      const username = normalizeUsername(typeof input === 'string' ? adminUsername : input?.username)
+      const password = typeof input === 'string' ? input : input?.password
+      if (username !== normalizeUsername(adminUsername)) throw new Error('管理员账号或密码错误')
       let valid = false
       if (configuredAdmin) valid = (await hashPassword(password, configuredAdmin.salt)).hash === configuredAdmin.hash
       else if (adminPassword) {
@@ -84,10 +123,22 @@ export function createAuthService({ store = getDataStore(), now = () => Date.now
         const expected = crypto.createHash('sha256').update(String(adminPassword)).digest()
         valid = crypto.timingSafeEqual(supplied, expected)
       }
-      if (!valid) throw new Error('管理员密码错误')
-      const token = await createSession('admin', 'admin', ADMIN_SESSION_MS)
-      return { token, expiresIn: ADMIN_SESSION_MS }
+      if (!valid) throw new Error('管理员账号或密码错误')
+      const token = await createSession('admin', 'admin', adminSessionMs)
+      return { token, username: normalizeUsername(adminUsername), expiresIn: adminSessionMs }
     },
+    async users(filters = {}) {
+      const data = await store.read()
+      const status = filters.status ? String(filters.status) : ''
+      const query = String(filters.query || '').trim().toLowerCase()
+      return data.users
+        .filter(user => !status || userStatus(user) === status)
+        .filter(user => !query || user.username.includes(query) || user.id.toLowerCase().includes(query))
+        .sort((a, b) => (b.requestedAt || b.createdAt) - (a.requestedAt || a.createdAt))
+        .map(publicUser)
+    },
+    async approveUser(userId) { return updateUserStatus(userId, 'active') },
+    async revokeUser(userId) { return updateUserStatus(userId, 'revoked') },
     getSession,
     async revoke(token, type = 'user') {
       const tokenHash = hashToken(token)

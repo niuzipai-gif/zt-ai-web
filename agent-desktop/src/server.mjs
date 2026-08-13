@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { AgentTaskManager } from './agent-core.mjs'
 import { CAPABILITIES, PermissionStore } from './permissions.mjs'
 import { DeviceAuthorizationStore, requiresDeviceAuthorization } from './authorization.mjs'
+import { scanSkillRoots } from './skills.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PUBLIC = path.join(ROOT, 'public')
@@ -14,6 +15,15 @@ const workspaceRoot = path.resolve(process.env.ZT_AI_WORKSPACE || path.join(ROOT
 const gatewayUrl = process.env.ZT_AI_GATEWAY_URL || 'http://localhost:8790'
 const localSecret = process.env.ZT_AI_AGENT_SECRET || ''
 const requireAccountAuth = process.env.ZT_AI_AGENT_REQUIRE_AUTH === '1'
+const userProfile = process.env.USERPROFILE || process.env.HOME || ''
+const skillRoots = [
+  ...String(process.env.ZT_AI_SKILL_ROOTS || '').split(path.delimiter).filter(Boolean),
+  path.join(userProfile, '.codex', 'skills'),
+  path.join(userProfile, '.agents', 'skills'),
+  path.join(workspaceRoot, '.codex', 'skills'),
+  path.join(workspaceRoot, '.agents', 'skills'),
+]
+let skillCache = { at: 0, skills: [] }
 const permissions = new PermissionStore(path.join(DATA, 'permissions.json'))
 const deviceAuthorization = new DeviceAuthorizationStore(path.join(DATA, 'device-authorization.json'))
 await permissions.load()
@@ -61,7 +71,7 @@ function sseStart(request, response) {
   response.flushHeaders?.()
 }
 
-const contentTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.json': 'application/json; charset=utf-8' }
+const contentTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.json': 'application/json; charset=utf-8' }
 
 async function staticFile(request, response) {
   const pathname = new URL(request.url, 'http://localhost').pathname
@@ -83,6 +93,10 @@ const server = http.createServer(async (request, response) => {
     const url = new URL(request.url, 'http://localhost')
     if (request.method === 'GET' && url.pathname === '/api/config') return json(request, response, 200, { ok: true, gatewayUrl, localSecret, mode: 'execute' })
     if (url.pathname.startsWith('/api/') && !localAuthorized(request)) return json(request, response, 401, { error: '本机 Agent 请求未通过本地校验' })
+    if (request.method === 'GET' && url.pathname === '/api/skills') {
+      if (Date.now() - skillCache.at > 30_000) skillCache = { at: Date.now(), skills: await scanSkillRoots(skillRoots) }
+      return json(request, response, 200, { ok: true, roots: skillRoots, skills: skillCache.skills, scannedAt: new Date(skillCache.at).toISOString() })
+    }
     if (request.method === 'GET' && url.pathname === '/api/state') return json(request, response, 200, { ok: true, ...tasks.snapshot(), permissions: permissions.snapshot(), deviceAuthorization: deviceAuthorization.snapshot(), gatewayUrl, mode: 'execute' })
     if (request.method === 'POST' && url.pathname === '/api/authorization') {
       const body = await readBody(request)

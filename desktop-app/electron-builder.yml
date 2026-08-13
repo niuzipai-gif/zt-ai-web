@@ -1,5 +1,5 @@
 appId: ai.zt.desktopagent
-productName: ZT.AI Desktop Agent
+productName: ZT.buddy
 icon: desktop-app/icon.ico
 directories:
   output: release
@@ -20,11 +20,11 @@ win:
   target:
     - nsis
     - portable
-  artifactName: ZT.AI-Desktop-Agent-${version}-${arch}.${ext}
+  artifactName: ZT.buddy-Desktop-${version}-${arch}.${ext}
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
-  shortcutName: ZT.AI Desktop Agent
+  shortcutName: ZT.buddy
 portable:
-  artifactName: ZT.AI-Desktop-Agent-${version}-${arch}-portable.${ext}
+  artifactName: ZT.buddy-Desktop-${version}-${arch}-portable.${ext}
