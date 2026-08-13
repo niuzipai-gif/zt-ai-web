@@ -302,7 +302,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     setAttachments([])
     void (async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, language, messages: history, attachments: userMessage.attachments.map(({ name, type, size }) => ({ name, type, size })) }) })
+        const response = await fetch(`${API_BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, language, visitorId, conversationId: session.id, messages: history, attachments: userMessage.attachments.map(({ name, type, size }) => ({ name, type, size })) }) })
         await consumeSse(response, (event, data) => {
           if (event === 'message.delta' && data.text) streamQueueRef.current.push(...String(data.text))
           if (event === 'media.started') streamQueueRef.current.push(...copy.mediaPreparing)

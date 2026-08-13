@@ -12,7 +12,7 @@
     <div class="app-shell">
       <header class="topbar">
         <div class="brand"><img src="/zt-logo.png" alt="ZT.AI" /><div><strong>ZT.AI</strong><span>DESKTOP AGENT</span></div></div>
-        <div class="topbar-status"><span class="live-dot"></span><span id="gateway-status">本机工作台 · 执行模式</span><span class="mono" id="clock"></span></div>
+        <div class="topbar-status"><span class="live-dot"></span><span id="gateway-status">本机工作台 · 执行模式</span><span id="account-label" class="mono"></span><button id="logout" class="text-button">退出账户</button><span class="mono" id="clock"></span></div>
       </header>
       <div class="workspace-grid">
         <aside class="sidebar glass-card">
@@ -45,6 +45,14 @@
           <section id="approval-card" class="approval-card hidden"><div class="approval-mark">!</div><div><span class="eyebrow">APPROVAL REQUIRED</span><h3 id="approval-title">需要你的确认</h3><p id="approval-preview"></p><div class="approval-actions"><button id="approve-once" class="primary-button small">允许一次</button><button id="approve-always" class="secondary-button small">记住权限</button><button id="reject" class="text-button">拒绝</button></div></div></section>
           <section class="inspector-card glass-card compact"><div class="inspector-heading"><span class="eyebrow">PORTABLE RUNTIME</span><h2>轻量便携</h2></div><div class="runtime-line"><span>Gateway</span><code id="gateway-url">localhost:8790</code></div><div class="runtime-line"><span>Workspace</span><code id="workspace-path">…</code></div><p class="muted-copy">状态和权限保存在 agent-desktop/data，可连同项目迁移到另一台电脑。</p></section>
         </aside>
+      </div>
+    </div>
+    <div id="auth-gate" class="auth-gate">
+      <div class="auth-card glass-card">
+        <div class="brand auth-brand"><img src="/zt-logo.png" alt="ZT.AI" /><div><strong>ZT.AI</strong><span>DESKTOP AGENT</span></div></div>
+        <span class="eyebrow">PRIVATE WORKSPACE</span><h2>登录你的执行工作台</h2><p>桌面 Agent 需要独立账户。任务在你选择的电脑和工作区执行。</p>
+        <form id="auth-form"><label>用户名<input id="auth-username" autocomplete="username" required minlength="3" maxlength="32" /></label><label>密码<input id="auth-password" type="password" autocomplete="current-password" required minlength="8" maxlength="128" /></label><button class="primary-button" type="submit" id="auth-submit">登录</button></form>
+        <button id="auth-toggle" class="text-button auth-toggle">没有账户？注册一个</button><div id="auth-error" class="auth-error" role="alert"></div><small class="muted-copy">账户凭证只用于登录 ZT.AI 服务，不会写入任务历史。</small>
       </div>
     </div>
     <script type="module" src="/app.js"></script>

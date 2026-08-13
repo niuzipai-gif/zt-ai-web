@@ -1,12 +1,13 @@
 const $ = selector => document.querySelector(selector)
-const state = { model: localStorage.getItem('zt-ai:agent-model') || 'MINIMAX', taskId: null, eventCount: 0, reader: null }
+const state = { model: localStorage.getItem('zt-ai:agent-model') || 'MINIMAX', taskId: null, eventCount: 0, reader: null, authToken: localStorage.getItem('zt-ai:desktop-token') || '', gatewayUrl: '', localSecret: '', registering: false }
 
 const els = {
   taskInput: $('#task-input'), run: $('#run-task'), newTask: $('#new-task'), refresh: $('#refresh'), history: $('#history'),
   plan: $('#plan'), log: $('#activity-log'), logCount: $('#log-count'), title: $('#execution-title'), status: $('#execution-status'),
   taskId: $('#current-task-id'), resultPanel: $('#result-panel'), resultText: $('#result-text'), approval: $('#approval-card'), approvalTitle: $('#approval-title'),
   approvalPreview: $('#approval-preview'), gateway: $('#gateway-url'), workspace: $('#workspace-path'), workspaceShort: $('#workspace-short'), gatewayStatus: $('#gateway-status'),
-  authorize: $('#authorize-device'), authorizationStatus: $('#authorization-status'),
+  authorize: $('#authorize-device'), authorizationStatus: $('#authorization-status'), logout: $('#logout'), accountLabel: $('#account-label'),
+  authGate: $('#auth-gate'), authForm: $('#auth-form'), authUsername: $('#auth-username'), authPassword: $('#auth-password'), authSubmit: $('#auth-submit'), authToggle: $('#auth-toggle'), authError: $('#auth-error'),
 }
 
 function escapeHtml(value) { return String(value).replace(/[&<>'\"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character])) }
@@ -29,6 +30,30 @@ function showApproval(data) { state.pendingApproval = data; els.approvalTitle.te
 function hideApproval() { state.pendingApproval = null; els.approval.classList.add('hidden') }
 
 async function readJson(response) { const text = await response.text(); try { return JSON.parse(text) } catch { return { error: text } } }
+
+async function apiFetch(path, options = {}) {
+  const headers = { ...(options.headers || {}), 'x-zt-agent-secret': state.localSecret }
+  return fetch(path, { ...options, headers })
+}
+
+function showAuthError(message = '') { els.authError.textContent = message }
+function showWorkspace() { els.authGate.classList.add('hidden'); els.taskInput.disabled = false; els.accountLabel.textContent = 'ACCOUNT ACTIVE' }
+function showLogin() { els.authGate.classList.remove('hidden'); els.taskInput.disabled = true; showAuthError('') }
+
+async function submitAuth(event) {
+  event.preventDefault(); showAuthError(''); els.authSubmit.disabled = true
+  try {
+    const response = await fetch(`${state.gatewayUrl}/api/auth/${state.registering ? 'register' : 'login'}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: els.authUsername.value.trim(), password: els.authPassword.value }) })
+    const body = await readJson(response)
+    if (!response.ok) throw new Error(body.error || '登录失败')
+    state.authToken = body.token; localStorage.setItem('zt-ai:desktop-token', state.authToken); els.authPassword.value = ''; showWorkspace(); refreshState()
+  } catch (error) { showAuthError(error.message) } finally { els.authSubmit.disabled = false }
+}
+
+async function logout() {
+  if (state.authToken) await fetch(`${state.gatewayUrl}/api/auth/logout`, { method: 'POST', headers: { authorization: `Bearer ${state.authToken}` } }).catch(() => {})
+  state.authToken = ''; localStorage.removeItem('zt-ai:desktop-token'); showLogin()
+}
 
 async function consumeSse(response) {
   if (!response.ok || !response.body) { const body = await readJson(response); throw new Error(body.error || `请求失败（${response.status}）`) }
@@ -63,7 +88,7 @@ async function runTask() {
   const task = els.taskInput.value.trim(); if (!task || state.reader) return
   resetExecution(); els.taskInput.disabled = true; els.run.disabled = true; els.run.querySelector('span').textContent = '执行中…'
   try {
-    const response = await fetch('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ task, model: state.model }) })
+    const response = await apiFetch('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ task, model: state.model, accountToken: state.authToken }) })
     await consumeSse(response)
   } catch (error) { setStatus('ERROR', 'error'); addLog(error.message, 'warning') }
   finally { state.reader = null; els.taskInput.disabled = false; els.run.disabled = false; els.run.querySelector('span').textContent = '执行任务' }
@@ -72,22 +97,22 @@ async function runTask() {
 async function approve(remember) {
   if (!state.taskId || !state.pendingApproval) return
   const { capability } = state.pendingApproval
-  const response = await fetch(`/api/tasks/${state.taskId}/approve`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ capability, remember }) })
+  const response = await apiFetch(`/api/tasks/${state.taskId}/approve`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ capability, remember }) })
   const body = await readJson(response); if (!response.ok) addLog(body.error || '批准失败', 'warning'); else { addLog(remember ? `已记住权限：${capability}` : `已允许一次：${capability}`, 'result'); hideApproval() }
 }
 async function reject() {
   if (!state.taskId) return
-  const response = await fetch(`/api/tasks/${state.taskId}/reject`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason: '用户拒绝了这一步' }) })
+  const response = await apiFetch(`/api/tasks/${state.taskId}/reject`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason: '用户拒绝了这一步' }) })
   const body = await readJson(response); if (!response.ok) addLog(body.error || '拒绝失败', 'warning'); else hideApproval()
 }
 
 async function updatePermission(capability, enabled) {
-  const response = await fetch('/api/permissions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ capability, enabled }) })
+  const response = await apiFetch('/api/permissions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ capability, enabled }) })
   const body = await readJson(response); if (!response.ok) addLog(body.error || '权限更新失败', 'warning'); else addLog(`${enabled ? '已开启' : '已关闭'}权限：${capability}`, enabled ? 'warning' : '')
 }
 
 async function updateAuthorization() {
-  const response = await fetch('/api/authorization', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ authorized: true }) })
+  const response = await apiFetch('/api/authorization', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ authorized: true }) })
   const body = await readJson(response)
   if (!response.ok) { addLog(body.error || '本机授权失败', 'warning'); return }
   addLog('已确认：Agent 只可在当前设备执行', 'result')
@@ -100,7 +125,7 @@ function renderHistory(items = []) {
 }
 async function refreshState() {
   try {
-    const response = await fetch('/api/state'); const data = await response.json(); renderHistory(data.history); els.gateway.textContent = data.gatewayUrl.replace(/^https?:\/\//, ''); els.workspace.textContent = data.workspaceRoot; els.workspaceShort.textContent = data.workspaceRoot; els.gatewayStatus.textContent = `本机工作台 · ${data.mode === 'execute' ? '执行模式' : '待机'}`
+    const response = await apiFetch('/api/state'); if (response.status === 401) { logout(); return } const data = await response.json(); renderHistory(data.history); els.gateway.textContent = data.gatewayUrl.replace(/^https?:\/\//, ''); els.workspace.textContent = data.workspaceRoot; els.workspaceShort.textContent = data.workspaceRoot; els.gatewayStatus.textContent = `本机工作台 · ${data.mode === 'execute' ? '执行模式' : '待机'}`
     const authorized = data.deviceAuthorization?.authorized === true
     els.authorizationStatus.textContent = authorized ? `已确认本机 · ${new Date(data.deviceAuthorization.authorizedAt).toLocaleString()}` : '尚未确认本机执行'
     els.authorize.textContent = authorized ? '已确认' : '确认这台设备'
@@ -115,4 +140,16 @@ document.querySelectorAll('[data-capability]').forEach(input => input.addEventLi
 els.run.addEventListener('click', runTask); els.taskInput.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') runTask() }); els.newTask.addEventListener('click', () => { els.taskInput.value = ''; resetExecution(); els.taskInput.focus() }); els.refresh.addEventListener('click', refreshState)
 els.authorize.addEventListener('click', updateAuthorization)
 $('#approve-once').addEventListener('click', () => approve(false)); $('#approve-always').addEventListener('click', () => approve(true)); $('#reject').addEventListener('click', reject)
-setInterval(() => { $('#clock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, 1000); refreshState(); document.querySelector(`[data-model="${state.model}"]`)?.classList.add('active')
+els.authForm.addEventListener('submit', submitAuth); els.authToggle.addEventListener('click', () => { state.registering = !state.registering; els.authSubmit.textContent = state.registering ? '注册并进入' : '登录'; els.authToggle.textContent = state.registering ? '已有账户？返回登录' : '没有账户？注册一个'; els.authPassword.autocomplete = state.registering ? 'new-password' : 'current-password'; showAuthError('') }); els.logout.addEventListener('click', logout)
+async function bootstrap() {
+  try {
+    const configResponse = await fetch('/api/config'); const config = await configResponse.json(); state.gatewayUrl = config.gatewayUrl; state.localSecret = config.localSecret || ''
+    if (state.authToken) {
+      const session = await fetch(`${state.gatewayUrl}/api/auth/me`, { headers: { authorization: `Bearer ${state.authToken}` } })
+      if (session.ok) { showWorkspace(); await refreshState(); return }
+      localStorage.removeItem('zt-ai:desktop-token'); state.authToken = ''
+    }
+  } catch (error) { showAuthError(`工作台启动失败：${error.message}`) }
+  showLogin()
+}
+setInterval(() => { $('#clock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, 1000); document.querySelector(`[data-model="${state.model}"]`)?.classList.add('active'); bootstrap()

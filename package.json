@@ -9,6 +9,10 @@
     "gateway:health": "node -e \"fetch('http://localhost:8790/api/health').then(r=>r.text()).then(console.log)\"",
     "agent:start": "node agent-desktop/src/server.mjs",
     "agent:test": "node --test agent-desktop/src/*.test.mjs",
+    "desktop:dev": "electron desktop-app",
+    "desktop:test": "node --test desktop-app/renderer/*.test.mjs",
+    "desktop:dist": "electron-builder --config desktop-app/electron-builder.yml",
+    "integration:test": "node tools/integration-smoke.mjs",
     "test": "node --test \"server/src/**/*.test.js\" \"src/**/*.test.js\"",
     "build": "vite build",
     "preview": "vite preview"
@@ -20,5 +24,9 @@
     "react": "latest",
     "react-dom": "latest",
     "vite": "latest"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.0"
   }
 }

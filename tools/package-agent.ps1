@@ -10,7 +10,7 @@ if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -F
 New-Item -ItemType Directory -Path $stage | Out-Null
 
 $include = @(
-  'agent-desktop', 'server', 'src', 'public', 'docs', 'tools', 'package.json', 'package-lock.json',
+  'agent-desktop', 'desktop-app', 'server', 'src', 'public', 'docs', 'tools', 'package.json', 'package-lock.json',
   'README.md', 'PORTABLE-SETUP.md', 'render.yaml', 'aikey.env.example', 'start-gateway.ps1',
   'start-gateway-silent.vbs', 'start-local.ps1', 'vite.config.js'
 )

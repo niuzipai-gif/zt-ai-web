@@ -107,12 +107,13 @@ function modelForGateway(model) {
 }
 
 export class AgentTaskManager {
-  constructor({ workspaceRoot, permissionStore, deviceAuthorization, gatewayUrl, historyPath }) {
+  constructor({ workspaceRoot, permissionStore, deviceAuthorization, gatewayUrl, historyPath, authToken = '' }) {
     this.workspaceRoot = workspaceRoot
     this.permissionStore = permissionStore
     this.deviceAuthorization = deviceAuthorization
     this.gatewayUrl = gatewayUrl.replace(/\/$/, '')
     this.historyPath = historyPath
+    this.authToken = authToken
     this.tasks = new Map()
     this.history = []
   }
@@ -136,7 +137,7 @@ export class AgentTaskManager {
     state.response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
   }
 
-  create({ task, model, response }) {
+  create({ task, model, response, authToken = this.authToken }) {
     const id = crypto.randomUUID()
     const state = {
       id,
@@ -151,6 +152,7 @@ export class AgentTaskManager {
       waiting: null,
       status: 'running',
       closed: false,
+      authToken,
     }
     response.on('close', () => { state.closed = true })
     this.tasks.set(id, state)
@@ -176,8 +178,8 @@ export class AgentTaskManager {
   async requestAgentPlan(state) {
     const response = await fetch(`${this.gatewayUrl}/api/agent/plan`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model: modelForGateway(state.model), language: 'zh', task: state.task }),
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${state.authToken}` },
+      body: JSON.stringify({ model: modelForGateway(state.model), language: 'zh', task: state.task, taskId: state.id, visitorId: `desktop-${state.authToken.slice(-12)}`, conversationId: state.id }),
       signal: AbortSignal.timeout(90_000),
     })
     const body = await response.json().catch(() => ({}))
@@ -242,10 +244,12 @@ export class AgentTaskManager {
     const transcript = state.results.map(item => `${item.tool}: ${item.result}`).join('\n')
     const response = await fetch(`${this.gatewayUrl}/api/agent/chat`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${state.authToken}` },
       body: JSON.stringify({
         model: modelForGateway(state.model),
         language: 'zh',
+        visitorId: `desktop-${state.authToken.slice(-12)}`,
+        conversationId: state.id,
         messages: [{ role: 'user', content: `任务目标：${state.task}\n\n已执行步骤：\n${transcript}\n\n请用简洁中文汇总完成情况、证据、未完成项和下一步。` }],
       }),
       signal: AbortSignal.timeout(90_000),

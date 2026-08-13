@@ -10,7 +10,7 @@
 npm run agent:start
 ```
 
-或双击 `start-agent-silent.vbs`，它会静默启动本机工作台并打开 `http://127.0.0.1:8788/`。
+或双击 `start-agent-silent.vbs`，它会静默启动兼容模式并打开 `http://127.0.0.1:8788/`。正式使用建议运行根目录的 `npm run desktop:dev`，进入 Electron 桌面版。
 
 默认工作区是项目根目录，默认只允许读取。工作区写入、命令执行在右侧权限面板开启后，具体动作仍会在执行前请求一次批准。模型可在 MiniMax M3 与 DeepSeek v4 flash 之间切换。
 
@@ -28,4 +28,4 @@ Agent 只把任务日志和权限配置写入 `agent-desktop/data`，不把 API 
 
 ## 迁移
 
-迁移时保留 `agent-desktop`、项目根目录的 `server`、`aikey.env`（不上传 GitHub）和 Node.js 环境。新电脑上运行 `npm install` 后，双击静默启动脚本即可。
+迁移时优先使用 `release/` 中的 Electron 安装包或 portable 包；它会把任务状态放到当前 Windows 用户目录，不依赖原来的 E 盘路径。若使用兼容模式，则保留 `agent-desktop`、项目根目录的 `server`、`aikey.env`（不上传 GitHub）和 Node.js 环境。

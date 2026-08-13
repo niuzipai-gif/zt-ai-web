@@ -21,3 +21,5 @@ zt-ai-web.error.log
 resume.docx
 .superpowers/
 .portable-staging/
+release/
+desktop-app/resources/

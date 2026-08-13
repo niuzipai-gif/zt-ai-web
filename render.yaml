@@ -26,6 +26,14 @@ services:
         value: deepseek-v4-flash
       - key: DEEPSEEK_BASE_URL
         value: https://api.deepseek.com
+      - key: ADMIN_PASSWORD_SALT
+        sync: false
+      - key: ADMIN_PASSWORD_HASH
+        sync: false
+      - key: DATA_RETENTION_DAYS
+        value: "90"
+      - key: ZT_AI_DATA_PATH
+        value: /var/data/zt-ai.json
       - key: MMX_ENABLED
         value: "true"
       - key: MMX_IMAGE_MODEL

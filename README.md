@@ -33,7 +33,17 @@ API 密钥只放在项目根目录的 `aikey.env`，该文件已被 `.gitignore`
 
 双击 `agent-desktop/start-agent-silent.vbs` 可静默启动；更完整的迁移说明见 `agent-desktop/README.md` 与 `PORTABLE-SETUP.md`。推理通过 Gateway 的 `/api/agent/chat` 路由完成，密钥只保留在本机 `aikey.env`。
 
-简历下载文件位于 `public/`：`resume.docx` 为中文 FDE 简历，`resume-en.docx` 为英文版，`resume-ja.docx` 为日文版。三份文件均基于同一份 FDE 简历的原始版式生成。
+### Electron 桌面版
+
+`npm run desktop:dev` 会打开真正的 Windows Electron 桌面应用：登录/注册后进入执行优先的本机工作台。应用会为每个启动实例生成本地 worker 密钥，worker 只监听 `127.0.0.1`；任务请求带账号 token，经 Gateway 调用模型。发布安装包使用 `npm run desktop:dist`，输出在 `release/`。桌面端默认连接 `https://zt-ai-gateway.onrender.com`，本地测试前可设置 `$env:ZT_AI_GATEWAY_URL='http://localhost:8790'`。
+
+## Control Room 管理网站
+
+管理员网站与公共网页、桌面 Agent 分离，地址为 Gateway 的 `/admin/`，例如 `https://zt-ai-gateway.onrender.com/admin/`。用 `tools/set-admin-password.ps1` 生成 `ADMIN_PASSWORD_SALT` 和 `ADMIN_PASSWORD_HASH` 后，只把这两个值填入 Render 私密环境变量；不要把密码、API key 或生成结果提交到仓库。`DATA_RETENTION_DAYS` 控制留存周期，`ZT_AI_DATA_PATH` 控制 JSON 审计库位置。
+
+列表默认显示脱敏 IP，完整 IP 和消息时间线仅在管理员登录后显示。线上 Render 若没有挂载持久化磁盘或外部数据库，JSON 审计数据会在实例重建时丢失；上线前应为 `ZT_AI_DATA_PATH` 配置持久化存储。
+
+简历下载文件位于 `public/`，中文、英文、日文版本按当前简历文件维护。三份文件均基于同一份 FDE 简历的原始版式生成。
 
 ## 离职迁移
 

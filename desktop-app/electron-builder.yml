@@ -1,0 +1,30 @@
+appId: ai.zt.desktopagent
+productName: ZT.AI Desktop Agent
+icon: desktop-app/icon.ico
+directories:
+  output: release
+  buildResources: desktop-app/resources
+extraMetadata:
+  main: desktop-app/main.mjs
+files:
+  - desktop-app/**/*
+  - agent-desktop/public/**/*
+  - agent-desktop/src/**/*
+  - server/src/**/*
+  - server/package.json
+  - package.json
+asar: true
+asarUnpack:
+  - agent-desktop/**
+win:
+  target:
+    - nsis
+    - portable
+  artifactName: ZT.AI-Desktop-Agent-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: ZT.AI Desktop Agent
+portable:
+  artifactName: ZT.AI-Desktop-Agent-${version}-${arch}-portable.${ext}

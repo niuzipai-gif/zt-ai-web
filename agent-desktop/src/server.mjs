@@ -8,10 +8,12 @@ import { DeviceAuthorizationStore, requiresDeviceAuthorization } from './authori
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PUBLIC = path.join(ROOT, 'public')
-const DATA = path.join(ROOT, 'data')
+const DATA = path.resolve(process.env.ZT_AI_AGENT_DATA || path.join(ROOT, 'data'))
 const port = Number(process.env.ZT_AI_AGENT_PORT || process.env.PORT || 8788)
 const workspaceRoot = path.resolve(process.env.ZT_AI_WORKSPACE || path.join(ROOT, '..'))
 const gatewayUrl = process.env.ZT_AI_GATEWAY_URL || 'http://localhost:8790'
+const localSecret = process.env.ZT_AI_AGENT_SECRET || ''
+const requireAccountAuth = process.env.ZT_AI_AGENT_REQUIRE_AUTH === '1'
 const permissions = new PermissionStore(path.join(DATA, 'permissions.json'))
 const deviceAuthorization = new DeviceAuthorizationStore(path.join(DATA, 'device-authorization.json'))
 await permissions.load()
@@ -26,6 +28,23 @@ function cors(request) {
 function json(request, response, status, payload) {
   response.writeHead(status, { ...cors(request), 'content-type': 'application/json; charset=utf-8' })
   response.end(JSON.stringify(payload))
+}
+
+function localAuthorized(request) {
+  return !localSecret || request.headers['x-zt-agent-secret'] === localSecret
+}
+
+function accountToken(request, body = {}) {
+  const header = String(request.headers.authorization || '')
+  return header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : String(body.accountToken || '')
+}
+
+async function accountIsValid(token) {
+  if (!token) return false
+  try {
+    const response = await fetch(`${gatewayUrl}/api/auth/me`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(8_000) })
+    return response.ok
+  } catch { return false }
 }
 
 function readBody(request) {
@@ -59,9 +78,11 @@ async function staticFile(request, response) {
 }
 
 const server = http.createServer(async (request, response) => {
-  if (request.method === 'OPTIONS') { response.writeHead(204, { ...cors(request), 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type' }); response.end(); return }
+  if (request.method === 'OPTIONS') { response.writeHead(204, { ...cors(request), 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type, authorization, x-zt-agent-secret' }); response.end(); return }
   try {
     const url = new URL(request.url, 'http://localhost')
+    if (request.method === 'GET' && url.pathname === '/api/config') return json(request, response, 200, { ok: true, gatewayUrl, localSecret, mode: 'execute' })
+    if (url.pathname.startsWith('/api/') && !localAuthorized(request)) return json(request, response, 401, { error: '本机 Agent 请求未通过本地校验' })
     if (request.method === 'GET' && url.pathname === '/api/state') return json(request, response, 200, { ok: true, ...tasks.snapshot(), permissions: permissions.snapshot(), deviceAuthorization: deviceAuthorization.snapshot(), gatewayUrl, mode: 'execute' })
     if (request.method === 'POST' && url.pathname === '/api/authorization') {
       const body = await readBody(request)
@@ -81,8 +102,9 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'POST' && url.pathname === '/api/tasks') {
       const body = await readBody(request)
       if (!String(body.task || '').trim()) return json(request, response, 400, { error: '请输入任务目标' })
+      if (requireAccountAuth && !(await accountIsValid(accountToken(request, body)))) return json(request, response, 401, { error: '请先登录桌面 Agent 账户或重新登录' })
       sseStart(request, response)
-      tasks.create({ task: body.task, model: body.model, response })
+      tasks.create({ task: body.task, model: body.model, response, authToken: accountToken(request, body) })
       return
     }
     const approveMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/(approve|reject)$/)
