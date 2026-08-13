@@ -26,6 +26,8 @@ services:
         value: deepseek-v4-flash
       - key: DEEPSEEK_BASE_URL
         value: https://api.deepseek.com
+      - key: ADMIN_PASSWORD
+        sync: false
       - key: ADMIN_PASSWORD_SALT
         sync: false
       - key: ADMIN_PASSWORD_HASH
