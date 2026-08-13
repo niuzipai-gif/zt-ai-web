@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
-  ArrowUpRight, BriefcaseBusiness, Check, FileText, GitBranch, History, Home,
+  ArrowUpRight, BriefcaseBusiness, Check, Download, FileText, GitBranch, History, Home,
   LockKeyhole, Menu, MessageCircle, MoreHorizontal, MoveUpRight, Orbit,
   Paperclip, Plus, Send, ShieldCheck, Sparkles, UserRound, X
 } from 'lucide-react'
@@ -15,6 +15,7 @@ import { getStreamBatchSize } from './lib/streaming.js'
 import './styles.css'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+const DESKTOP_DOWNLOAD_URL = 'https://github.com/niuzipai-gif/zt-ai-web/releases/latest/download/ZT.buddy-Desktop-0.2.1-x64.exe'
 
 const projects = [
   { title: 'AI 选品与开品工作流', tag: 'AI 产品开发', desc: '结合飞书多维表格与多个选品逻辑，搭建从筛选、评估到开品的完整流程。月均精铺 8 个以上，开品速度约为其他同事的 2 倍。', metric: '8+ / 月', icon: Orbit },
@@ -382,7 +383,7 @@ function App() {
   useEffect(() => { const handler = event => setPage(event.detail); document.getElementById('root').addEventListener('navigate', handler); return () => document.getElementById('root').removeEventListener('navigate', handler) }, [])
   const navigate = value => { setPage(value); setMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   return <div className={`app-shell page-${page}`}>
-    <header className="topbar"><button className="mobile-menu" onClick={() => setMenuOpen(value => !value)} aria-label={language === 'zh' ? '打开菜单' : 'Open menu'}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><Brand compact copy={copy} /><nav className={menuOpen ? 'open' : ''}>{Object.entries(pages).map(([key, label]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => navigate(key)}>{label}</button>)}</nav><div className="topbar-right"><LanguageSwitch language={language} setLanguage={setLanguage} copy={copy} /><span className="availability"><span /> {copy.availability}</span><button className="more-button" aria-label="More"><MoreHorizontal size={20} /></button></div></header>
+    <header className="topbar"><button className="mobile-menu" onClick={() => setMenuOpen(value => !value)} aria-label={language === 'zh' ? '打开菜单' : 'Open menu'}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><Brand compact copy={copy} /><nav className={menuOpen ? 'open' : ''}>{Object.entries(pages).map(([key, label]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => navigate(key)}>{label}</button>)}</nav><div className="topbar-right"><a className="desktop-download" href={DESKTOP_DOWNLOAD_URL} target="_blank" rel="noreferrer" aria-label={copy.desktopDownload}><Download size={14} /><span>{copy.desktopDownload}</span></a><LanguageSwitch language={language} setLanguage={setLanguage} copy={copy} /><span className="availability"><span /> {copy.availability}</span><button className="more-button" aria-label="More"><MoreHorizontal size={20} /></button></div></header>
     <main className="main-content">
       {page === 'home' && <HomePage copy={copy.home} onChat={() => navigate('chat')} />}
       {page === 'chat' && <div className="chat-layout"><PublicProfile copy={copy.profile} /><ChatBox copy={copy.chat} language={language} resumeDocument={resumeDocument} session={activeSession} visitorId={visitorState.visitorId} sessions={visitorState.sessions} onSessionChange={updateSession} onSelectSession={selectSession} onNewChat={newChat} /></div>}

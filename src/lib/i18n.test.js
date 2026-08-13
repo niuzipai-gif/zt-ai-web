@@ -16,6 +16,7 @@ test('provides a matching resume file for every interface language', () => {
   for (const code of ['zh', 'en', 'ja']) {
     assert.ok(resumeDocumentByLanguage[code].path.endsWith('.docx'))
     assert.ok(siteCopy[code].nav.home)
+    assert.ok(siteCopy[code].desktopDownload)
     assert.ok(siteCopy[code].resume.download)
     assert.ok(siteCopy[code].chat.startPrompt)
     assert.ok(siteCopy[code].chat.sendFallback)

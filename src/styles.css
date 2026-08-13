@@ -82,3 +82,7 @@
 .language-switch button{border:0;border-radius:999px;background:transparent;color:#7c858c;padding:5px 7px;font-size:9px;line-height:1;white-space:nowrap}
 .language-switch button:hover,.language-switch button.active{background:#303840;color:#fff}
 @media(max-width:800px){.language-switch>span{display:none}.language-switch button{padding:6px 6px}.topbar-right{gap:5px}}
+/* Desktop app entry in the public website header. */
+.desktop-download{display:flex;align-items:center;gap:6px;border:1px solid rgba(48,56,64,.16);border-radius:999px;padding:7px 11px;background:rgba(255,255,255,.7);color:#4d5960;font-size:10px;text-decoration:none;white-space:nowrap;transition:transform .18s ease,background .18s ease,border-color .18s ease,box-shadow .18s ease}
+.desktop-download:hover{transform:translateY(-1px);background:#fff;border-color:rgba(48,56,64,.3);box-shadow:0 7px 16px rgba(39,48,58,.1);color:#20252b}
+@media(max-width:800px){.desktop-download{padding:7px;width:31px;justify-content:center}.desktop-download span{display:none}}

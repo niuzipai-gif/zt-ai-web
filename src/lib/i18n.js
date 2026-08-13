@@ -19,6 +19,7 @@ export function getInitialLanguage(storage = globalThis.localStorage, navigatorL
 export const siteCopy = {
   zh: {
     nav: { home: '首页', chat: '公开聊天', projects: '精选项目', resume: '简历摘要' },
+    desktopDownload: '下载桌面端',
     availability: 'Available for conversation',
     digitalTwin: 'digital twin',
     languageLabel: '语言',
@@ -109,6 +110,7 @@ export const siteCopy = {
   },
   en: {
     nav: { home: 'Home', chat: 'Open chat', projects: 'Selected work', resume: 'Resume' },
+    desktopDownload: 'Download desktop app',
     availability: 'Available for conversation', digitalTwin: 'digital twin', languageLabel: 'Language', languageAria: 'Switch website language',
     greeting: 'Hello, I am ZT.AI, Cai Zhouting’s AI digital twin. What can I do for you on his behalf?',
     home: { kicker: 'PERSONAL AI AGENT · 2026', reflection: ['Make experience understood. Make capability visible.', 'Built from real business, connected by AI.'], chat: 'Talk to ZT.AI', projects: 'View selected work' },
@@ -119,6 +121,7 @@ export const siteCopy = {
   },
   ja: {
     nav: { home: 'ホーム', chat: '公開チャット', projects: 'プロジェクト', resume: 'プロフィール' },
+    desktopDownload: 'デスクトップ版をダウンロード',
     availability: 'Available for conversation', digitalTwin: 'digital twin', languageLabel: '言語', languageAria: 'ウェブサイトの言語を切り替え',
     greeting: 'こんにちは、ZT.AIです。蔡宙廷のAIデジタルツインとして、何をお手伝いしましょうか？',
     home: { kicker: 'PERSONAL AI AGENT · 2026', reflection: ['経験を理解し、能力を可視化する。', 'リアルな業務から生まれ、AIで可能性をつなぐ。'], chat: 'ZT.AIと話す', projects: 'プロジェクトを見る' },
