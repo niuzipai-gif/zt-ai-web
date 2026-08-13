@@ -10,6 +10,7 @@ import { AGENT_PLANNER_PROMPT, AGENT_SYSTEM_PROMPT, CHAT_LANGUAGE_PROMPTS, ZT_PR
 import { createAuthService } from './auth.js'
 import { createTelemetry } from './telemetry.js'
 import { createAdminApi } from './admin.js'
+import { isAllowedOrigin } from './cors.js'
 
 function loadEnvFile(filePath) {
   try {
@@ -38,7 +39,7 @@ const CONTROL_ROOM_PUBLIC = path.resolve(path.dirname(fileURLToPath(import.meta.
 function corsOrigin(request) {
   const requestOrigin = request.headers.origin
   if (allowedOrigins.includes('*')) return '*'
-  if (requestOrigin && allowedOrigins.includes(requestOrigin)) return requestOrigin
+  if (isAllowedOrigin(requestOrigin, allowedOrigins)) return requestOrigin
   return allowedOrigins[0] || '*'
 }
 
