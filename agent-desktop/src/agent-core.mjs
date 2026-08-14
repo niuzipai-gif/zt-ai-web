@@ -9,6 +9,8 @@ const TOOL_LABELS = Object.freeze({
   list_workspace: '查看工作区',
   read_file: '读取文件',
   write_file: '写入文件',
+  move_file: '整理移动',
+  web_search: '联网检索',
   run_command: '执行命令',
 })
 
@@ -46,7 +48,7 @@ export function parseAgentPlan(raw, { workspaceRoot = '.' } = {}) {
     if (!ALLOWED_TOOLS.has(tool)) throw new Error(`模型计划包含不支持的工具：${tool || '空值'}`)
     const label = String(rawStep.label || TOOL_LABELS[tool]).slice(0, 180)
     const step = { id: String(rawStep.id || `model-step-${index + 1}`), tool, label }
-    if (tool === 'list_workspace' || tool === 'read_file' || tool === 'write_file') {
+    if (tool === 'list_workspace' || tool === 'read_file' || tool === 'write_file' || tool === 'move_file') {
       step.inputPath = String(rawStep.inputPath || '.')
       resolveWorkspacePath(workspaceRoot, step.inputPath)
     }
@@ -55,6 +57,16 @@ export function parseAgentPlan(raw, { workspaceRoot = '.' } = {}) {
       if (!step.content.trim()) throw new Error('模型写入步骤缺少完整文件内容')
       if (Buffer.byteLength(step.content, 'utf8') > MAX_GENERATED_FILE_BYTES) throw new Error('模型生成文件超过 250 KB 上限')
       step.overwrite = rawStep.overwrite === true
+    }
+    if (tool === 'move_file') {
+      step.targetPath = String(rawStep.targetPath || '')
+      if (!step.targetPath) throw new Error('模型移动步骤缺少 targetPath')
+      resolveWorkspacePath(workspaceRoot, step.targetPath)
+      step.overwrite = rawStep.overwrite === true
+    }
+    if (tool === 'web_search') {
+      step.query = String(rawStep.query || '').trim().slice(0, 240)
+      if (!step.query) throw new Error('模型检索步骤缺少 query')
     }
     if (tool === 'run_command') {
       step.command = String(rawStep.command || '').trim().slice(0, 600)
@@ -102,6 +114,19 @@ function buildSafeFallbackPlan(task, taskId) {
   return buildPlan(task, taskId).filter(step => step.tool !== 'write_file')
 }
 
+export function ensureResearchPlan(task, plan = []) {
+  const text = String(task || '').trim()
+  if (!/(检索|搜索|查资料|查找资料|research|search|look up|documentation|文档)/iu.test(text)) return plan
+  const listSteps = plan.filter(step => step.tool === 'list_workspace').slice(0, 1)
+  const searchStep = plan.find(step => step.tool === 'web_search') || {
+    id: 'web-research',
+    tool: 'web_search',
+    label: '检索公开资料并保留来源',
+    query: text.slice(0, 240),
+  }
+  return [...listSteps, searchStep]
+}
+
 function modelForGateway(model) {
   return String(model || '').toUpperCase() === 'DEEPSEEK' ? 'deepseek' : 'minimax'
 }
@@ -130,6 +155,12 @@ export class AgentTaskManager {
   snapshot() {
     const running = [...this.tasks.values()].map(task => ({ id: task.id, task: task.task, model: task.model, status: task.status, createdAt: task.createdAt }))
     return { workspaceRoot: this.workspaceRoot, history: [...this.history, ...running].slice(-30) }
+  }
+
+  setWorkspaceRoot(workspaceRoot) {
+    if (this.tasks.size) throw new Error('当前有任务执行，暂时不能切换工作区')
+    this.workspaceRoot = path.resolve(workspaceRoot)
+    return this.workspaceRoot
   }
 
   send(state, event, data = {}) {
@@ -163,7 +194,7 @@ export class AgentTaskManager {
 
   async preparePlan(state) {
     try {
-      state.plan = await this.requestAgentPlan(state)
+      state.plan = ensureResearchPlan(state.task, await this.requestAgentPlan(state))
       state.planSource = 'model'
     } catch (error) {
       state.plan = buildSafeFallbackPlan(state.task, state.id)
@@ -221,7 +252,7 @@ export class AgentTaskManager {
             capabilityLabel: CAPABILITY_LABELS[capability],
             tool: step.tool,
             label: step.label,
-            preview: step.tool === 'run_command' ? step.command : step.tool === 'write_file' ? `${step.inputPath}\n${step.content}` : step.label,
+            preview: step.tool === 'run_command' ? step.command : step.tool === 'write_file' ? `${step.inputPath}\n${step.content}` : step.tool === 'move_file' ? `${step.inputPath} → ${step.targetPath}` : step.tool === 'web_search' ? step.query : step.label,
           })
           return
         }

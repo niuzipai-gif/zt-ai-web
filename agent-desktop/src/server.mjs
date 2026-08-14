@@ -11,7 +11,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PUBLIC = path.join(ROOT, 'public')
 const DATA = path.resolve(process.env.ZT_AI_AGENT_DATA || path.join(ROOT, 'data'))
 const port = Number(process.env.ZT_AI_AGENT_PORT || process.env.PORT || 8788)
-const workspaceRoot = path.resolve(process.env.ZT_AI_WORKSPACE || path.join(ROOT, '..'))
+let workspaceRoot = path.resolve(process.env.ZT_AI_WORKSPACE || path.join(ROOT, '..'))
 const gatewayUrl = process.env.ZT_AI_GATEWAY_URL || 'http://localhost:8790'
 const localSecret = process.env.ZT_AI_AGENT_SECRET || ''
 const requireAccountAuth = process.env.ZT_AI_AGENT_REQUIRE_AUTH === '1'
@@ -98,6 +98,14 @@ const server = http.createServer(async (request, response) => {
       return json(request, response, 200, { ok: true, roots: skillRoots, skills: skillCache.skills, scannedAt: new Date(skillCache.at).toISOString() })
     }
     if (request.method === 'GET' && url.pathname === '/api/state') return json(request, response, 200, { ok: true, ...tasks.snapshot(), permissions: permissions.snapshot(), deviceAuthorization: deviceAuthorization.snapshot(), gatewayUrl, mode: 'execute' })
+    if (request.method === 'POST' && url.pathname === '/api/workspace') {
+      const body = await readBody(request)
+      const selected = path.resolve(String(body.path || ''))
+      const stat = await fs.stat(selected).catch(() => null)
+      if (!stat?.isDirectory()) return json(request, response, 400, { error: '请选择一个存在的文件夹作为工作区' })
+      workspaceRoot = tasks.setWorkspaceRoot(selected)
+      return json(request, response, 200, { ok: true, workspaceRoot })
+    }
     if (request.method === 'POST' && url.pathname === '/api/authorization') {
       const body = await readBody(request)
       const authorization = await deviceAuthorization.set(body.authorized === true)

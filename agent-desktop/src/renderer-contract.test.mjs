@@ -8,7 +8,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'p
 
 test('desktop renderer exposes the chat-first workspace contract', async () => {
   const html = await fs.readFile(path.join(root, 'index.html'), 'utf8')
-  for (const id of ['messages', 'composer', 'tool-drawer', 'skill-browser', 'context-ring', 'context-used', 'context-remaining', 'model-select', 'mode-chat', 'mode-buddy']) {
+  for (const id of ['messages', 'composer', 'tool-drawer', 'skill-browser', 'context-ring', 'context-used', 'context-remaining', 'model-select', 'mode-chat', 'mode-buddy', 'select-workspace']) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`)
   }
   assert.match(html, /\/zt-logo\.png/)
@@ -24,6 +24,8 @@ test('desktop renderer keeps tools in the plus drawer and uses a microphone cont
   assert.match(html.slice(drawerStart), /Skill/)
   assert.match(html.slice(drawerStart), /插件/)
   assert.match(html, /aria-label="语音输入"/)
+  assert.match(html, /data-tool="research"/)
+  assert.match(html, /data-capability="web_research"/)
 })
 
 test('desktop Buddy renders execution progress inside the conversation timeline', async () => {

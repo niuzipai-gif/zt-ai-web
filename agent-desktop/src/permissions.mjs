@@ -5,18 +5,21 @@ export const CAPABILITIES = Object.freeze({
   read: 'read',
   workspaceWrite: 'workspace_write',
   commandExec: 'command_exec',
+  webResearch: 'web_research',
 })
 
 export const CAPABILITY_LABELS = Object.freeze({
   [CAPABILITIES.read]: '读取工作区',
   [CAPABILITIES.workspaceWrite]: '工作区写入',
   [CAPABILITIES.commandExec]: '命令执行',
+  [CAPABILITIES.webResearch]: '联网资料检索',
 })
 
 export const DEFAULT_PERMISSIONS = Object.freeze({
   [CAPABILITIES.read]: true,
   [CAPABILITIES.workspaceWrite]: false,
   [CAPABILITIES.commandExec]: false,
+  [CAPABILITIES.webResearch]: false,
 })
 
 export function normalizePermissions(value = {}) {
@@ -24,12 +27,15 @@ export function normalizePermissions(value = {}) {
     [CAPABILITIES.read]: value[CAPABILITIES.read] !== false,
     [CAPABILITIES.workspaceWrite]: value[CAPABILITIES.workspaceWrite] === true,
     [CAPABILITIES.commandExec]: value[CAPABILITIES.commandExec] === true,
+    [CAPABILITIES.webResearch]: value[CAPABILITIES.webResearch] === true,
   }
 }
 
 export function capabilityForTool(tool) {
   if (tool === 'list_workspace' || tool === 'read_file' || tool === 'inspect_git') return CAPABILITIES.read
   if (tool === 'write_file') return CAPABILITIES.workspaceWrite
+  if (tool === 'move_file') return CAPABILITIES.workspaceWrite
+  if (tool === 'web_search') return CAPABILITIES.webResearch
   if (tool === 'run_command') return CAPABILITIES.commandExec
   return CAPABILITIES.read
 }

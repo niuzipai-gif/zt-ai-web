@@ -31,7 +31,7 @@ const els = {
   contextRing: $('#context-ring'), contextRingLarge: $('#context-ring-large'), contextPercent: $('#context-percent'), contextPercentLarge: $('#context-percent-large'), contextModel: $('#context-model'), contextUsed: $('#context-used'), contextUsedLarge: $('#context-used-large'), contextRemaining: $('#context-remaining'),
   plan: $('#plan'), log: $('#activity-log'), logCount: $('#log-count'), title: $('#execution-title'), status: $('#execution-status'),
   taskId: $('#current-task-id'), resultPanel: $('#result-panel'), resultText: $('#result-text'), approval: $('#approval-card'), approvalTitle: $('#approval-title'), approvalPreview: $('#approval-preview'), skillBrowser: $('#skill-browser'),
-  gateway: $('#gateway-url'), workspace: $('#workspace-path'), workspaceShort: $('#workspace-short'), gatewayStatus: $('#gateway-status'), authorize: $('#authorize-device'), authorizationStatus: $('#authorization-status'), logout: $('#logout'), accountLabel: $('#account-label'),
+  gateway: $('#gateway-url'), workspace: $('#workspace-path'), workspaceShort: $('#workspace-short'), selectWorkspace: $('#select-workspace'), gatewayStatus: $('#gateway-status'), authorize: $('#authorize-device'), authorizationStatus: $('#authorization-status'), logout: $('#logout'), accountLabel: $('#account-label'),
   authGate: $('#auth-gate'), authForm: $('#auth-form'), authUsername: $('#auth-username'), authPassword: $('#auth-password'), authSubmit: $('#auth-submit'), authToggle: $('#auth-toggle'), authError: $('#auth-error'),
 }
 
@@ -353,7 +353,7 @@ async function refreshState() {
     const authorized = data.deviceAuthorization?.authorized === true
     if (els.authorizationStatus) els.authorizationStatus.textContent = authorized ? `已确认本机 · ${new Date(data.deviceAuthorization.authorizedAt).toLocaleString()}` : '尚未确认本机执行'
     if (els.authorize) { els.authorize.textContent = authorized ? '已确认' : '确认这台设备'; els.authorize.disabled = authorized }
-    document.querySelectorAll('[data-capability]').forEach(input => { if (input.dataset.capability !== 'read') input.disabled = !authorized; if (data.permissions[input.dataset.capability] !== undefined) input.checked = data.permissions[input.dataset.capability] })
+    document.querySelectorAll('[data-capability]').forEach(input => { const needsDevice = ['workspace_write', 'command_exec'].includes(input.dataset.capability); if (needsDevice) input.disabled = !authorized; if (data.permissions[input.dataset.capability] !== undefined) input.checked = data.permissions[input.dataset.capability] })
   } catch (error) { if (els.gatewayStatus) els.gatewayStatus.textContent = '本机 Agent 未连接'; if (els.log) addLog(error.message, 'warning') }
 }
 function toggleDrawer() { els.toolDrawer.classList.toggle('hidden'); els.toolTrigger.classList.toggle('active', !els.toolDrawer.classList.contains('hidden')) }
@@ -379,6 +379,14 @@ async function showSkillBrowser() {
 }
 function toolAction(tool) { if (tool === 'file') { setNotice('文件入口已打开；选择文件后会作为当前对话附件引用。'); return } setNotice(`${tool} 已加入当前对话工具范围`) }
 function setNotice(text) { const body = appendMessage('assistant', text); body.closest('.message')?.classList.add('system-message'); setTimeout(() => body.closest('.message')?.remove(), 3500) }
+async function selectWorkspace() {
+  const selected = await window.ztaiDesktop?.selectWorkspace?.()
+  if (!selected) { setNotice('请在桌面版中选择一个工作区文件夹。'); return }
+  const response = await apiFetch('/api/workspace', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: selected }) })
+  const body = await readJson(response)
+  if (!response.ok) { addLog(body.error || '工作区切换失败', 'warning'); return }
+  setNotice(`工作区已切换为：${body.workspaceRoot}`); await refreshState()
+}
 
 els.modeChat.addEventListener('click', () => setMode(nextMode('BUDDY'))); els.modeBuddy.addEventListener('click', () => setMode(nextMode('CHAT')))
 els.modelSelect.addEventListener('change', () => { state.model = normalizeModel(els.modelSelect.value); localStorage.setItem('zt-ai:agent-model', state.model); renderContext() })
@@ -387,6 +395,7 @@ document.querySelectorAll('.drawer-option').forEach(button => button.addEventLis
 document.querySelectorAll('[data-capability]').forEach(input => input.addEventListener('change', () => updatePermission(input.dataset.capability, input.checked)))
 els.composer.addEventListener('submit', event => { event.preventDefault(); state.mode === 'BUDDY' ? runAgentTask() : runChat() }); els.taskInput.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); state.mode === 'BUDDY' ? runAgentTask() : runChat() } }); els.newTask.addEventListener('click', startNewChat); els.refresh.addEventListener('click', refreshState); els.authorize.addEventListener('click', updateAuthorization); $('#approve-once').addEventListener('click', () => approve(false)); $('#approve-always').addEventListener('click', () => approve(true)); $('#reject').addEventListener('click', reject); els.authForm.addEventListener('submit', submitAuth); els.authToggle.addEventListener('click', () => { state.registering = !state.registering; els.authSubmit.textContent = state.registering ? '注册并进入' : '登录'; els.authToggle.textContent = state.registering ? '已有账户？返回登录' : '没有账户？注册一个'; els.authPassword.autocomplete = state.registering ? 'new-password' : 'current-password'; showAuthError('') }); els.logout.addEventListener('click', logout)
 els.run.onclick = event => { event.preventDefault(); if (els.run.disabled) return; state.mode === 'BUDDY' ? runAgentTask() : runChat() };
+els.selectWorkspace?.addEventListener('click', selectWorkspace)
 
 async function bootstrap() { try { initChatState(); renderMessages(); renderChatHistory(); const configResponse = await fetch('/api/config'); const config = await configResponse.json(); state.gatewayUrl = config.gatewayUrl; state.localSecret = config.localSecret || ''; els.modelSelect.value = state.model; setMode(state.mode); if (state.authToken) { const session = await fetch(`${state.gatewayUrl}/api/auth/me`, { headers: { authorization: `Bearer ${state.authToken}` } }); if (session.ok) { showWorkspace(); await refreshState(); return } localStorage.removeItem('zt-ai:desktop-token'); state.authToken = '' } } catch (error) { showAuthError(describeNetworkError(error, '工作台启动')) } showLogin() }
 setInterval(() => { $('#clock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, 1000); bootstrap()

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildPlan, extractFilePath, parseAgentPlan } from './agent-core.mjs'
+import { AgentTaskManager, buildPlan, ensureResearchPlan, extractFilePath, parseAgentPlan } from './agent-core.mjs'
 
 test('execution-first planning identifies read, write and test work', () => {
   assert.equal(extractFilePath('请读取 README.md'), 'README.md')
@@ -29,4 +29,26 @@ test('model plan parser accepts fenced JSON and preserves generated file content
 test('model plan parser rejects unsupported tools and workspace escape paths', () => {
   assert.throws(() => parseAgentPlan('{"steps":[{"tool":"delete_file","inputPath":"x.txt"}]}', { workspaceRoot: 'C:\\workspace' }), /不支持的工具/)
   assert.throws(() => parseAgentPlan('{"steps":[{"tool":"read_file","inputPath":"..\\\\secret.txt"}]}', { workspaceRoot: 'C:\\workspace' }), /工作区内/)
+})
+
+test('model plan parser accepts safe workspace moves and web research queries', () => {
+  const plan = parseAgentPlan(JSON.stringify({ steps: [
+    { tool: 'move_file', label: '归档安装包', inputPath: 'ZT-buddy.exe', targetPath: 'ZT.AI\\安装包\\ZT-buddy.exe' },
+    { tool: 'web_search', label: '检索官方资料', query: 'MiniMax M3 official documentation' },
+  ] }), { workspaceRoot: 'C:\\workspace' })
+  assert.deepEqual(plan.map(step => step.tool), ['list_workspace', 'move_file', 'web_search'])
+  assert.equal(plan[1].targetPath, 'ZT.AI\\安装包\\ZT-buddy.exe')
+  assert.equal(plan[2].query, 'MiniMax M3 official documentation')
+})
+
+test('agent workspace can be changed only while no task is running', () => {
+  const manager = new AgentTaskManager({ workspaceRoot: 'C:\\workspace', permissionStore: { has: () => true }, deviceAuthorization: { isAuthorized: () => true }, gatewayUrl: 'http://localhost', historyPath: 'history.json' })
+  assert.equal(manager.setWorkspaceRoot('C:\\Users\\Administrator\\Desktop'), 'C:\\Users\\Administrator\\Desktop')
+})
+
+test('research tasks replace legacy shell scraping plans with the web search tool', () => {
+  const legacyPlan = [{ id: 'context-list', tool: 'list_workspace', label: '检查工作区上下文', inputPath: '.' }, { id: 'legacy-command', tool: 'run_command', label: '抓取网页', command: 'curl ...' }]
+  const plan = ensureResearchPlan('检索 MiniMax 官方 API 文档并给出来源', legacyPlan)
+  assert.deepEqual(plan.map(step => step.tool), ['list_workspace', 'web_search'])
+  assert.match(plan[1].query, /MiniMax 官方 API 文档/)
 })
