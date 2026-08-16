@@ -25,6 +25,10 @@ test('provides a matching resume file for every interface language', () => {
     assert.ok(siteCopy[code].chat.startPrompt)
     assert.ok(siteCopy[code].chat.sendFallback)
     assert.ok(siteCopy[code].chat.gatewayError)
+    assert.equal(siteCopy[code].chat.starterPrompts.length, 3)
+    assert.ok(siteCopy[code].chat.starterPrompts.every(Boolean))
+    assert.ok(siteCopy[code].chat.retry)
+    assert.ok(siteCopy[code].chat.retryHint)
   }
 })
 
