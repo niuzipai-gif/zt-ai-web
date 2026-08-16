@@ -20,6 +20,7 @@ zt-ai-web.log
 zt-ai-web.error.log
 resume.docx
 .superpowers/
+.worktrees/
 .portable-staging/
 release/
 desktop-app/resources/
