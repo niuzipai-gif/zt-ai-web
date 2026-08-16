@@ -3,6 +3,7 @@ import { addConversationMessage, conversationTitle, createConversation, normaliz
 import { createSmoothStream } from './streaming.mjs'
 import { renderMarkdown } from './markdown.mjs'
 import { classifyIntent } from './intent-router.mjs'
+import { executionPresentation } from './presentation.mjs'
 
 const $ = selector => document.querySelector(selector)
 const state = {
@@ -22,6 +23,7 @@ const state = {
   activeSkills: [],
   activeAgentMessage: null,
   agentStream: null,
+  inspectorOpen: false,
 }
 
 const els = {
@@ -29,6 +31,7 @@ const els = {
   conversationEyebrow: $('#conversation-eyebrow'), conversationTitle: $('#conversation-title'), conversationSubtitle: $('#conversation-subtitle'),
   messages: $('#messages'), taskInput: $('#task-input'), composer: $('#composer'), run: $('#run-task'), newTask: $('#new-task'), refresh: $('#refresh'), history: $('#history'),
   toolTrigger: $('#tool-trigger'), toolDrawer: $('#tool-drawer'), permissionTrigger: $('#permission-trigger'), voice: $('#voice-button'), modelSelect: $('#model-select'),
+  inspectorToggle: $('#inspector-toggle'), executionSummary: $('#execution-summary'),
   contextRing: $('#context-ring'), contextRingLarge: $('#context-ring-large'), contextPercent: $('#context-percent'), contextPercentLarge: $('#context-percent-large'), contextModel: $('#context-model'), contextUsed: $('#context-used'), contextUsedLarge: $('#context-used-large'), contextRemaining: $('#context-remaining'),
   plan: $('#plan'), log: $('#activity-log'), logCount: $('#log-count'), title: $('#execution-title'), status: $('#execution-status'),
   taskId: $('#current-task-id'), resultPanel: $('#result-panel'), resultText: $('#result-text'), approval: $('#approval-card'), approvalTitle: $('#approval-title'), approvalPreview: $('#approval-preview'), skillBrowser: $('#skill-browser'),
@@ -109,6 +112,12 @@ function renderContext() {
   els.contextUsedLarge.textContent = `${formatTokens(meter.usedTokens)} / 1M`
   els.contextRemaining.textContent = `剩余约 ${formatTokens(meter.remainingTokens)} tokens`
 }
+function setInspectorOpen(open) {
+  state.inspectorOpen = Boolean(open)
+  els.root.dataset.inspectorOpen = String(state.inspectorOpen)
+  els.inspectorToggle?.setAttribute('aria-expanded', String(state.inspectorOpen))
+  if (els.executionSummary) els.executionSummary.textContent = state.inspectorOpen ? '执行上下文已展开。' : '执行上下文已收起；可随时展开查看模型上下文、权限和设备状态。'
+}
 function setMode(mode) {
   state.mode = mode === 'BUDDY' ? 'BUDDY' : 'CHAT'; localStorage.setItem('zt-ai:desktop-mode', state.mode); els.root.dataset.mode = state.mode
   const buddy = state.mode === 'BUDDY'
@@ -116,7 +125,7 @@ function setMode(mode) {
   els.railTitle.textContent = buddy ? 'ZT.buddy' : '普通聊天'; els.railStatus.textContent = buddy ? '本机执行工作区' : '本机工作区'
   els.conversationEyebrow.textContent = buddy ? 'SMART EXECUTION CHAT' : 'CONVERSATION'; els.conversationTitle.textContent = buddy ? 'ZT.buddy 工作区' : 'ZT.AI 对话'; els.conversationSubtitle.textContent = buddy ? '自动判断 · 执行优先 · 继续上次上下文' : '普通聊天 · 继续上次上下文'
   els.taskInput.placeholder = buddy ? '给 ZT.buddy 一个任务，或直接开始聊天……' : '给 ZT.AI 发消息……'
-  if (!buddy) { els.toolDrawer.classList.add('hidden'); hideApproval() }
+  if (!buddy) { els.toolDrawer.classList.add('hidden'); hideApproval(); setInspectorOpen(false) }
   if (state.chatSessions.length) renderChatHistory()
   renderContext()
 }
@@ -131,11 +140,11 @@ function appendMessage(role, content, streaming = false) {
   return body
 }
 
-function appendAgentMessage(task) {
+function appendAgentMessage(task, presentation) {
   const row = document.createElement('div'); row.className = 'message assistant-message agent-message'
   const bubble = document.createElement('div'); bubble.className = 'bubble agent-bubble'
   const label = document.createElement('div'); label.className = 'message-label'; label.textContent = 'ZT.BUDDY · EXECUTION'
-  const status = document.createElement('div'); status.className = 'agent-statusline running'; status.innerHTML = '<span class="pulse"></span><span>正在理解任务并规划执行步骤…</span>'
+  const status = document.createElement('div'); status.className = 'agent-statusline running'; status.innerHTML = `<span class="pulse"></span><span>${escapeHtml(presentation?.summary || '正在理解任务并规划执行步骤…')}</span>`
   const taskLine = document.createElement('div'); taskLine.className = 'agent-taskline'; taskLine.textContent = task
   const plan = document.createElement('div'); plan.className = 'agent-plan-inline'
   const activity = document.createElement('div'); activity.className = 'agent-activity-inline'
@@ -143,7 +152,7 @@ function appendAgentMessage(task) {
   const approval = document.createElement('div'); approval.className = 'agent-approval-inline hidden'
   bubble.append(label, status, taskLine, plan, activity, result, approval)
   row.appendChild(bubble); els.messages.appendChild(row); els.messages.scrollTop = els.messages.scrollHeight
-  const live = { row, status, plan, activity, result, approval, output: '', persisted: false }
+  const live = { row, status, plan, activity, result, approval, output: '', persisted: false, logToggle: null }
   state.activeAgentMessage = live
   return live
 }
@@ -205,6 +214,20 @@ function completeAgentMessage(summary, status = 'done') {
   live.result.classList.add('is-visible')
   setAgentStatus(status === 'done' ? '任务已完成' : `任务${status === 'blocked' ? '已暂停' : '执行失败'}`, status === 'done' ? 'done' : 'error')
   hideInlineApproval()
+  const activityCount = live.activity.querySelectorAll('.inline-activity-line').length
+  if (activityCount && !live.logToggle) {
+    const toggle = document.createElement('button')
+    toggle.type = 'button'; toggle.className = 'execution-log-toggle'; toggle.textContent = `查看 ${activityCount} 条执行记录`
+    toggle.setAttribute('aria-expanded', 'false')
+    toggle.addEventListener('click', () => {
+      const expanded = live.activity.classList.toggle('is-collapsed')
+      toggle.setAttribute('aria-expanded', String(!expanded))
+      toggle.textContent = expanded ? `查看 ${activityCount} 条执行记录` : '收起执行记录'
+    })
+    live.activity.classList.add('is-collapsed')
+    live.activity.before(toggle)
+    live.logToggle = toggle
+  }
   if (!live.persisted) {
     recordChatMessage('assistant', live.output)
     live.persisted = true
@@ -326,13 +349,14 @@ function handleAgentEvent(event, data) {
 async function runAgentTask() {
   const task = els.taskInput.value.trim(); if (!task || els.run.disabled) return
   const intent = classifyIntent(task, { mode: state.mode })
+  const presentation = executionPresentation(intent)
   if (intent.route === 'chat') {
     const request = runChat()
-    setNotice('已识别为普通聊天，不会调用本机工具。')
+    setNotice(presentation.summary)
     return request
   }
-  recordChatMessage('user', task); renderMessages(); renderChatHistory(); els.taskInput.value = ''
-  const live = appendAgentMessage(task)
+  recordChatMessage('user', task); recordChatMessage('assistant', `**${presentation.title}**\n\n${presentation.summary}`); renderMessages(); renderChatHistory(); els.taskInput.value = ''
+  const live = appendAgentMessage(task, presentation)
   resetExecution()
   state.activeAgentMessage = live
   els.taskInput.disabled = true; els.run.disabled = true
@@ -340,8 +364,12 @@ async function runAgentTask() {
     const response = await apiFetch('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ task, model: state.model, accountToken: state.authToken }) })
     await consumeSse(response, handleAgentEvent)
   } catch (error) {
-    const message = describeNetworkError(error, '执行任务')
-    addInlineActivity(message, 'warning'); setAgentStatus(message, 'error'); completeAgentMessage(message, 'error'); setStatus('ERROR', 'error')
+    const rawMessage = describeNetworkError(error, '执行任务')
+    const message = '任务暂时没有完成。请检查设备授权或网关连接后重新尝试。'
+    addLog(rawMessage, 'warning'); addInlineActivity('执行连接失败，已保留原任务。', 'warning'); setAgentStatus(message, 'error'); completeAgentMessage(message, 'error'); setStatus('ERROR', 'error')
+    const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'execution-log-toggle'; retry.textContent = '重新尝试'
+    retry.addEventListener('click', () => { els.taskInput.value = task; els.taskInput.focus() })
+    live.result.after(retry)
   } finally {
     state.reader = null; els.taskInput.disabled = false; els.run.disabled = false; els.taskInput.focus()
   }
@@ -397,7 +425,7 @@ async function selectWorkspace() {
 
 els.modeChat.addEventListener('click', () => setMode(nextMode('BUDDY'))); els.modeBuddy.addEventListener('click', () => setMode(nextMode('CHAT')))
 els.modelSelect.addEventListener('change', () => { state.model = normalizeModel(els.modelSelect.value); localStorage.setItem('zt-ai:agent-model', state.model); renderContext() })
-els.toolTrigger.addEventListener('click', toggleDrawer); els.permissionTrigger.addEventListener('click', () => { $('#buddy-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }); els.voice.addEventListener('click', () => { els.voice.classList.toggle('active'); setNotice(els.voice.classList.contains('active') ? '麦克风入口已准备，接入你的声音模型后可开始语音聊天。' : '已关闭语音入口。') })
+els.toolTrigger.addEventListener('click', toggleDrawer); els.permissionTrigger.addEventListener('click', () => { setInspectorOpen(true); $('#buddy-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }); els.inspectorToggle?.addEventListener('click', () => setInspectorOpen(!state.inspectorOpen)); els.voice.addEventListener('click', () => { setNotice('语音入口已准备；接入声音模型后可开始语音输入。') })
 document.querySelectorAll('.drawer-option').forEach(button => button.addEventListener('click', async () => { if (button.dataset.tool === 'skills') { await showSkillBrowser(); return } toolAction(button.dataset.tool); toggleDrawer() }))
 document.querySelectorAll('[data-capability]').forEach(input => input.addEventListener('change', () => updatePermission(input.dataset.capability, input.checked)))
 els.composer.addEventListener('submit', event => { event.preventDefault(); state.mode === 'BUDDY' ? runAgentTask() : runChat() }); els.taskInput.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); state.mode === 'BUDDY' ? runAgentTask() : runChat() } }); els.newTask.addEventListener('click', startNewChat); els.refresh.addEventListener('click', refreshState); els.authorize.addEventListener('click', updateAuthorization); $('#approve-once').addEventListener('click', () => approve(false)); $('#approve-always').addEventListener('click', () => approve(true)); $('#reject').addEventListener('click', reject); els.authForm.addEventListener('submit', submitAuth); els.authToggle.addEventListener('click', () => { state.registering = !state.registering; els.authSubmit.textContent = state.registering ? '注册并进入' : '登录'; els.authToggle.textContent = state.registering ? '已有账户？返回登录' : '没有账户？注册一个'; els.authPassword.autocomplete = state.registering ? 'new-password' : 'current-password'; showAuthError('') }); els.logout.addEventListener('click', logout)

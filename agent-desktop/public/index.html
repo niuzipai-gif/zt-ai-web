@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="app-shell" data-mode="CHAT">
+    <div class="app-shell" data-mode="CHAT" data-inspector-open="false">
       <header class="topbar">
         <div class="brand"><img src="/zt-logo.png" alt="ZT.AI" /><div><strong>ZT.AI</strong><span>DESKTOP WORKSPACE</span></div></div>
         <div class="workspace-name"><b>个人工作区</b><span>/ zt-ai-web</span></div>
@@ -26,7 +26,7 @@
         </aside>
 
         <main class="conversation glass-card">
-          <div class="conversation-head"><div><span class="eyebrow" id="conversation-eyebrow">CONVERSATION</span><h1 id="conversation-title">ZT.AI 对话</h1><small id="conversation-subtitle">普通聊天 · 继续上次上下文</small></div><div class="head-actions"><div class="context-meter buddy-only"><div id="context-ring" class="context-ring"><b id="context-percent">1%</b></div><div><strong id="context-model">MiniMax M3</strong><small id="context-used">1M · 12.4k used</small></div></div><button class="head-button" title="更多对话操作">⋯</button></div></div>
+          <div class="conversation-head"><div><span class="eyebrow" id="conversation-eyebrow">CONVERSATION</span><h1 id="conversation-title">ZT.AI 对话</h1><small id="conversation-subtitle">普通聊天 · 继续上次上下文</small></div><div class="head-actions"><div class="context-meter buddy-only"><div id="context-ring" class="context-ring"><b id="context-percent">1%</b></div><div><strong id="context-model">MiniMax M3</strong><small id="context-used">1M · 12.4k used</small></div></div><button id="inspector-toggle" class="head-button buddy-only" type="button" aria-expanded="false" aria-controls="buddy-panel">执行上下文</button><button class="head-button" title="更多对话操作">⋯</button><span id="execution-summary" class="sr-only" aria-live="polite"></span></div></div>
           <div id="messages" class="messages" aria-live="polite"><div class="message user-message"><div class="bubble">你好，帮我看看当前项目的接口和桌面端体验。</div></div><div class="message assistant-message"><div class="bubble"><div class="message-label">ZT.AI</div><p>你好，我是 ZT.AI。普通聊天模式下，我可以围绕你的项目、简历和产品想法进行交流。</p><p class="buddy-only inline-note">切换到 ZT.buddy 后，我会先拆解任务，再在你授权的本机工作区执行。</p></div></div></div>
 
           <form id="composer" class="composer">

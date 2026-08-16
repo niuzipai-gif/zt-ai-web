@@ -15,6 +15,15 @@ test('desktop renderer exposes the chat-first workspace contract', async () => {
   assert.doesNotMatch(html, /brand-mark[^>]*>\s*R\s*</i)
 })
 
+test('desktop renderer exposes an accessible collapsible execution inspector', async () => {
+  const html = await fs.readFile(path.join(root, 'index.html'), 'utf8')
+  for (const id of ['inspector-toggle', 'execution-summary', 'context-ring', 'tool-trigger', 'voice-button']) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`)
+  }
+  assert.match(html, /aria-expanded=/)
+  assert.match(html, /aria-controls=/)
+})
+
 test('desktop renderer keeps tools in the plus drawer and uses a microphone control', async () => {
   const html = await fs.readFile(path.join(root, 'index.html'), 'utf8')
   const drawerStart = html.indexOf('id="tool-drawer"')
