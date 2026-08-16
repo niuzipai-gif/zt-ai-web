@@ -1,9 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { classifyIntent } from './intent-router.mjs'
+import { executionPresentation } from './presentation.mjs'
 
 test('routes greetings and ordinary questions to chat inside Buddy', () => {
-  assert.equal(classifyIntent('你好', { mode: 'BUDDY' }).route, 'chat')
+  const greeting = classifyIntent('你好', { mode: 'BUDDY' })
+  assert.equal(greeting.route, 'chat')
+  assert.equal(executionPresentation(greeting).title, '普通聊天')
   assert.equal(classifyIntent('你是谁？', { mode: 'BUDDY' }).route, 'chat')
   assert.equal(classifyIntent('你觉得这个方案怎么样？', { mode: 'BUDDY' }).route, 'chat')
 })
