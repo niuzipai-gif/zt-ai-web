@@ -2,6 +2,7 @@ import { contextMeter, nextMode, normalizeModel } from './chat-state.mjs'
 import { addConversationMessage, conversationTitle, createConversation, normalizeConversations } from './conversation-state.mjs'
 import { createSmoothStream } from './streaming.mjs'
 import { renderMarkdown } from './markdown.mjs'
+import { classifyIntent } from './intent-router.mjs'
 
 const $ = selector => document.querySelector(selector)
 const state = {
@@ -113,7 +114,7 @@ function setMode(mode) {
   const buddy = state.mode === 'BUDDY'
   els.modeChat.classList.toggle('active', !buddy); els.modeBuddy.classList.toggle('active', buddy); els.modeChat.setAttribute('aria-selected', String(!buddy)); els.modeBuddy.setAttribute('aria-selected', String(buddy))
   els.railTitle.textContent = buddy ? 'ZT.buddy' : '普通聊天'; els.railStatus.textContent = buddy ? '本机执行工作区' : '本机工作区'
-  els.conversationEyebrow.textContent = buddy ? 'EXECUTION CHAT' : 'CONVERSATION'; els.conversationTitle.textContent = buddy ? 'ZT.buddy 工作区' : 'ZT.AI 对话'; els.conversationSubtitle.textContent = buddy ? '默认执行 · 继续上次上下文' : '普通聊天 · 继续上次上下文'
+  els.conversationEyebrow.textContent = buddy ? 'SMART EXECUTION CHAT' : 'CONVERSATION'; els.conversationTitle.textContent = buddy ? 'ZT.buddy 工作区' : 'ZT.AI 对话'; els.conversationSubtitle.textContent = buddy ? '自动判断 · 执行优先 · 继续上次上下文' : '普通聊天 · 继续上次上下文'
   els.taskInput.placeholder = buddy ? '给 ZT.buddy 一个任务，或直接开始聊天……' : '给 ZT.AI 发消息……'
   if (!buddy) { els.toolDrawer.classList.add('hidden'); hideApproval() }
   if (state.chatSessions.length) renderChatHistory()
@@ -324,6 +325,12 @@ function handleAgentEvent(event, data) {
 
 async function runAgentTask() {
   const task = els.taskInput.value.trim(); if (!task || els.run.disabled) return
+  const intent = classifyIntent(task, { mode: state.mode })
+  if (intent.route === 'chat') {
+    const request = runChat()
+    setNotice('已识别为普通聊天，不会调用本机工具。')
+    return request
+  }
   recordChatMessage('user', task); renderMessages(); renderChatHistory(); els.taskInput.value = ''
   const live = appendAgentMessage(task)
   resetExecution()

@@ -6,6 +6,7 @@ import { AgentTaskManager } from './agent-core.mjs'
 import { CAPABILITIES, PermissionStore } from './permissions.mjs'
 import { DeviceAuthorizationStore, requiresDeviceAuthorization } from './authorization.mjs'
 import { scanSkillRoots } from './skills.mjs'
+import { classifyIntent } from './intent-router.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PUBLIC = path.join(ROOT, 'public')
@@ -124,6 +125,8 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'POST' && url.pathname === '/api/tasks') {
       const body = await readBody(request)
       if (!String(body.task || '').trim()) return json(request, response, 400, { error: '请输入任务目标' })
+      const intent = classifyIntent(body.task, { mode: 'BUDDY' })
+      if (intent.route === 'chat') return json(request, response, 409, { error: '这句话被识别为普通聊天，不会调用本机工具，请使用普通聊天模式。', intent })
       if (requireAccountAuth && !(await accountIsValid(accountToken(request, body)))) return json(request, response, 401, { error: '请先登录桌面 Agent 账户或重新登录' })
       sseStart(request, response)
       tasks.create({ task: body.task, model: body.model, response, authToken: accountToken(request, body) })
