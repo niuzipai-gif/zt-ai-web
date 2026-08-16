@@ -10,6 +10,7 @@ import logo from './assets/zt-logo.png'
 import mammoth from 'mammoth/mammoth.browser'
 import { createChatSession, createSessionTitle, loadVisitorState, saveVisitorState } from './lib/chat-session.js'
 import { getInitialLanguage, LANGUAGE_OPTIONS, resumeDocumentByLanguage, siteCopy } from './lib/i18n.js'
+import { buildStarterPrompts, formatRelativeSessionTime, shouldUseCompactProfile } from './lib/chat-ux.js'
 import { renderMarkdown } from './lib/markdown.js'
 import { getStreamBatchSize } from './lib/streaming.js'
 import './styles.css'
@@ -210,14 +211,14 @@ function visitorShortId(visitorId) {
   return String(visitorId || 'visitor').replace(/^visitor-/, '').slice(-6).toUpperCase()
 }
 
-function ChatHistoryDrawer({ visitorId, sessions, activeSessionId, onSelectSession, onNewChat, onClose, copy }) {
+function ChatHistoryDrawer({ visitorId, sessions, activeSessionId, onSelectSession, onNewChat, onClose, copy, language }) {
   return <>
     <button className="drawer-backdrop" onClick={onClose} aria-label={copy.historyTitle} />
     <aside className="chat-history-drawer" aria-label="聊天记录抽屉">
       <div className="drawer-header"><div><span className="eyebrow">{copy.historyEyebrow}</span><h3>{copy.historyTitle}</h3></div><button className="drawer-close" onClick={onClose} aria-label={copy.historyTitle}><X size={17} /></button></div>
       <button className="drawer-new-chat" onClick={onNewChat}><Plus size={15} />{copy.newChat}</button>
       <span className="drawer-section-label">{copy.historySection}</span>
-      <div className="drawer-session-list">{sessions.map(session => <button key={session.id} className={`drawer-session ${session.id === activeSessionId ? 'active' : ''}`} onClick={() => onSelectSession(session.id)}><strong>{session.title || copy.newChat}</strong><span>{new Date(session.updatedAt || session.createdAt).toLocaleDateString()} · {session.messages.length} {copy.sessionCount}</span></button>)}</div>
+      <div className="drawer-session-list">{sessions.map(session => <button key={session.id} className={`drawer-session ${session.id === activeSessionId ? 'active' : ''}`} onClick={() => onSelectSession(session.id)}><strong>{session.title || copy.newChat}</strong><span>{formatRelativeSessionTime(session.updatedAt || session.createdAt, Date.now(), language)} · {session.messages.length} {copy.sessionCount}</span></button>)}</div>
       <div className="drawer-privacy"><span /><div><strong>{copy.privacyTitle}</strong><p>访客 ID · {visitorShortId(visitorId)}<br />{copy.privacyBody}</p></div></div>
     </aside>
   </>
@@ -229,6 +230,8 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
   const [attachments, setAttachments] = useState([])
   const [activeMessageId, setActiveMessageId] = useState(null)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [retryPayload, setRetryPayload] = useState(null)
+  const inputRef = useRef(null)
   const messagesRef = useRef(null)
   const streamQueueRef = useRef([])
   const streamFinishedRef = useRef(false)
@@ -244,6 +247,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     setInput('')
     setAttachments([])
     setActiveMessageId(null)
+    setRetryPayload(null)
     streamQueueRef.current = []
     streamFinishedRef.current = false
   }, [session.id])
@@ -282,21 +286,23 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
 
   const removeAttachment = id => setAttachments(current => current.filter(file => file.id !== id))
 
-  const send = () => {
-    const value = input.trim()
-    if ((!value && !attachments.length) || activeMessageId) return
+  const send = (draft = null) => {
+    const nextAttachments = draft?.attachments || attachments
+    const value = (draft?.value ?? input).trim()
+    if ((!value && !nextAttachments.length) || activeMessageId) return
     const now = Date.now()
-    const attachmentText = attachments.map(file => `[附件：${file.name}，类型：${file.type}，大小：${formatBytes(file.size)}]${file.text ? `\n${file.text}` : ''}`).join('\n')
+    const attachmentText = nextAttachments.map(file => `[附件：${file.name}，类型：${file.type}，大小：${formatBytes(file.size)}]${file.text ? `\n${file.text}` : ''}`).join('\n')
     const contentText = [value || copy.sendFallback, attachmentText].filter(Boolean).join('\n\n')
-    const imageParts = attachments.filter(file => file.preview).map(file => ({ type: 'image_url', image_url: { url: file.preview } }))
+    const imageParts = nextAttachments.filter(file => file.preview).map(file => ({ type: 'image_url', image_url: { url: file.preview } }))
     const content = imageParts.length ? [{ type: 'text', text: contentText }, ...imageParts] : contentText
-    const userMessage = { id: `user-${now}`, role: 'user', text: value || copy.sendFallback, content, attachments, status: 'done' }
+    const userMessage = { id: `user-${now}`, role: 'user', text: value || copy.sendFallback, content, attachments: nextAttachments, status: 'done' }
     const responseId = `response-${now}`
     const history = [...messages, userMessage].map(message => ({ role: message.role === 'zt' ? 'assistant' : message.role, content: message.content || message.text })).filter(message => message.content)
     streamQueueRef.current = []
     streamFinishedRef.current = false
     updateMessages(items => [...items, userMessage, { id: responseId, role: 'zt', text: '', status: 'thinking' }])
     setActiveMessageId(responseId)
+    setRetryPayload(null)
     setInput('')
     setAttachments([])
     void (async () => {
@@ -317,6 +323,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
         streamFinishedRef.current = true
       } catch (error) {
         streamQueueRef.current.push(...`${copy.gatewayError}${error.message ? ` (${error.message})` : ''}`)
+        setRetryPayload({ value, attachments: nextAttachments })
         streamFinishedRef.current = true
       }
     })()
@@ -329,23 +336,33 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
   const renderMessage = message => message.status === 'thinking'
     ? <span className="typing-indicator" aria-label="ZT.AI 正在思考"><i /><i /><i /></span>
     : <><MarkdownMessage text={message.text} /><AttachmentList attachments={message.attachments} /></>
+  const restoreRetry = () => {
+    if (!retryPayload) return
+    setInput(retryPayload.value)
+    setAttachments(retryPayload.attachments)
+    setRetryPayload(null)
+    window.setTimeout(() => inputRef.current?.focus(), 0)
+  }
+  const starterPrompts = buildStarterPrompts(copy)
   return <section className="chat-card">
     <div className="chat-topline"><div><span className="eyebrow">{copy.eyebrow} · {visitorShortId(visitorId)}</span><h2>{copy.title}</h2></div><div className="chat-top-actions"><button className="chat-history-button" onClick={() => setHistoryOpen(true)}><History size={14} />{copy.history}</button><button className="chat-new-button" onClick={onNewChat}><Plus size={14} />{copy.newChat}</button><a className="resume-inline-download" href={resumeDocument.url} download={resumeDocument.name}><FileText size={13} />{copy.resume}</a><span className="free-pill"><span />{copy.free}</span></div></div>
-    {messages.length ? <div className="messages" ref={messagesRef}>{messages.map((message, index) => <div key={message.id ?? `${message.role}-${index}`} className={`message-row ${message.role === 'user' ? 'from-user' : ''}`}><div className={`message-bubble ${message.status === 'thinking' ? 'is-thinking' : ''}`}><span className="message-label">{message.role === 'zt' ? 'ZT.AI' : copy.visitor}</span>{renderMessage(message)}{renderMedia(message.media)}</div></div>)}</div> : <div className="empty-chat" ref={messagesRef}><span className="empty-chat-mark"><MessageCircle size={20} /></span><span className="eyebrow">{copy.emptyEyebrow}</span><h3>{copy.emptyTitle}</h3><p>{copy.emptyBody}</p><button onClick={() => setInput(copy.startPrompt)}>{copy.emptyAction} <ArrowUpRight size={14} /></button></div>}
+    {messages.length ? <div className="messages" ref={messagesRef}>{messages.map((message, index) => <div key={message.id ?? `${message.role}-${index}`} className={`message-row ${message.role === 'user' ? 'from-user' : ''}`}><div className={`message-bubble ${message.status === 'thinking' ? 'is-thinking' : ''}`}><span className="message-label">{message.role === 'zt' ? 'ZT.AI' : copy.visitor}</span>{renderMessage(message)}{renderMedia(message.media)}</div></div>)}</div> : <div className="empty-chat" ref={messagesRef}><span className="empty-chat-mark"><MessageCircle size={20} /></span><span className="eyebrow">{copy.emptyEyebrow}</span><h3>{copy.emptyTitle}</h3><p>{copy.emptyBody}</p><div className="starter-prompt-group"><span>{copy.starterLabel}</span><div>{starterPrompts.map(prompt => <button key={prompt} onClick={() => { setInput(prompt); window.setTimeout(() => inputRef.current?.focus(), 0) }}>{prompt}<ArrowUpRight size={13} /></button>)}</div></div><button className="empty-chat-action" onClick={() => { setInput(copy.startPrompt); window.setTimeout(() => inputRef.current?.focus(), 0) }}>{copy.emptyAction} <ArrowUpRight size={14} /></button></div>}
+    {retryPayload && <div className="chat-retry" role="status"><span>{copy.retryHint}</span><button onClick={restoreRetry}>{copy.retry}</button></div>}
     {attachments.length > 0 && <div className="pending-attachments"><AttachmentList attachments={attachments} compact />{attachments.map(file => <button key={file.id} onClick={() => removeAttachment(file.id)} aria-label={`移除 ${file.name}`}><X size={13} /></button>)}</div>}
-    <div className="chat-compose"><label className="attach-button" title={copy.upload}><Paperclip size={16} /><input type="file" multiple accept="image/*,.txt,.md,.markdown,.json,.csv,.js,.jsx,.ts,.tsx,.py,.html,.css,.pdf,.doc,.docx" onChange={handleFiles} disabled={Boolean(activeMessageId)} /></label><input value={input} disabled={Boolean(activeMessageId)} onChange={event => setInput(event.target.value)} onKeyDown={event => event.key === 'Enter' && send()} placeholder={activeMessageId ? copy.generating : copy.placeholder} /><button onClick={send} disabled={Boolean(activeMessageId) || (!input.trim() && !attachments.length)} aria-label={copy.send}><Send size={16} /></button></div>
+    <div className="chat-compose"><label className="attach-button" title={copy.upload}><Paperclip size={16} /><input type="file" multiple accept="image/*,.txt,.md,.markdown,.json,.csv,.js,.jsx,.ts,.tsx,.py,.html,.css,.pdf,.doc,.docx" onChange={handleFiles} disabled={Boolean(activeMessageId)} /></label><input ref={inputRef} value={input} disabled={Boolean(activeMessageId)} onChange={event => setInput(event.target.value)} onKeyDown={event => event.key === 'Enter' && send()} placeholder={activeMessageId ? copy.generating : copy.placeholder} /><button onClick={send} disabled={Boolean(activeMessageId) || (!input.trim() && !attachments.length)} aria-label={copy.send}><Send size={16} /></button></div>
     <div className="chat-footer"><ModelSwitch model={model} setModel={setModel} /><span className="chat-note"><MessageCircle size={14} /> {copy.publicNote}</span></div>
-    {historyOpen && <ChatHistoryDrawer visitorId={visitorId} sessions={sessions} activeSessionId={session.id} copy={copy} onSelectSession={id => { onSelectSession(id); setHistoryOpen(false) }} onNewChat={() => { onNewChat(); setHistoryOpen(false) }} onClose={() => setHistoryOpen(false)} />}
+    {historyOpen && <ChatHistoryDrawer visitorId={visitorId} sessions={sessions} activeSessionId={session.id} copy={copy} language={language} onSelectSession={id => { onSelectSession(id); setHistoryOpen(false) }} onNewChat={() => { onNewChat(); setHistoryOpen(false) }} onClose={() => setHistoryOpen(false)} />}
   </section>
 }
 
-function PublicProfile({ copy }) {
-  return <section className="profile-card">
+function PublicProfile({ copy, compact, onExpand }) {
+  return <section className={`profile-card ${compact ? 'is-compact' : ''}`}>
     <div className="profile-top"><Avatar /><span className="status-dot"><span />{copy.status}</span></div>
     <div className="profile-name"><h1>蔡宙廷</h1><p>{copy.role}</p><p className="muted">{copy.target}</p></div>
     <div className="tag-row">{copy.tags.map(tag => <span key={tag}>{tag}</span>)}</div>
     <div className="profile-copy"><span className="eyebrow">{copy.eyebrow}</span><p>{copy.about}</p></div>
     <div className="profile-signature"><span>{copy.signature}</span><strong>{copy.greeting}</strong></div>
+    {compact && <button className="profile-expand" onClick={onExpand}>{copy.compactProfile}<ArrowUpRight size={14} /></button>}
   </section>
 }
 
@@ -386,12 +403,16 @@ function App() {
   const [visitorState, setVisitorState] = useState(() => loadVisitorState(localStorage))
   const [menuOpen, setMenuOpen] = useState(false)
   const [language, setLanguage] = useState(() => getInitialLanguage(localStorage))
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth)
+  const [profileExpanded, setProfileExpanded] = useState(false)
   const copy = siteCopy[language]
   const pages = copy.nav
   const resumeDocument = { url: `${import.meta.env.BASE_URL}${resumeDocumentByLanguage[language].path}`, name: resumeDocumentByLanguage[language].name }
   const activeSession = visitorState.sessions.find(session => session.id === visitorState.activeSessionId) || visitorState.sessions[0]
   useEffect(() => { saveVisitorState(localStorage, visitorState) }, [visitorState])
   useEffect(() => { try { localStorage.setItem('zt-ai:language', language) } catch {} }, [language])
+  useEffect(() => { const onResize = () => setViewportWidth(window.innerWidth); window.addEventListener('resize', onResize); return () => window.removeEventListener('resize', onResize) }, [])
+  useEffect(() => setProfileExpanded(false), [activeSession.id])
   const selectSession = id => setVisitorState(current => current.sessions.some(session => session.id === id) ? { ...current, activeSessionId: id } : current)
   const newChat = () => { const session = createChatSession({ model: 'MINIMAX' }); setVisitorState(current => ({ ...current, activeSessionId: session.id, sessions: [session, ...current.sessions] })) }
   const updateSession = (sessionId, updater) => setVisitorState(current => {
@@ -404,7 +425,7 @@ function App() {
     <header className="topbar"><button className="mobile-menu" onClick={() => setMenuOpen(value => !value)} aria-label={language === 'zh' ? '打开菜单' : 'Open menu'}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><Brand compact copy={copy} /><nav className={menuOpen ? 'open' : ''}>{Object.entries(pages).map(([key, label]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => navigate(key)}>{label}</button>)}</nav><div className="topbar-right"><button className={`desktop-download ${page === 'downloads' ? 'active' : ''}`} onClick={() => navigate('downloads')} aria-label={copy.desktopDownload}><Download size={14} /><span>{copy.desktopDownload}</span></button><LanguageSwitch language={language} setLanguage={setLanguage} copy={copy} /><span className="availability"><span /> {copy.availability}</span><button className="more-button" aria-label="More"><MoreHorizontal size={20} /></button></div></header>
     <main className="main-content">
       {page === 'home' && <HomePage copy={copy.home} onChat={() => navigate('chat')} />}
-      {page === 'chat' && <div className="chat-layout"><PublicProfile copy={copy.profile} /><ChatBox copy={copy.chat} language={language} resumeDocument={resumeDocument} session={activeSession} visitorId={visitorState.visitorId} sessions={visitorState.sessions} onSessionChange={updateSession} onSelectSession={selectSession} onNewChat={newChat} /></div>}
+      {page === 'chat' && <div className="chat-layout"><PublicProfile copy={{ ...copy.profile, compactProfile: copy.chat.compactProfile }} compact={shouldUseCompactProfile({ viewportWidth, messageCount: activeSession.messages.length }) && !profileExpanded} onExpand={() => setProfileExpanded(true)} /><ChatBox copy={copy.chat} language={language} resumeDocument={resumeDocument} session={activeSession} visitorId={visitorState.visitorId} sessions={visitorState.sessions} onSessionChange={updateSession} onSelectSession={selectSession} onNewChat={newChat} /></div>}
       {page === 'projects' && <ProjectsPage copy={copy.projects} />}
       {page === 'resume' && <ResumePage copy={copy.resume} resumeDocument={resumeDocument} />}
       {page === 'downloads' && <DownloadCenter copy={copy} />}
