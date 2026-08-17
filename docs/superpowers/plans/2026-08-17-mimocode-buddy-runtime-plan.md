@@ -225,7 +225,7 @@ git commit -m "feat: run Buddy tasks through MiMoCode"
 - Test: `server/src/mimocode-openai.test.js`
 - Test: `server/src/index.test.js` if present, otherwise `npm test`
 
-- [ ] **Step 1: Write failing OpenAI bridge tests**
+- [x] **Step 1: Write failing OpenAI bridge tests**
 
 Write tests against `createMiMoOpenAIHandler({ authenticate, streamProvider })` with an in-memory response object. Verify a non-streaming `POST /v1/responses` request returns `object: 'response'`, tool calls preserve a function-call item, and a legacy Chat Completions request remains compatible:
 
@@ -241,13 +241,13 @@ assert.equal(response.statusCode, 401)
 
 Add a streaming test that verifies `event: response.output_text.delta`, `event: response.completed`, and a final completed response object. Add a tool-call fixture and prove a `function_call` item is preserved rather than flattened to text. Add a smaller compatibility test for `POST /v1/chat/completions` that still emits its normal chunk plus `[DONE]` framing.
 
-- [ ] **Step 2: Run the gateway bridge test to verify it fails because the handler is missing**
+- [x] **Step 2: Run the gateway bridge test to verify it fails because the handler is missing**
 
 Run: `node --test server/src/mimocode-openai.test.js`
 
 Expected: FAIL with `ERR_MODULE_NOT_FOUND` for `mimocode-openai.js`.
 
-- [ ] **Step 3: Implement the token-gated OpenAI-compatible handler**
+- [x] **Step 3: Implement the token-gated OpenAI-compatible handler**
 
 Implement `createMiMoOpenAIHandler` so it accepts only a valid approved desktop account token, maps `zt-deepseek` to the configured DeepSeek model and `zt-minimax` to the configured MiniMax model, and delegates provider calls through a raw OpenAI-compatible request function that translates MiMo's Responses request into the configured provider while preserving content and function calls. Register only these routes in `server/src/index.js`:
 
@@ -259,13 +259,13 @@ POST /api/agent/openai/v1/chat/completions
 
 The route must reject browser CORS callers, reject missing/invalid tokens, record aggregate usage telemetry, and never return the upstream API key. The local MiMo process receives a short-lived desktop account token as its proxy bearer token; the Electron renderer still never sees a provider key.
 
-- [ ] **Step 4: Run gateway unit tests and core suite to verify they pass**
+- [x] **Step 4: Run gateway unit tests and core suite to verify they pass**
 
 Run: `node --test server/src/mimocode-openai.test.js; npm test`
 
 Expected: handler tests pass and the existing server/frontend suite remains green.
 
-- [ ] **Step 5: Commit the provider boundary**
+- [x] **Step 5: Commit the provider boundary**
 
 ```bash
 git add server/src/mimocode-openai.js server/src/mimocode-openai.test.js server/src/index.js

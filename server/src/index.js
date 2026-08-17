@@ -1,4 +1,5 @@
 import http from 'node:http'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +12,7 @@ import { createAuthService } from './auth.js'
 import { createTelemetry } from './telemetry.js'
 import { createAdminApi } from './admin.js'
 import { isAllowedOrigin } from './cors.js'
+import { MODEL_CATALOG, completeMiMoResponse, isPrivateDesktopRuntimeRequest, streamChatCompletionEvents, streamGatewayChat, streamResponseEvents } from './mimocode-openai.js'
 
 function loadEnvFile(filePath) {
   try {
@@ -57,6 +59,11 @@ function rateLimit(request) {
 
 function sendJson(request, response, status, payload) {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': corsOrigin(request), vary: 'Origin' })
+  response.end(JSON.stringify(payload))
+}
+
+function sendPrivateJson(response, status, payload) {
+  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
   response.end(JSON.stringify(payload))
 }
 
@@ -110,6 +117,16 @@ function sseStart(request, response) {
 
 function sse(response, event, data) {
   response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+}
+
+function privateSseStart(response) {
+  response.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache, no-transform',
+    'x-accel-buffering': 'no',
+    connection: 'keep-alive',
+  })
+  response.flushHeaders?.()
 }
 
 function readBody(request) {
@@ -231,13 +248,103 @@ async function handleAgentPlan(request, response) {
   }
 }
 
+async function handleMiMoOpenAI(request, response, route) {
+  if (!isPrivateDesktopRuntimeRequest(request.headers.origin)) {
+    sendPrivateJson(response, 403, { error: '该接口仅供本机桌面运行时调用' })
+    return
+  }
+  const session = await auth.getSession(bearerToken(request), 'user')
+  if (!session) {
+    sendPrivateJson(response, 401, { error: '需要登录桌面 Agent 账户' })
+    return
+  }
+  if (!rateLimit(request)) {
+    sendPrivateJson(response, 429, { error: '请求过于频繁，请稍后再试' })
+    return
+  }
+  if (request.method === 'GET' && route === '/api/agent/openai/v1/models') {
+    sendPrivateJson(response, 200, {
+      object: 'list',
+      data: Object.entries(MODEL_CATALOG).map(([id, value]) => ({ id, object: 'model', owned_by: 'zt-ai-gateway', name: value.label })),
+    })
+    return
+  }
+  const body = await readBody(request)
+  const context = clientContext(request, body)
+  const streamChat = input => streamGatewayChat(input)
+  const responseId = `resp_zt_${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`
+  const requestedModel = String(body.model || 'zt-minimax-m3')
+  const modelLabel = MODEL_CATALOG[requestedModel]?.label || requestedModel
+
+  if (request.method === 'POST' && route === '/api/agent/openai/v1/responses') {
+    let outputText = ''
+    let status = 'success'
+    if (body.stream === false) {
+      try {
+        const completed = await completeMiMoResponse({ request: body, systemPrompt: AGENT_SYSTEM_PROMPT, streamChat, responseId })
+        outputText = completed.output
+          .filter(item => item.type === 'message')
+          .flatMap(item => item.content || [])
+          .map(item => item.text || '')
+          .join('')
+        sendPrivateJson(response, 200, completed)
+      } catch {
+        status = 'error'
+        sendPrivateJson(response, 502, { error: { code: 'server_error', message: '所选模型暂时无法完成本次请求。' } })
+      }
+      await recordTelemetry({ product: 'desktop-agent', ...context, userId: session.user.id, model: modelLabel, requestType: 'mimocode-responses', status, inputText: String(body.input || '').slice(0, 8_000), outputText })
+      return
+    }
+    privateSseStart(response)
+    try {
+      for await (const frame of streamResponseEvents({ request: body, systemPrompt: AGENT_SYSTEM_PROMPT, streamChat, responseId })) {
+        if (frame.type === 'response.output_text.delta') outputText += frame.data.delta || ''
+        sse(response, frame.type, frame.data)
+      }
+    } catch {
+      status = 'error'
+      sse(response, 'response.failed', { response: { id: responseId, object: 'response', status: 'failed', error: { code: 'server_error', message: '所选模型暂时无法完成本次请求。' } } })
+    }
+    response.end()
+    await recordTelemetry({ product: 'desktop-agent', ...context, userId: session.user.id, model: modelLabel, requestType: 'mimocode-responses', status, inputText: String(body.input || '').slice(0, 8_000), outputText })
+    return
+  }
+
+  if (request.method === 'POST' && route === '/api/agent/openai/v1/chat/completions') {
+    let status = 'success'
+    let outputText = ''
+    privateSseStart(response)
+    try {
+      for await (const frame of streamChatCompletionEvents({ request: body, systemPrompt: AGENT_SYSTEM_PROMPT, streamChat })) {
+        const text = frame.choices?.[0]?.delta?.content || ''
+        outputText += text
+        response.write(`data: ${JSON.stringify(frame)}\n\n`)
+      }
+      response.write('data: [DONE]\n\n')
+    } catch {
+      status = 'error'
+      response.write(`data: ${JSON.stringify({ error: { message: '所选模型暂时无法完成本次请求。' } })}\n\n`)
+      response.write('data: [DONE]\n\n')
+    }
+    response.end()
+    await recordTelemetry({ product: 'desktop-agent', ...context, userId: session.user.id, model: modelLabel, requestType: 'mimocode-chat-completions', status, inputText: String(body.messages?.at?.(-1)?.content || '').slice(0, 8_000), outputText })
+    return
+  }
+  sendPrivateJson(response, 404, { error: 'Not found' })
+}
+
 export function createServer() {
   return http.createServer(async (request, response) => {
-    if (request.method === 'OPTIONS') { response.writeHead(204, { 'access-control-allow-origin': corsOrigin(request), 'access-control-allow-methods': 'POST, GET, OPTIONS', 'access-control-allow-headers': 'content-type, authorization, x-zt-agent-secret', vary: 'Origin' }); response.end(); return }
+    if (request.method === 'OPTIONS') {
+      const optionRoute = request.url.split('?')[0]
+      if (optionRoute.startsWith('/api/agent/openai/v1/')) { sendPrivateJson(response, 403, { error: '该接口仅供本机桌面运行时调用' }); return }
+      response.writeHead(204, { 'access-control-allow-origin': corsOrigin(request), 'access-control-allow-methods': 'POST, GET, OPTIONS', 'access-control-allow-headers': 'content-type, authorization, x-zt-agent-secret', vary: 'Origin' }); response.end(); return
+    }
     try {
       const route = request.url.split('?')[0]
       if ((route === '/admin' || route.startsWith('/admin/')) && !route.startsWith('/admin/api/')) return await serveControlRoom(request, response)
       if (request.method === 'GET' && route === '/api/health') return sendJson(request, response, 200, { ok: true, service: 'zt-ai-gateway', profile: { name: ZT_PROFILE.name, identity: ZT_PROFILE.identity }, models: CHAT_MODELS, providers: { minimax: Boolean(process.env.MINIMAX_API_KEY), deepseek: Boolean(process.env.DEEPSEEK_API_KEY) } })
+      if ((request.method === 'GET' && route === '/api/agent/openai/v1/models') || (request.method === 'POST' && (route === '/api/agent/openai/v1/responses' || route === '/api/agent/openai/v1/chat/completions'))) return await handleMiMoOpenAI(request, response, route)
       if (request.method === 'POST' && route === '/api/auth/register') { const body = await readBody(request); return sendJson(request, response, 201, await auth.register(body)) }
       if (request.method === 'POST' && route === '/api/auth/login') { const body = await readBody(request); return sendJson(request, response, 200, await auth.login(body)) }
       if (request.method === 'GET' && route === '/api/auth/me') { const session = await auth.getSession(bearerToken(request), 'user'); return session ? sendJson(request, response, 200, { user: session.user }) : sendJson(request, response, 401, { error: '未登录' }) }
