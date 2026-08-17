@@ -165,6 +165,7 @@ export class MiMoBuddyRuntime {
       this.runtime = { url: this.runtimeUrl, password, tokenKey, headers: { authorization: basicAuth(password) }, stop: async () => {} }
       try {
         await this.waitForHealth()
+        await this.verifyGatewayBridge(accountToken)
         return this.runtime
       } catch (error) {
         await this.stopRuntime()
@@ -189,11 +190,32 @@ export class MiMoBuddyRuntime {
     this.runtime = { ...spawned, password, tokenKey, configPath, headers: { authorization: basicAuth(password) } }
     try {
       await this.waitForHealth()
+      await this.verifyGatewayBridge(accountToken)
       return this.runtime
     } catch (error) {
       await this.stopRuntime()
       throw error
     }
+  }
+
+  async verifyGatewayBridge(accountToken = '') {
+    if (!this.gatewayUrl || !accountToken) return true
+    const endpoint = `${this.gatewayUrl.replace(/\/$/, '')}/api/agent/openai/v1/models`
+    let response
+    try {
+      response = await this.fetch(endpoint, {
+        headers: { authorization: `Bearer ${accountToken}` },
+        signal: AbortSignal.timeout(12_000),
+      })
+    } catch {
+      throw new Error('MiMoCode 模型网关无法连接，请检查网络后重试。')
+    }
+    if (!response.ok) throw new Error(`MiMoCode 模型网关不可用（${response.status}）。请更新桌面端或联系管理员。`)
+    const body = await readJson(response)
+    const models = Array.isArray(body?.data) ? body.data : []
+    const ids = new Set(models.map(model => String(model?.id || '')))
+    if (!ids.has('zt-minimax-m3') || !ids.has('zt-deepseek-v4-flash')) throw new Error('MiMoCode 模型网关配置不完整，请稍后重试。')
+    return true
   }
 
   async waitForHealth(timeout = 45_000) {

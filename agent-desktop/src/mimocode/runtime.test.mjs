@@ -165,3 +165,36 @@ test('reject forwards a closed permission response and ends no task optimistical
     await fs.rm(root, { recursive: true, force: true })
   }
 })
+
+test('fails before opening a MiMo session when the authenticated model bridge is unavailable', async () => {
+  const fixture = await createFixture()
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'zt-mimo-runtime-test-'))
+  try {
+    const runtime = new MiMoBuddyRuntime({
+      workspaceRoot: root,
+      statePath: path.join(root, 'sessions.json'),
+      gatewayUrl: 'https://gateway.invalid',
+      fetchImpl: async (url, options) => {
+        if (url === 'https://gateway.invalid/api/agent/openai/v1/models') return new Response('', { status: 404 })
+        return fetch(url, options)
+      },
+      spawnRuntime: async () => ({ url: fixture.url, stop: async () => {} }),
+    })
+
+    await assert.rejects(
+      runtime.startTask({
+        task: '查看工作区文件',
+        model: 'MINIMAX',
+        conversationId: 'conversation-missing-bridge',
+        accountToken: 'account-token',
+        onEvent: () => {},
+      }),
+      /模型网关不可用（404）/,
+    )
+    assert.equal(fixture.sessionCreates, 0, 'a missing bridge must fail before creating a task session')
+    await runtime.dispose()
+  } finally {
+    await fixture.close()
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
