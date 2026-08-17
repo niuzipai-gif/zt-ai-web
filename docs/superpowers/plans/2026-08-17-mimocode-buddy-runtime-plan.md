@@ -107,7 +107,7 @@ git commit -m "test: prove pinned MiMoCode runtime on Windows"
 - Create: `agent-desktop/src/mimocode/event-map.test.mjs`
 - Test: `agent-desktop/src/mimocode/event-map.test.mjs`
 
-- [ ] **Step 1: Write failing mapping tests**
+- [x] **Step 1: Write failing mapping tests**
 
 Write tests for these concrete input/output pairs:
 
@@ -135,23 +135,23 @@ assert.deepEqual(normalizeMiMoEvent({ type: 'permission.asked', properties: { se
 
 Also prove that a heartbeat and an unknown event return `null`, and a tool completion becomes `tool.completed` with an empty safe result if upstream has no display text.
 
-- [ ] **Step 2: Run the mapping test to verify it fails because the module is missing**
+- [x] **Step 2: Run the mapping test to verify it fails because the module is missing**
 
 Run: `node --test agent-desktop/src/mimocode/event-map.test.mjs`
 
 Expected: FAIL with `ERR_MODULE_NOT_FOUND` for `event-map.mjs`.
 
-- [ ] **Step 3: Implement the smallest stable event map**
+- [x] **Step 3: Implement the smallest stable event map**
 
 Implement `normalizeMiMoEvent(event)` and `capabilityForMiMoPermission(permission)` as a pure table-driven adapter. Map MiMo session/message/task/part/tool/permission/error/idle event families into only these ZT names: `session.started`, `plan.ready`, `tool.started`, `tool.completed`, `approval.required`, `result.delta`, `session.completed`, `session.failed`. Do not expose raw provider error bodies or unrecognized event payloads to the renderer.
 
-- [ ] **Step 4: Run the mapping test to verify it passes**
+- [x] **Step 4: Run the mapping test to verify it passes**
 
 Run: `node --test agent-desktop/src/mimocode/event-map.test.mjs`
 
 Expected: all mapping assertions pass.
 
-- [ ] **Step 5: Commit the adapter**
+- [x] **Step 5: Commit the adapter**
 
 ```bash
 git add agent-desktop/src/mimocode/event-map.mjs agent-desktop/src/mimocode/event-map.test.mjs
