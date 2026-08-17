@@ -28,16 +28,19 @@ function modelRecord(model) {
 
 function normalizeTools(tools) {
   return (Array.isArray(tools) ? tools : [])
-    .filter(tool => tool?.type === 'function' && typeof tool.name === 'string')
+    .filter(tool => tool?.type === 'function' && typeof (tool.name ?? tool.function?.name) === 'string')
     .slice(0, 64)
-    .map(tool => ({
-      type: 'function',
-      function: {
-        name: tool.name.slice(0, 128),
-        description: String(tool.description || '').slice(0, 4_000),
-        parameters: tool.parameters && typeof tool.parameters === 'object' ? tool.parameters : { type: 'object', properties: {} },
-      },
-    }))
+    .map(tool => {
+      const definition = tool.function && typeof tool.function === 'object' ? tool.function : tool
+      return {
+        type: 'function',
+        function: {
+          name: String(definition.name || '').slice(0, 128),
+          description: String(definition.description || '').slice(0, 4_000),
+          parameters: definition.parameters && typeof definition.parameters === 'object' ? definition.parameters : { type: 'object', properties: {} },
+        },
+      }
+    })
 }
 
 function normalizeInput(input) {

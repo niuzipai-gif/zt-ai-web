@@ -105,6 +105,35 @@ test('keeps a legacy Chat Completions stream available for compatible clients', 
   assert.equal(chunks.at(-1).choices[0].finish_reason, 'tool_calls')
 })
 
+test('preserves standard Chat Completions tool envelopes from the OpenAI-compatible MiMo provider', async () => {
+  let received
+  await collect(streamChatCompletionEvents({
+    request: {
+      model: 'zt-minimax-m3',
+      messages: [{ role: 'user', content: '读取 README.md' }],
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'read',
+          description: 'Read one file',
+          parameters: { type: 'object', properties: { file_path: { type: 'string' } } },
+        },
+      }],
+    },
+    systemPrompt: '执行模式',
+    streamChat: async function* (input) { received = input },
+  }))
+
+  assert.deepEqual(received.tools, [{
+    type: 'function',
+    function: {
+      name: 'read',
+      description: 'Read one file',
+      parameters: { type: 'object', properties: { file_path: { type: 'string' } } },
+    },
+  }])
+})
+
 test('gateway bridge forwards tool envelopes to the configured provider without exposing its key', async () => {
   let received
   const chunks = await collect(streamGatewayChat({

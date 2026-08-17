@@ -50,13 +50,15 @@ function safeFailureMessage() {
   return '本机执行暂时没有完成，请检查网络、登录状态或权限后重试。'
 }
 
-function defaultConfig({ gatewayUrl, accountToken }) {
+export function defaultConfig({ gatewayUrl, accountToken }) {
   const baseURL = `${String(gatewayUrl || '').replace(/\/$/, '')}/api/agent/openai/v1`
   return {
     $schema: 'https://mimo.xiaomi.com/mimocode/config.json',
-    model: 'openai/zt-minimax-m3',
+    model: 'zt/zt-minimax-m3',
     provider: {
-      openai: {
+      zt: {
+        name: 'ZT.AI Gateway',
+        npm: '@ai-sdk/openai-compatible',
         options: { baseURL, apiKey: accountToken },
         only_configured_models: true,
         models: {
@@ -316,7 +318,7 @@ export class MiMoBuddyRuntime {
     void this.request(`/session/${encodeURIComponent(state.sessionId)}/message`, {
       method: 'POST',
       body: {
-        model: { providerID: 'openai', modelID: modelIdFor(state.model) },
+        model: { providerID: 'zt', modelID: modelIdFor(state.model) },
         parts: [{ type: 'text', text }],
       },
     }).catch(() => this.emit(state, { type: 'session.failed', sessionId: state.sessionId, message: safeFailureMessage() }))

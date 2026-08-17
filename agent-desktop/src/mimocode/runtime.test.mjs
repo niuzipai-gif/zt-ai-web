@@ -4,7 +4,7 @@ import http from 'node:http'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { MiMoBuddyRuntime } from './runtime.mjs'
+import { MiMoBuddyRuntime, defaultConfig } from './runtime.mjs'
 
 function waitFor(check, { timeout = 2_000, interval = 10 } = {}) {
   return new Promise((resolve, reject) => {
@@ -54,7 +54,7 @@ async function createFixture() {
     }
     if (request.method === 'POST' && request.url === '/session/ses_1/message') {
       record.push('prompt')
-      assert.equal(body.model.providerID, 'openai')
+      assert.equal(body.model.providerID, 'zt')
       setTimeout(() => {
         sendEvent({ type: 'session.status', properties: { sessionID: 'ses_1', status: { type: 'busy' } } })
         if (record.filter(item => item === 'prompt').length === 1) {
@@ -142,6 +142,20 @@ test('bridges MiMo lifecycle, holds permission until approval, and persists the 
     await fixture.close()
     await fs.rm(root, { recursive: true, force: true })
   }
+})
+
+test('uses MiMoCode\'s OpenAI-compatible custom provider for the private gateway', () => {
+  const config = defaultConfig({ gatewayUrl: 'https://gateway.example', accountToken: 'account-token' })
+
+  assert.equal(config.model, 'zt/zt-minimax-m3')
+  assert.deepEqual(config.provider.zt.options, {
+    baseURL: 'https://gateway.example/api/agent/openai/v1',
+    apiKey: 'account-token',
+  })
+  assert.equal(config.provider.zt.npm, '@ai-sdk/openai-compatible')
+  assert.equal(config.provider.zt.only_configured_models, true)
+  assert.ok(config.provider.zt.models['zt-minimax-m3'])
+  assert.ok(config.provider.zt.models['zt-deepseek-v4-flash'])
 })
 
 test('reject forwards a closed permission response and ends no task optimistically', async () => {
