@@ -1,0 +1,9 @@
+{
+  "name": "@mimo-ai/cli",
+  "version": "0.1.12",
+  "repository": "https://github.com/XiaomiMiMo/MiMo-Code",
+  "commit": "be2c11653ec9d44969b1b27290eda3c018806a2d",
+  "license": "MIT",
+  "entrypoint": "mimo",
+  "serverCommand": ["serve", "--hostname", "127.0.0.1"]
+}

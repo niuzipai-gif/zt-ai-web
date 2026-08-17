@@ -10,7 +10,7 @@ MiMoCode is the only primary Agent engine. It is obtained from the official `Xia
 
 The Electron application starts a local ZT.buddy bridge with the selected workspace. The bridge starts the pinned MiMoCode runtime and translates its structured lifecycle into a stable ZT.AI event contract: `session.started`, `plan.ready`, `tool.started`, `tool.completed`, `approval.required`, `result.delta`, `session.completed`, and `session.failed`.
 
-The existing Gateway remains the only place that holds model credentials and account approval state. The renderer never receives an API key. The bridge receives an approved account token and a short-lived local capability grant before it can pass a write, command or network action to the runtime.
+The existing Gateway remains the only place that holds model credentials and account approval state. The renderer never receives an API key. The bridge receives an approved account token and a short-lived local capability grant before it can pass a write, command or network action to the runtime. MiMoCode 0.1.12 uses the OpenAI Responses API (`/v1/responses`) for its configured OpenAI provider, so the Gateway compatibility bridge must support both Responses and Chat Completions shapes rather than assuming legacy chat-only traffic.
 
 ## Runtime acceptance gate
 

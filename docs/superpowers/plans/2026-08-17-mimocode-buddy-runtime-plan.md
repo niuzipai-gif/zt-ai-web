@@ -22,8 +22,8 @@
 - Modify: `agent-desktop/src/server.mjs` — selects `MiMoBuddyRuntime` as the primary `/api/tasks` engine and forwards ZT local approvals to MiMo.
 - Modify: `agent-desktop/src/agent-core.mjs` — retains only migration-safe task-history helpers; removes it from the primary task path.
 - Modify: `server/src/index.js` — adds the authenticated internal OpenAI-compatible route used by MiMoCode.
-- Create: `server/src/mimocode-openai.js` — adapts gateway provider calls to OpenAI Chat Completions and preserves tool call envelopes.
-- Create: `server/src/mimocode-openai.test.js` — tests authorization, model mapping, non-streaming completion, and streaming chunks without a live provider key.
+- Create: `server/src/mimocode-openai.js` — adapts gateway provider calls to the OpenAI Responses and Chat Completions protocols while preserving tool call envelopes.
+- Create: `server/src/mimocode-openai.test.js` — tests authorization, model mapping, Responses streaming, legacy Chat Completions compatibility, and tool calls without a live provider key.
 - Modify: `agent-desktop/public/index.html` — login live status/spinner and accessible execution-details drawer markup.
 - Modify: `agent-desktop/public/app.js` — Enter-to-send, Shift+Enter newline, IME protection, auth busy state, and drawer collapse after terminal runtime events.
 - Modify: `agent-desktop/public/styles.css` — visible button loading state, compact execution drawer, keyboard focus styles, and reduced-motion fallback.
@@ -42,7 +42,7 @@
 - Create: `tools/mimocode-runtime-qa.mjs`
 - Test: `tools/mimocode-runtime-qa.mjs`
 
-- [ ] **Step 1: Write the lock assertion before adding production integration**
+- [x] **Step 1: Write the lock assertion before adding production integration**
 
 Create `agent-desktop/mimocode.lock.json` with the immutable runtime provenance:
 
@@ -60,13 +60,13 @@ Create `agent-desktop/mimocode.lock.json` with the immutable runtime provenance:
 
 Write the first QA assertion in `tools/mimocode-runtime-qa.mjs` so it reads that lock and rejects any version other than `0.1.12` or any commit other than the recorded full SHA.
 
-- [ ] **Step 2: Run the QA script to verify it fails because the runtime probe is absent**
+- [x] **Step 2: Run the QA script to verify it fails because the runtime probe is absent**
 
 Run: `node tools/mimocode-runtime-qa.mjs`
 
 Expected: FAIL after the provenance assertion with a clear `MiMo runtime probe is not implemented` error.
 
-- [ ] **Step 3: Implement the disposable runtime probe**
+- [x] **Step 3: Implement the disposable runtime probe**
 
 Implement the script with these exact responsibilities:
 
@@ -85,15 +85,15 @@ const child = spawn(cli, args, {
 })
 ```
 
-The script must write a temporary MiMo config that declares a single `zt-gateway` OpenAI-compatible provider pointing at a disposable local fixture (`http://127.0.0.1:<fixturePort>/v1`), sets its `apiKey` to the fixture token, and declares a `zt-buddy-test` model with `tool_call: true`, `limit.context: 1000000`, and `limit.output: 8192`. Start a local fixture that returns a deterministic text answer and, for a read task, a tool-call response. Wait for `GET /global/health` (or the documented equivalent discovered from the runtime) to return success; then create a session, subscribe to `/event`, send one prompt, and assert an assistant result and at least one runtime event. Always terminate the child and remove the disposable workspace in `finally`.
+The script must write a temporary MiMo config that declares a single `zt-gateway` OpenAI-compatible provider pointing at a disposable local fixture (`http://127.0.0.1:<fixturePort>/v1`), sets its `apiKey` to the fixture token, and declares a `zt-buddy-test` model with `tool_call: true`, `limit.context: 1000000`, and `limit.output: 8192`. The fixture must implement the OpenAI Responses stream (`POST /v1/responses`), because MiMoCode 0.1.12 uses that surface for its OpenAI provider; it must return a deterministic text answer and, for a read task, a function-call response. Wait for `GET /global/health` (or the documented equivalent discovered from the runtime) to return success; then create a session, subscribe to `/event`, send one prompt, and assert an assistant result and at least one runtime event. Always terminate the child and remove the disposable workspace in `finally`.
 
-- [ ] **Step 4: Run the runtime probe to verify it passes without a real API key**
+- [x] **Step 4: Run the runtime probe to verify it passes without a real API key**
 
 Run: `node tools/mimocode-runtime-qa.mjs`
 
 Expected: JSON containing `{"officialRuntime":true,"session":true,"events":true,"fixtureOnly":true}` and exit code `0`.
 
-- [ ] **Step 5: Commit the provenance and official runtime proof**
+- [x] **Step 5: Commit the provenance and official runtime proof**
 
 ```bash
 git add agent-desktop/mimocode.lock.json tools/mimocode-runtime-qa.mjs
@@ -216,7 +216,7 @@ git add agent-desktop/src/mimocode/runtime.mjs agent-desktop/src/mimocode/runtim
 git commit -m "feat: run Buddy tasks through MiMoCode"
 ```
 
-### Task 4: Keep provider keys inside the gateway with an OpenAI-compatible bridge
+### Task 4: Keep provider keys inside the gateway with a Responses-first OpenAI-compatible bridge
 
 **Files:**
 - Create: `server/src/mimocode-openai.js`
@@ -227,19 +227,19 @@ git commit -m "feat: run Buddy tasks through MiMoCode"
 
 - [ ] **Step 1: Write failing OpenAI bridge tests**
 
-Write tests against `createMiMoOpenAIHandler({ authenticate, streamProvider })` with an in-memory response object. Verify:
+Write tests against `createMiMoOpenAIHandler({ authenticate, streamProvider })` with an in-memory response object. Verify a non-streaming `POST /v1/responses` request returns `object: 'response'`, tool calls preserve a function-call item, and a legacy Chat Completions request remains compatible:
 
 ```js
-await handler(request({ authorization: 'Bearer desktop-token', body: { model: 'zt-deepseek', messages: [{ role: 'user', content: '列出文件' }], stream: false } }), response)
+await handler(request({ authorization: 'Bearer desktop-token', body: { model: 'zt-deepseek', input: '列出文件', stream: false } }), response)
 assert.equal(response.statusCode, 200)
-assert.equal(response.json.object, 'chat.completion')
-assert.equal(response.json.choices[0].message.role, 'assistant')
+assert.equal(response.json.object, 'response')
+assert.equal(response.json.output[0].type, 'message')
 
-await handler(request({ authorization: '', body: { model: 'zt-deepseek', messages: [] } }), response)
+await handler(request({ authorization: '', body: { model: 'zt-deepseek', input: 'x' } }), response)
 assert.equal(response.statusCode, 401)
 ```
 
-Add a streaming test that verifies `data: {"object":"chat.completion.chunk"` and a final `data: [DONE]` are emitted. Add a tool-call fixture and prove `tool_calls` are preserved rather than flattened to text.
+Add a streaming test that verifies `event: response.output_text.delta`, `event: response.completed`, and a final completed response object. Add a tool-call fixture and prove a `function_call` item is preserved rather than flattened to text. Add a smaller compatibility test for `POST /v1/chat/completions` that still emits its normal chunk plus `[DONE]` framing.
 
 - [ ] **Step 2: Run the gateway bridge test to verify it fails because the handler is missing**
 
@@ -249,10 +249,11 @@ Expected: FAIL with `ERR_MODULE_NOT_FOUND` for `mimocode-openai.js`.
 
 - [ ] **Step 3: Implement the token-gated OpenAI-compatible handler**
 
-Implement `createMiMoOpenAIHandler` so it accepts only a valid approved desktop account token, maps `zt-deepseek` to the configured DeepSeek model and `zt-minimax` to the configured MiniMax model, and delegates provider calls through a raw OpenAI-compatible request function that supports both content deltas and `tool_calls`. Register only these routes in `server/src/index.js`:
+Implement `createMiMoOpenAIHandler` so it accepts only a valid approved desktop account token, maps `zt-deepseek` to the configured DeepSeek model and `zt-minimax` to the configured MiniMax model, and delegates provider calls through a raw OpenAI-compatible request function that translates MiMo's Responses request into the configured provider while preserving content and function calls. Register only these routes in `server/src/index.js`:
 
 ```js
 GET /api/agent/openai/v1/models
+POST /api/agent/openai/v1/responses
 POST /api/agent/openai/v1/chat/completions
 ```
 
