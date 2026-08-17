@@ -10,12 +10,18 @@ files:
   - desktop-app/**/*
   - agent-desktop/public/**/*
   - agent-desktop/src/**/*
+  - agent-desktop/mimocode.lock.json
   - server/src/**/*
   - server/package.json
+  - node_modules/@mimo-ai/cli/**/*
+  - node_modules/@mimo-ai/mimocode-windows-x64/**/*
+  - desktop-app/THIRD_PARTY_NOTICES.txt
   - package.json
 asar: true
 asarUnpack:
   - agent-desktop/**
+  - node_modules/@mimo-ai/cli/**
+  - node_modules/@mimo-ai/mimocode-windows-x64/**
 win:
   target:
     - nsis

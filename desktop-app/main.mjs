@@ -4,6 +4,7 @@ import fs from 'node:fs/promises'
 import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { verifyBundledMiMo } from './mimocode-runtime.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let worker
@@ -30,6 +31,7 @@ async function startWorker() {
   workerPort = await findFreePort()
   const unpackedRoot = path.join(process.resourcesPath, 'app.asar.unpacked')
   const appPath = await fs.access(unpackedRoot).then(() => unpackedRoot).catch(() => path.resolve(__dirname, '..'))
+  const mimocode = verifyBundledMiMo({ appRoot: appPath })
   const agentServer = path.join(appPath, 'agent-desktop', 'src', 'server.mjs')
   const dataPath = path.join(app.getPath('userData'), 'agent-data')
   const workspaceRoot = process.env.ZT_AI_WORKSPACE || path.join(app.getPath('documents'), 'ZT.AI Workspace')
@@ -46,6 +48,9 @@ async function startWorker() {
       ZT_AI_AGENT_DATA: dataPath,
       ZT_AI_WORKSPACE: workspaceRoot,
       ZT_AI_GATEWAY_URL: process.env.ZT_AI_GATEWAY_URL || 'https://zt-ai-gateway.onrender.com',
+      ZT_AI_MIMOCODE_BIN: mimocode.binary,
+      ZT_AI_MIMOCODE_URL: '',
+      ZT_AI_TEST_MODE: '',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,

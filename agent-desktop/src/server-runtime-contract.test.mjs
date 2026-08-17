@@ -13,4 +13,6 @@ test('desktop task API routes new work through MiMoBuddyRuntime rather than the 
   assert.match(source, /await buddy\.approve\(/)
   assert.match(source, /await buddy\.reject\(/)
   assert.doesNotMatch(source, /new AgentTaskManager\(/)
+  assert.match(source, /process\.env\.ZT_AI_TEST_MODE === '1'/)
+  assert.doesNotMatch(source, /const mimocodeRuntimeUrl = process\.env\.ZT_AI_MIMOCODE_URL \|\| ''/)
 })

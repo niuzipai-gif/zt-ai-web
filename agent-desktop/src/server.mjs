@@ -8,6 +8,7 @@ import { DeviceAuthorizationStore, requiresDeviceAuthorization } from './authori
 import { scanSkillRoots } from './skills.mjs'
 import { classifyIntent } from './intent-router.mjs'
 import { MiMoBuddyRuntime } from './mimocode/runtime.mjs'
+import { scopedConversationId } from './mimocode/conversation-scope.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PUBLIC = path.join(ROOT, 'public')
@@ -16,6 +17,7 @@ const TASK_HISTORY_PATH = path.join(DATA, 'tasks.json')
 const port = Number(process.env.ZT_AI_AGENT_PORT || process.env.PORT || 8788)
 let workspaceRoot = path.resolve(process.env.ZT_AI_WORKSPACE || path.join(ROOT, '..'))
 const gatewayUrl = process.env.ZT_AI_GATEWAY_URL || 'http://localhost:8790'
+const mimocodeRuntimeUrl = process.env.ZT_AI_TEST_MODE === '1' ? process.env.ZT_AI_MIMOCODE_URL || '' : ''
 const localSecret = process.env.ZT_AI_AGENT_SECRET || ''
 const requireAccountAuth = process.env.ZT_AI_AGENT_REQUIRE_AUTH === '1'
 const userProfile = process.env.USERPROFILE || process.env.HOME || ''
@@ -36,6 +38,7 @@ const buddy = new MiMoBuddyRuntime({
   statePath: path.join(DATA, 'mimocode-sessions.json'),
   dataDir: path.join(DATA, 'mimocode'),
   gatewayUrl,
+  runtimeUrl: mimocodeRuntimeUrl,
 })
 let taskHistory = []
 try {
@@ -64,12 +67,14 @@ function accountToken(request, body = {}) {
   return header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : String(body.accountToken || '')
 }
 
-async function accountIsValid(token) {
+async function accountSession(token) {
   if (!token) return false
   try {
     const response = await fetch(`${gatewayUrl}/api/auth/me`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(8_000) })
-    return response.ok
-  } catch { return false }
+    if (!response.ok) return null
+    const body = await response.json()
+    return body?.user?.id ? body.user : null
+  } catch { return null }
 }
 
 function readBody(request) {
@@ -115,6 +120,7 @@ function finishBuddyTask(state, { status = 'done', summary = '' } = {}) {
   const record = {
     id: state.id,
     task: state.task,
+    accountId: state.accountId,
     model: state.model,
     status,
     createdAt: state.createdAt,
@@ -176,11 +182,12 @@ function handleBuddyEvent(state, event) {
   }
 }
 
-async function startBuddyTask({ request, response, task, model, token }) {
+async function startBuddyTask({ request, response, task, model, token, accountId }) {
   const id = crypto.randomUUID()
   const state = {
     id,
     task,
+    accountId,
     model: model === 'DEEPSEEK' ? 'DEEPSEEK' : 'MINIMAX',
     response,
     createdAt: new Date().toISOString(),
@@ -198,7 +205,7 @@ async function startBuddyTask({ request, response, task, model, token }) {
       task,
       model: state.model,
       taskId: id,
-      conversationId: String(request.headers['x-zt-conversation-id'] || id),
+      conversationId: scopedConversationId(accountId || 'local', String(request.headers['x-zt-conversation-id'] || id)),
       accountToken: token,
       onEvent: event => handleBuddyEvent(state, event),
     })
@@ -234,16 +241,20 @@ const server = http.createServer(async (request, response) => {
       if (Date.now() - skillCache.at > 30_000) skillCache = { at: Date.now(), skills: await scanSkillRoots(skillRoots) }
       return json(request, response, 200, { ok: true, roots: skillRoots, skills: skillCache.skills, scannedAt: new Date(skillCache.at).toISOString() })
     }
-    if (request.method === 'GET' && url.pathname === '/api/state') return json(request, response, 200, {
-      ok: true,
-      workspaceRoot,
-      history: taskHistory,
-      runtime: buddy.snapshot(),
-      permissions: permissions.snapshot(),
-      deviceAuthorization: deviceAuthorization.snapshot(),
-      gatewayUrl,
-      mode: 'execute',
-    })
+    if (request.method === 'GET' && url.pathname === '/api/state') {
+      const account = requireAccountAuth ? await accountSession(accountToken(request)) : null
+      const accountId = account?.id || null
+      return json(request, response, 200, {
+        ok: true,
+        workspaceRoot,
+        history: accountId ? taskHistory.filter(item => item.accountId === accountId) : requireAccountAuth ? [] : taskHistory,
+        runtime: buddy.snapshot({ accountId }),
+        permissions: permissions.snapshot(),
+        deviceAuthorization: deviceAuthorization.snapshot(),
+        gatewayUrl,
+        mode: 'execute',
+      })
+    }
     if (request.method === 'POST' && url.pathname === '/api/workspace') {
       const body = await readBody(request)
       const selected = path.resolve(String(body.path || ''))
@@ -272,9 +283,11 @@ const server = http.createServer(async (request, response) => {
       if (!String(body.task || '').trim()) return json(request, response, 400, { error: '请输入任务目标' })
       const intent = classifyIntent(body.task, { mode: 'BUDDY' })
       if (intent.route === 'chat') return json(request, response, 409, { error: '这句话被识别为普通聊天，不会调用本机工具，请使用普通聊天模式。', intent })
-      if (requireAccountAuth && !(await accountIsValid(accountToken(request, body)))) return json(request, response, 401, { error: '请先登录桌面 Agent 账户或重新登录' })
+      const token = accountToken(request, body)
+      const account = requireAccountAuth ? await accountSession(token) : null
+      if (requireAccountAuth && !account) return json(request, response, 401, { error: '请先登录桌面 Agent 账户或重新登录' })
       sseStart(request, response)
-      void startBuddyTask({ request, response, task: String(body.task).trim(), model: body.model, token: accountToken(request, body) })
+      void startBuddyTask({ request, response, task: String(body.task).trim(), model: body.model, token, accountId: account?.id || 'local' })
       return
     }
     const approveMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/(approve|reject)$/)
@@ -282,6 +295,10 @@ const server = http.createServer(async (request, response) => {
       const body = await readBody(request)
       const state = activeTasks.get(approveMatch[1])
       if (!state) return json(request, response, 404, { error: '没有找到正在执行的 MiMoCode 任务' })
+      if (requireAccountAuth) {
+        const account = await accountSession(accountToken(request, body))
+        if (!account || account.id !== state.accountId) return json(request, response, 401, { error: '当前账号不能确认其他用户的任务' })
+      }
       const capability = desktopCapability(body.capability)
       const permissionId = body.permissionId || [...state.pendingPermissions.entries()].find(([, value]) => value.capability === capability)?.[0]
       if (!permissionId) return json(request, response, 400, { error: '没有找到待确认的本机权限请求' })

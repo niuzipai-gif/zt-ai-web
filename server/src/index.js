@@ -26,9 +26,11 @@ function loadEnvFile(filePath) {
   }
 }
 
-await loadEnvFile(new URL('../../aikey.env', import.meta.url))
-await loadEnvFile(new URL('../../.env', import.meta.url))
-await loadEnvFile(new URL('../.env', import.meta.url))
+if (process.env.ZT_AI_TEST_MODE !== '1') {
+  await loadEnvFile(new URL('../../aikey.env', import.meta.url))
+  await loadEnvFile(new URL('../../.env', import.meta.url))
+  await loadEnvFile(new URL('../.env', import.meta.url))
+}
 
 const port = Number(process.env.PORT || 8790)
 const allowedOrigins = (process.env.CORS_ORIGIN || '*').split(',').map(value => value.trim()).filter(Boolean)

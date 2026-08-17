@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addConversationMessage, createConversation, createEmptyConversation, normalizeConversations } from '../public/conversation-state.mjs'
+import { addConversationMessage, conversationStorageKeys, createConversation, createEmptyConversation, normalizeConversations } from '../public/conversation-state.mjs'
 
 test('creates independent conversations with isolated messages', () => {
   const first = createConversation('chat-1', 100)
@@ -21,4 +21,13 @@ test('normalizes invalid stored conversations without sharing references', () =>
   assert.equal(stored.length, 1)
   assert.equal(stored[0].messages.length, 2)
   assert.deepEqual(normalizeConversations(null), [])
+})
+
+test('uses a separate persistent conversation namespace for every desktop account', () => {
+  const first = conversationStorageKeys('user-a')
+  const second = conversationStorageKeys('user-b')
+
+  assert.notEqual(first.chats, second.chats)
+  assert.notEqual(first.active, second.active)
+  assert.match(first.chats, /user-a/)
 })

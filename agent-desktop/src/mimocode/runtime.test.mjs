@@ -124,9 +124,9 @@ test('bridges MiMo lifecycle, holds permission until approval, and persists the 
     assert.equal(fixture.permissionReplies.length, 0, 'write permission must not be auto-approved')
     assert.deepEqual(fixture.record.slice(0, 4), ['server ready', 'session create', 'sse subscribe', 'prompt'])
 
-    assert.equal(await runtime.approve({ taskId: started.taskId, permissionId: 'per_1', remember: false }), true)
+    assert.equal(await runtime.approve({ taskId: started.taskId, permissionId: 'per_1', remember: true }), true)
     await waitFor(() => events.at(-1)?.type === 'session.completed')
-    assert.equal(fixture.permissionReplies[0].reply, 'once')
+    assert.equal(fixture.permissionReplies[0].reply, 'once', 'sensitive MiMo permissions must never become a persistent allow')
 
     const secondEvents = []
     await runtime.startTask({

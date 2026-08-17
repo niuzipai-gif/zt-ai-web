@@ -385,7 +385,7 @@ git commit -m "feat: collapse completed Buddy execution details"
 - Modify: `desktop-app/renderer/` tests as required by existing test layout
 - Test: `tools/integration-smoke.mjs`
 
-- [ ] **Step 1: Add failing integration assertions for the new runtime contract**
+- [x] **Step 1: Add failing integration assertions for the new runtime contract**
 
 Extend the isolated fixture so it requires all of these booleans to become true:
 
@@ -400,17 +400,17 @@ assert.equal(result.sessionRestored, true)
 assert.equal(result.noProviderKeyInRenderer, true)
 ```
 
-- [ ] **Step 2: Run the integration smoke test to verify it fails before the fixture is fully wired**
+- [x] **Step 2: Run the integration smoke test to verify it fails before the fixture is fully wired**
 
 Run: `npm run integration:test`
 
 Expected: FAIL at the first missing MiMo runtime assertion.
 
-- [ ] **Step 3: Implement the isolated fake MiMo server fixture**
+- [x] **Step 3: Implement the isolated fake MiMo server fixture**
 
 The fixture must expose the documented health, session, prompt, event, and permission endpoints used by `MiMoBuddyRuntime`; it must never use an actual MiniMax or DeepSeek key. Make normal chat return only a chat message. Make a workspace list task stream `session.created`, a read tool start/result, and a terminal `session.idle`. Make a write request emit `permission.asked`, wait until the test invokes ZT’s approve route, then emit a tool result and completion. Restart the runtime and prove the stored conversation maps to the prior session ID.
 
-- [ ] **Step 4: Run integration and full automated suites**
+- [x] **Step 4: Run integration and full automated suites**
 
 Run:
 
@@ -453,21 +453,21 @@ git commit -m "test: verify MiMo-backed Buddy runtime end to end"
 - Modify: `agent-desktop/README.md`
 - Test: `npm run desktop:dist`
 
-- [ ] **Step 1: Write a failing packaging/attribution assertion**
+- [x] **Step 1: Write a failing packaging/attribution assertion**
 
 Add a small Node assertion in `desktop-app/renderer/` or existing package contract tests that requires the packaged app configuration to include `agent-desktop/mimocode.lock.json` and `desktop-app/THIRD_PARTY_NOTICES.txt`.
 
-- [ ] **Step 2: Run the package contract test to verify it fails before packaging metadata is added**
+- [x] **Step 2: Run the package contract test to verify it fails before packaging metadata is added**
 
 Run: `npm run desktop:test`
 
 Expected: FAIL because the pinned runtime metadata or notice is not included.
 
-- [ ] **Step 3: Add packaged runtime metadata and user documentation**
+- [x] **Step 3: Add packaged runtime metadata and user documentation**
 
 Update electron-builder files so the installer includes the MiMo lock file, launch configuration, and MIT notice. The desktop process must perform a local runtime version check on first launch and show a clear status if the runtime cannot start; it must not silently fall back to the old custom execution engine. Document the runtime version, how a future update is pinned/tested, the local workspace/permission boundary, and the fact that desktop account approval is separate from model API credentials.
 
-- [ ] **Step 4: Run the package contract test and build both Windows artifacts**
+- [x] **Step 4: Run the package contract test and build both Windows artifacts**
 
 Run:
 

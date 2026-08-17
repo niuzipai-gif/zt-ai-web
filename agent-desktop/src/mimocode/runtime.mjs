@@ -2,7 +2,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import net from 'node:net'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { normalizeMiMoEvent } from './event-map.mjs'
 
@@ -70,12 +70,17 @@ function defaultConfig({ gatewayUrl, accountToken }) {
 }
 
 async function defaultSpawnRuntime({ workspaceRoot, port, configPath, dataDir, password }) {
-  const bundled = process.platform === 'win32'
-    ? path.join(ROOT, 'runtime', 'mimo.exe')
-    : path.join(ROOT, 'runtime', 'mimo')
-  const binary = process.env.ZT_AI_MIMOCODE_BIN || bundled
-  const exists = await fs.access(binary).then(() => true).catch(() => false)
-  if (!exists) throw new Error('MiMoCode 运行时尚未安装；请使用 ZT.AI Desktop 的完整安装包。')
+  const executable = process.platform === 'win32' ? 'mimo.exe' : 'mimo'
+  const candidates = [
+    process.env.ZT_AI_MIMOCODE_BIN,
+    path.resolve(ROOT, '..', 'node_modules', '@mimo-ai', `mimocode-${process.platform === 'win32' ? 'windows-x64' : process.platform}`, 'bin', executable),
+    path.join(ROOT, 'runtime', executable),
+  ].filter(Boolean)
+  const binary = (await Promise.all(candidates.map(async candidate => ({ candidate, exists: await fs.access(candidate).then(() => true).catch(() => false) })))).find(item => item.exists)?.candidate
+  if (!binary) throw new Error('MiMoCode 运行时尚未安装；请使用 ZT.AI Desktop 的完整安装包。')
+  const version = spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: 15_000, windowsHide: true })
+  const versionText = `${version.stdout || ''}\n${version.stderr || ''}`
+  if (version.error || version.status !== 0 || !new RegExp(`\\b${MIMOCODE_VERSION.replaceAll('.', '\\.')}\\b`).test(versionText)) throw new Error(`MiMoCode 运行时版本不匹配；需要 ${MIMOCODE_VERSION}。`)
   const child = spawn(binary, ['serve', '--hostname', '127.0.0.1', '--port', String(port)], {
     cwd: workspaceRoot,
     windowsHide: true,
@@ -99,13 +104,14 @@ async function defaultSpawnRuntime({ workspaceRoot, port, configPath, dataDir, p
 }
 
 export class MiMoBuddyRuntime {
-  constructor({ workspaceRoot, statePath, dataDir, gatewayUrl = '', fetchImpl = fetch, spawnRuntime = defaultSpawnRuntime } = {}) {
+  constructor({ workspaceRoot, statePath, dataDir, gatewayUrl = '', runtimeUrl = '', fetchImpl = fetch, spawnRuntime = defaultSpawnRuntime } = {}) {
     if (!workspaceRoot) throw new Error('MiMoCode 需要有效工作区')
     if (!statePath) throw new Error('MiMoCode 需要会话状态文件')
     this.workspaceRoot = path.resolve(workspaceRoot)
     this.statePath = statePath
     this.dataDir = dataDir || path.join(path.dirname(statePath), 'mimocode')
     this.gatewayUrl = gatewayUrl
+    this.runtimeUrl = String(runtimeUrl || '').replace(/\/$/, '')
     this.fetch = fetchImpl
     this.spawnRuntime = spawnRuntime
     this.sessions = new Map()
@@ -127,11 +133,12 @@ export class MiMoBuddyRuntime {
     }
   }
 
-  snapshot() {
+  snapshot({ accountId } = {}) {
+    const prefix = accountId ? `${String(accountId)}:` : null
     return {
       workspaceRoot: this.workspaceRoot,
-      sessions: [...this.sessions.values()].map(({ conversationId, sessionId, updatedAt }) => ({ conversationId, sessionId, updatedAt })),
-      tasks: [...this.tasks.values()].map(task => ({ id: task.taskId, sessionId: task.sessionId, task: task.task, status: task.status })),
+      sessions: [...this.sessions.values()].filter(record => !prefix || record.conversationId.startsWith(prefix)).map(({ conversationId, sessionId, updatedAt }) => ({ conversationId, sessionId, updatedAt })),
+      tasks: [...this.tasks.values()].filter(task => !prefix || task.conversationId.startsWith(prefix)).map(task => ({ id: task.taskId, sessionId: task.sessionId, task: task.task, status: task.status })),
     }
   }
 
@@ -152,6 +159,18 @@ export class MiMoBuddyRuntime {
     const tokenKey = crypto.createHash('sha256').update(accountToken).digest('hex')
     if (this.runtime && this.runtime.tokenKey === tokenKey) return this.runtime
     if (this.runtime) await this.stopRuntime()
+
+    if (this.runtimeUrl) {
+      const password = crypto.randomBytes(24).toString('base64url')
+      this.runtime = { url: this.runtimeUrl, password, tokenKey, headers: { authorization: basicAuth(password) }, stop: async () => {} }
+      try {
+        await this.waitForHealth()
+        return this.runtime
+      } catch (error) {
+        await this.stopRuntime()
+        throw error
+      }
+    }
 
     const port = await getFreePort()
     const password = crypto.randomBytes(24).toString('base64url')
@@ -290,8 +309,8 @@ export class MiMoBuddyRuntime {
     return true
   }
 
-  async approve({ taskId, permissionId, remember = false } = {}) {
-    return this.respond({ taskId, permissionId, reply: remember ? 'always' : 'once' })
+  async approve({ taskId, permissionId } = {}) {
+    return this.respond({ taskId, permissionId, reply: 'once' })
   }
 
   async reject({ taskId, permissionId } = {}) {

@@ -2,6 +2,14 @@ export const CHAT_WELCOME = Object.freeze([
   Object.freeze({ role: 'assistant', content: '你好，我是 ZT.AI。普通聊天模式下，我可以围绕你的项目、简历和产品想法进行交流。' }),
 ])
 
+export function conversationStorageKeys(accountId) {
+  const scope = encodeURIComponent(String(accountId || 'signed-out'))
+  return {
+    chats: `zt-ai:desktop-chats:${scope}`,
+    active: `zt-ai:desktop-active-chat:${scope}`,
+  }
+}
+
 function cleanMessage(message) {
   const role = message?.role === 'user' ? 'user' : 'assistant'
   const content = String(message?.content || '').trim()

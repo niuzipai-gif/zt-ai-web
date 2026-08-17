@@ -1,5 +1,5 @@
 import { contextMeter, nextMode, normalizeModel } from './chat-state.mjs'
-import { addConversationMessage, conversationTitle, createConversation, normalizeConversations } from './conversation-state.mjs'
+import { addConversationMessage, conversationStorageKeys, conversationTitle, createConversation, normalizeConversations } from './conversation-state.mjs'
 import { createSmoothStream } from './streaming.mjs'
 import { renderMarkdown } from './markdown.mjs'
 import { classifyIntent } from './intent-router.mjs'
@@ -14,6 +14,7 @@ const state = {
   eventCount: 0,
   reader: null,
   authToken: localStorage.getItem('zt-ai:desktop-token') || '',
+  accountId: localStorage.getItem('zt-ai:desktop-account-id') || '',
   gatewayUrl: '',
   localSecret: '',
   registering: false,
@@ -45,23 +46,28 @@ function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, character 
 function formatTokens(value) { return value >= 1_000_000 ? `${(value / 1_000_000).toFixed(value % 1_000_000 ? 2 : 0)}M` : `${(value / 1_000).toFixed(value % 1_000 ? 1 : 0)}k` }
 function newChatId() { return `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }
 function currentConversation() { return state.chatSessions.find(item => item.id === state.activeChatId) || null }
+function storageKeys() { return conversationStorageKeys(state.accountId) }
 function persistChats() {
-  localStorage.setItem('zt-ai:desktop-chats', JSON.stringify(state.chatSessions.slice(0, 30)))
-  localStorage.setItem('zt-ai:desktop-active-chat', state.activeChatId)
+  if (!state.accountId) return
+  const keys = storageKeys()
+  localStorage.setItem(keys.chats, JSON.stringify(state.chatSessions.slice(0, 30)))
+  localStorage.setItem(keys.active, state.activeChatId)
 }
 function initChatState() {
+  if (!state.accountId) { state.chatSessions = []; state.activeChatId = ''; return }
+  const keys = storageKeys()
   let stored = null
-  try { stored = JSON.parse(localStorage.getItem('zt-ai:desktop-chats') || 'null') } catch { stored = null }
+  try { stored = JSON.parse(localStorage.getItem(keys.chats) || 'null') } catch { stored = null }
   state.chatSessions = normalizeConversations(stored)
-  state.activeChatId = localStorage.getItem('zt-ai:desktop-active-chat') || ''
+  state.activeChatId = localStorage.getItem(keys.active) || ''
   if (!state.chatSessions.length) state.chatSessions = [createConversation(newChatId())]
   if (!state.chatSessions.some(item => item.id === state.activeChatId)) state.activeChatId = state.chatSessions[0].id
   persistChats()
 }
 function renderMessages() {
   const conversation = currentConversation()
-  if (!conversation) return
   els.messages.innerHTML = ''
+  if (!conversation) return
   for (const message of conversation.messages) appendMessage(message.role, message.content)
 }
 function recordChatMessage(role, content) {
@@ -268,6 +274,14 @@ function setAuthPending(pending) {
 }
 function showWorkspace() { els.authGate.classList.add('hidden'); els.taskInput.disabled = false; els.accountLabel.textContent = 'ACCOUNT ACTIVE'; setAuthPending(false) }
 function showLogin() { els.authGate.classList.remove('hidden'); els.taskInput.disabled = true; showAuthError(''); setAuthPending(false) }
+function setAccount(user) {
+  state.accountId = String(user?.id || '')
+  if (state.accountId) localStorage.setItem('zt-ai:desktop-account-id', state.accountId)
+  else localStorage.removeItem('zt-ai:desktop-account-id')
+  initChatState()
+  renderMessages()
+  renderChatHistory()
+}
 function describeNetworkError(error, action = '连接 ZT.AI 网关') { const message = String(error?.message || error || ''); return /failed to fetch|networkerror|load failed/i.test(message) ? `${action}失败：当前无法访问 ${state.gatewayUrl || 'ZT.AI 网关'}，请确认网络正常或稍后重试。` : message || `${action}失败` }
 
 async function submitAuth(event) {
@@ -292,11 +306,12 @@ async function submitAuth(event) {
     state.authToken = body.token
     localStorage.setItem('zt-ai:desktop-token', state.authToken)
     els.authPassword.value = ''
+    setAccount(body.user)
     showWorkspace()
     await refreshState()
   } catch (error) { showAuthError(describeNetworkError(error, registering ? '注册账户' : '登录账户')) } finally { setAuthPending(false); if (registrationSubmitted) setAuthStatus('注册申请已提交，请等待管理员审核通过后再登录。') }
 }
-async function logout() { if (state.authToken) await fetch(`${state.gatewayUrl}/api/auth/logout`, { method: 'POST', headers: { authorization: `Bearer ${state.authToken}` } }).catch(() => {}); state.authToken = ''; localStorage.removeItem('zt-ai:desktop-token'); showLogin() }
+async function logout() { if (state.authToken) await fetch(`${state.gatewayUrl}/api/auth/logout`, { method: 'POST', headers: { authorization: `Bearer ${state.authToken}` } }).catch(() => {}); state.authToken = ''; localStorage.removeItem('zt-ai:desktop-token'); setAccount(null); showLogin() }
 
 async function consumeSse(response, onEvent) {
   if (!response.ok || !response.body) { const body = await readJson(response); throw new Error(body.error || `请求失败（${response.status}）`) }
@@ -449,5 +464,5 @@ els.composer.addEventListener('submit', event => { event.preventDefault(); state
 els.run.onclick = event => { event.preventDefault(); if (els.run.disabled) return; state.mode === 'BUDDY' ? runAgentTask() : runChat() };
 els.selectWorkspace?.addEventListener('click', selectWorkspace)
 
-async function bootstrap() { try { initChatState(); renderMessages(); renderChatHistory(); const configResponse = await fetch('/api/config'); const config = await configResponse.json(); state.gatewayUrl = config.gatewayUrl; state.localSecret = config.localSecret || ''; els.modelSelect.value = state.model; setMode(state.mode); if (state.authToken) { const session = await fetch(`${state.gatewayUrl}/api/auth/me`, { headers: { authorization: `Bearer ${state.authToken}` } }); if (session.ok) { showWorkspace(); await refreshState(); return } localStorage.removeItem('zt-ai:desktop-token'); state.authToken = '' } } catch (error) { showAuthError(describeNetworkError(error, '工作台启动')) } showLogin() }
+async function bootstrap() { try { const configResponse = await fetch('/api/config'); const config = await configResponse.json(); state.gatewayUrl = config.gatewayUrl; state.localSecret = config.localSecret || ''; els.modelSelect.value = state.model; setMode(state.mode); if (state.authToken) { const session = await fetch(`${state.gatewayUrl}/api/auth/me`, { headers: { authorization: `Bearer ${state.authToken}` } }); if (session.ok) { const body = await session.json(); setAccount(body.user); showWorkspace(); await refreshState(); return } localStorage.removeItem('zt-ai:desktop-token'); state.authToken = '' } } catch (error) { showAuthError(describeNetworkError(error, '工作台启动')) } setAccount(null); showLogin() }
 setInterval(() => { $('#clock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, 1000); bootstrap()

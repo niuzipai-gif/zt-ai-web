@@ -8,10 +8,11 @@
     "gateway": "node server/src/index.js",
     "gateway:health": "node -e \"fetch('http://localhost:8790/api/health').then(r=>r.text()).then(console.log)\"",
     "agent:start": "node agent-desktop/src/server.mjs",
-    "agent:test": "node --test agent-desktop/src/*.test.mjs",
+    "agent:test": "node --test \"agent-desktop/src/**/*.test.mjs\" \"agent-desktop/src/*.test.mjs\"",
     "desktop:dev": "electron desktop-app",
     "desktop:test": "node --test desktop-app/renderer/*.test.mjs",
     "desktop:dist": "electron-builder --config desktop-app/electron-builder.yml",
+    "desktop:verify": "node tools/verify-desktop-package.mjs",
     "integration:test": "node tools/integration-smoke.mjs",
     "publish:pages": "powershell -ExecutionPolicy Bypass -File .\\tools\\publish-pages.ps1",
     "test": "node --test \"server/src/**/*.test.js\" \"src/**/*.test.js\"",
@@ -19,6 +20,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mimo-ai/cli": "0.1.12",
     "@vitejs/plugin-react": "latest",
     "lucide-react": "latest",
     "mammoth": "^1.12.1",
