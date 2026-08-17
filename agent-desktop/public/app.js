@@ -3,7 +3,7 @@ import { addConversationMessage, conversationTitle, createConversation, normaliz
 import { createSmoothStream } from './streaming.mjs'
 import { renderMarkdown } from './markdown.mjs'
 import { classifyIntent } from './intent-router.mjs'
-import { conversationFailurePresentation, executionPresentation } from './presentation.mjs'
+import { conversationFailurePresentation, executionDrawerPresentation, executionPresentation } from './presentation.mjs'
 import { authPresentation, shouldSubmitComposer } from './interaction-state.mjs'
 
 const $ = selector => document.querySelector(selector)
@@ -148,13 +148,17 @@ function appendAgentMessage(task, presentation) {
   const label = document.createElement('div'); label.className = 'message-label'; label.textContent = 'ZT.BUDDY · EXECUTION'
   const status = document.createElement('div'); status.className = 'agent-statusline running'; status.innerHTML = `<span class="pulse"></span><span>${escapeHtml(presentation?.summary || '正在理解任务并规划执行步骤…')}</span>`
   const taskLine = document.createElement('div'); taskLine.className = 'agent-taskline'; taskLine.textContent = task
+  const details = document.createElement('details'); details.className = 'execution-details'; details.open = true
+  const detailsSummary = document.createElement('summary'); detailsSummary.textContent = executionDrawerPresentation({ status: 'running', elapsedMs: 0, stepCount: 0 }).label
+  const detailBody = document.createElement('div'); detailBody.className = 'execution-detail-body'
   const plan = document.createElement('div'); plan.className = 'agent-plan-inline'
   const activity = document.createElement('div'); activity.className = 'agent-activity-inline'
+  detailBody.append(plan, activity); details.append(detailsSummary, detailBody)
   const result = document.createElement('div'); result.className = 'agent-result-inline markdown-message'
   const approval = document.createElement('div'); approval.className = 'agent-approval-inline hidden'
-  bubble.append(label, status, taskLine, plan, activity, result, approval)
+  bubble.append(label, status, taskLine, details, result, approval)
   row.appendChild(bubble); els.messages.appendChild(row); els.messages.scrollTop = els.messages.scrollHeight
-  const live = { row, status, plan, activity, result, approval, output: '', persisted: false, logToggle: null }
+  const live = { row, status, details, detailsSummary, plan, activity, result, approval, output: '', persisted: false, stepIds: new Set(), startedAt: Date.now() }
   state.activeAgentMessage = live
   return live
 }
@@ -170,6 +174,7 @@ function setAgentStatus(text, kind = 'running') {
 function renderInlinePlan(steps = []) {
   const live = state.activeAgentMessage
   if (!live) return
+  live.stepIds = new Set(steps.map(step => step.id).filter(Boolean))
   live.plan.innerHTML = steps.map((step, index) => `<div class="inline-plan-step" data-step="${escapeHtml(step.id)}"><span>${String(index + 1).padStart(2, '0')}</span><strong>${escapeHtml(step.label)}</strong><small>${escapeHtml(step.tool)} · ${escapeHtml(step.capability)}</small></div>`).join('')
   els.messages.scrollTop = els.messages.scrollHeight
 }
@@ -216,20 +221,9 @@ function completeAgentMessage(summary, status = 'done') {
   live.result.classList.add('is-visible')
   setAgentStatus(status === 'done' ? '任务已完成' : `任务${status === 'blocked' ? '已暂停' : '执行失败'}`, status === 'done' ? 'done' : 'error')
   hideInlineApproval()
-  const activityCount = live.activity.querySelectorAll('.inline-activity-line').length
-  if (activityCount && !live.logToggle) {
-    const toggle = document.createElement('button')
-    toggle.type = 'button'; toggle.className = 'execution-log-toggle'; toggle.textContent = `查看 ${activityCount} 条执行记录`
-    toggle.setAttribute('aria-expanded', 'false')
-    toggle.addEventListener('click', () => {
-      const expanded = live.activity.classList.toggle('is-collapsed')
-      toggle.setAttribute('aria-expanded', String(!expanded))
-      toggle.textContent = expanded ? `查看 ${activityCount} 条执行记录` : '收起执行记录'
-    })
-    live.activity.classList.add('is-collapsed')
-    live.activity.before(toggle)
-    live.logToggle = toggle
-  }
+  const view = executionDrawerPresentation({ status, elapsedMs: Date.now() - live.startedAt, stepCount: live.stepIds.size })
+  live.details.open = view.open
+  live.detailsSummary.textContent = view.label
   if (!live.persisted) {
     recordChatMessage('assistant', live.output)
     live.persisted = true

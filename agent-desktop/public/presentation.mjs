@@ -11,3 +11,16 @@ export function executionPresentation(intent = {}) {
   const [title, summary, approval] = MAP[intent.kind] || MAP.chat
   return { title, summary, approval: Boolean(intent.requiresApproval || approval) }
 }
+
+export function conversationFailurePresentation() {
+  return '暂时无法获取模型回复。你的消息和当前对话已保留，请稍后重试或切换模型。'
+}
+
+export function executionDrawerPresentation({ status = 'running', elapsedMs = 0, stepCount = 0 } = {}) {
+  const terminal = status === 'done' || status === 'blocked' || status === 'error'
+  const stateLabel = status === 'done' ? '已完成' : status === 'blocked' ? '等待确认' : status === 'error' ? '未完成' : '执行中'
+  const seconds = Math.max(0, Number(elapsedMs) || 0) / 1_000
+  const duration = seconds >= 10 ? `${seconds.toFixed(0)} 秒` : `${seconds.toFixed(1)} 秒`
+  const steps = Math.max(0, Number(stepCount) || 0)
+  return { open: !terminal, label: `执行详情 · ${stateLabel} · ${duration} · ${steps} 步` }
+}

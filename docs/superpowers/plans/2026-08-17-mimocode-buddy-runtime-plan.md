@@ -342,7 +342,7 @@ git commit -m "fix: make desktop login and composer responsive"
 - Modify: `agent-desktop/public/styles.css`
 - Test: `agent-desktop/src/presentation.test.mjs`
 
-- [ ] **Step 1: Write failing execution-detail presentation tests**
+- [x] **Step 1: Write failing execution-detail presentation tests**
 
 Add tests for a helper with the following contract:
 
@@ -355,23 +355,23 @@ assert.equal(executionDrawerPresentation({ status: 'running', elapsedMs: 0, step
 assert.match(executionDrawerPresentation({ status: 'blocked', elapsedMs: 60000, stepCount: 2 }).label, /等待确认/)
 ```
 
-- [ ] **Step 2: Run the presentation test to verify it fails due to the missing drawer helper**
+- [x] **Step 2: Run the presentation test to verify it fails due to the missing drawer helper**
 
 Run: `node --test agent-desktop/src/presentation.test.mjs`
 
 Expected: FAIL because `executionDrawerPresentation` is not exported.
 
-- [ ] **Step 3: Implement terminal-state drawer behavior**
+- [x] **Step 3: Implement terminal-state drawer behavior**
 
 Create a native `<details class="execution-details">` underneath the concise Agent result. `appendAgentMessage` opens it during live planning/tool events. `completeAgentMessage` records `elapsedMs`, counts unique steps, updates the summary label with `executionDrawerPresentation`, and closes it for `done`, `blocked`, and `error`. Keep approval controls outside the collapsed section while they are pending. Do not delete raw tool evidence; move it into the drawer so a user can audit it on demand.
 
-- [ ] **Step 4: Run the presentation tests to verify they pass**
+- [x] **Step 4: Run the presentation tests to verify they pass**
 
 Run: `node --test agent-desktop/src/presentation.test.mjs`
 
 Expected: all presentation tests pass.
 
-- [ ] **Step 5: Commit the execution drawer**
+- [x] **Step 5: Commit the execution drawer**
 
 ```bash
 git add agent-desktop/public/presentation.mjs agent-desktop/src/presentation.mjs agent-desktop/src/presentation.test.mjs agent-desktop/public/app.js agent-desktop/public/styles.css

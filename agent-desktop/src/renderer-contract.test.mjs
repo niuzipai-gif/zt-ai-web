@@ -44,6 +44,8 @@ test('desktop Buddy renders execution progress inside the conversation timeline'
   assert.match(html, /agent-activity-inline/)
   assert.match(html, /agent-result-inline/)
   assert.match(html, /recordChatMessage\('assistant'/)
+  assert.match(html, /createElement\('details'\)/)
+  assert.match(html, /executionDrawerPresentation/)
 })
 
 test('desktop renderer uses the same smooth stream queue for chat and Buddy summaries', async () => {
