@@ -55,6 +55,7 @@ test('translates upstream text and a tool call into an OpenAI Responses event st
   }))
 
   assert.equal(frames[0].type, 'response.created')
+  assert.ok(frames.every(frame => frame.data.type === frame.type), 'every streamed Responses payload must repeat its event type for strict clients such as MiMoCode')
   assert.ok(frames.some(frame => frame.type === 'response.output_text.delta' && frame.data.delta === '我先读取文件。'))
   assert.ok(frames.some(frame => frame.type === 'response.function_call_arguments.done' && frame.data.arguments.includes('README.md')))
   const done = frames.find(frame => frame.type === 'response.completed')

@@ -107,23 +107,27 @@ function responseEnvelope(responseId, status, output = []) {
   return { id: responseId, object: 'response', status, output }
 }
 
+function responseEvent(type, data) {
+  return { type, data: { type, ...data } }
+}
+
 export async function* streamResponseEvents({ request, systemPrompt, streamChat, responseId = id('resp') }) {
   const normalized = normalizeMiMoResponseRequest(request, { systemPrompt })
   const output = []
   let message = null
   let text = ''
   let outputIndex = 0
-  yield { type: 'response.created', data: { response: responseEnvelope(responseId, 'in_progress') } }
+  yield responseEvent('response.created', { response: responseEnvelope(responseId, 'in_progress') })
 
   for await (const item of streamChat(normalized)) {
     if (item?.type === 'text' && item.text) {
       if (!message) {
         message = { id: id('msg'), type: 'message', status: 'in_progress', role: 'assistant', content: [] }
-        yield { type: 'response.output_item.added', data: { output_index: outputIndex, item: message } }
+        yield responseEvent('response.output_item.added', { output_index: outputIndex, item: message })
       }
       const delta = String(item.text)
       text += delta
-      yield { type: 'response.output_text.delta', data: { item_id: message.id, output_index: outputIndex, content_index: 0, delta } }
+      yield responseEvent('response.output_text.delta', { item_id: message.id, output_index: outputIndex, content_index: 0, delta })
       continue
     }
     if (item?.type === 'tool_call' && item.name) {
@@ -135,13 +139,13 @@ export async function* streamResponseEvents({ request, systemPrompt, streamChat,
         name: String(item.name),
         arguments: '',
       }
-      yield { type: 'response.output_item.added', data: { output_index: output.length + (message ? 1 : 0), item: tool } }
+      yield responseEvent('response.output_item.added', { output_index: output.length + (message ? 1 : 0), item: tool })
       const argumentsText = String(item.arguments || '{}')
-      yield { type: 'response.function_call_arguments.delta', data: { item_id: tool.id, output_index: output.length + (message ? 1 : 0), delta: argumentsText } }
+      yield responseEvent('response.function_call_arguments.delta', { item_id: tool.id, output_index: output.length + (message ? 1 : 0), delta: argumentsText })
       tool.arguments = argumentsText
       tool.status = 'completed'
-      yield { type: 'response.function_call_arguments.done', data: { item_id: tool.id, output_index: output.length + (message ? 1 : 0), arguments: argumentsText } }
-      yield { type: 'response.output_item.done', data: { output_index: output.length + (message ? 1 : 0), item: tool } }
+      yield responseEvent('response.function_call_arguments.done', { item_id: tool.id, output_index: output.length + (message ? 1 : 0), arguments: argumentsText })
+      yield responseEvent('response.output_item.done', { output_index: output.length + (message ? 1 : 0), item: tool })
       output.push(tool)
     }
   }
@@ -149,11 +153,11 @@ export async function* streamResponseEvents({ request, systemPrompt, streamChat,
   if (message) {
     message.content = [{ type: 'output_text', text }]
     message.status = 'completed'
-    yield { type: 'response.output_text.done', data: { item_id: message.id, output_index: 0, content_index: 0, text } }
-    yield { type: 'response.output_item.done', data: { output_index: 0, item: message } }
+    yield responseEvent('response.output_text.done', { item_id: message.id, output_index: 0, content_index: 0, text })
+    yield responseEvent('response.output_item.done', { output_index: 0, item: message })
     output.unshift(message)
   }
-  yield { type: 'response.completed', data: { response: responseEnvelope(responseId, 'completed', output) } }
+  yield responseEvent('response.completed', { response: responseEnvelope(responseId, 'completed', output) })
 }
 
 export async function completeMiMoResponse(options) {
