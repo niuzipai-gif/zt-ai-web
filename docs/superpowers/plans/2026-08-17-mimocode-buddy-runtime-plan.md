@@ -437,7 +437,7 @@ Run `npm run desktop:dev` against the isolated fixture and manually verify at Wi
 5. A write/command task stops at the local approval UI; approve resumes it and reject leaves the task blocked.
 6. Closing/reopening a conversation restores its MiMo session context.
 
-- [ ] **Step 6: Commit integration coverage**
+- [x] **Step 6: Commit integration coverage**
 
 ```bash
 git add tools/integration-smoke.mjs desktop-app
@@ -479,7 +479,7 @@ Get-FileHash release\ZT.buddy-Desktop-*.exe -Algorithm SHA256
 
 Expected: tests pass, installer and portable executable are regenerated under `release/`, and hashes are recorded in the release note.
 
-- [ ] **Step 5: Review the final diff and release evidence before handoff**
+- [x] **Step 5: Review the final diff and release evidence before handoff**
 
 Run:
 
