@@ -37,7 +37,7 @@ const els = {
   inspectorToggle: $('#inspector-toggle'), executionSummary: $('#execution-summary'),
   contextRing: $('#context-ring'), contextRingLarge: $('#context-ring-large'), contextPercent: $('#context-percent'), contextPercentLarge: $('#context-percent-large'), contextModel: $('#context-model'), contextUsed: $('#context-used'), contextUsedLarge: $('#context-used-large'), contextRemaining: $('#context-remaining'),
   plan: $('#plan'), log: $('#activity-log'), logCount: $('#log-count'), title: $('#execution-title'), status: $('#execution-status'),
-  taskId: $('#current-task-id'), resultPanel: $('#result-panel'), resultText: $('#result-text'), approval: $('#approval-card'), approvalTitle: $('#approval-title'), approvalPreview: $('#approval-preview'), skillBrowser: $('#skill-browser'),
+  taskId: $('#current-task-id'), resultPanel: $('#result-panel'), resultText: $('#result-text'), approval: $('#approval-card'), approvalTitle: $('#approval-title'), approvalPreview: $('#approval-preview'), composerApproval: $('#composer-approval'), skillBrowser: $('#skill-browser'),
   gateway: $('#gateway-url'), workspace: $('#workspace-path'), workspaceShort: $('#workspace-short'), selectWorkspace: $('#select-workspace'), gatewayStatus: $('#gateway-status'), authorize: $('#authorize-device'), authorizationStatus: $('#authorization-status'), logout: $('#logout'), accountLabel: $('#account-label'),
   authGate: $('#auth-gate'), authForm: $('#auth-form'), authUsername: $('#auth-username'), authPassword: $('#auth-password'), authSubmit: $('#auth-submit'), authToggle: $('#auth-toggle'), authError: $('#auth-error'), authStatus: $('#auth-status'),
 }
@@ -154,17 +154,17 @@ function appendAgentMessage(task, presentation) {
   const label = document.createElement('div'); label.className = 'message-label'; label.textContent = 'ZT.BUDDY · EXECUTION'
   const status = document.createElement('div'); status.className = 'agent-statusline running'; status.innerHTML = `<span class="pulse"></span><span>${escapeHtml(presentation?.summary || '正在理解任务并规划执行步骤…')}</span>`
   const taskLine = document.createElement('div'); taskLine.className = 'agent-taskline'; taskLine.textContent = task
-  const details = document.createElement('details'); details.className = 'execution-details'; details.open = true
+  const progress = document.createElement('div'); progress.className = 'agent-live-progress'; progress.setAttribute('aria-live', 'polite'); progress.textContent = '正在理解任务并准备执行…'
+  const details = document.createElement('details'); details.className = 'execution-details'; details.open = false
   const detailsSummary = document.createElement('summary'); detailsSummary.textContent = executionDrawerPresentation({ status: 'running', elapsedMs: 0, stepCount: 0 }).label
   const detailBody = document.createElement('div'); detailBody.className = 'execution-detail-body'
   const plan = document.createElement('div'); plan.className = 'agent-plan-inline'
   const activity = document.createElement('div'); activity.className = 'agent-activity-inline'
   detailBody.append(plan, activity); details.append(detailsSummary, detailBody)
   const result = document.createElement('div'); result.className = 'agent-result-inline markdown-message'
-  const approval = document.createElement('div'); approval.className = 'agent-approval-inline hidden'
-  bubble.append(label, status, taskLine, details, result, approval)
+  bubble.append(label, status, taskLine, progress, details, result)
   row.appendChild(bubble); els.messages.appendChild(row); els.messages.scrollTop = els.messages.scrollHeight
-  const live = { row, status, details, detailsSummary, plan, activity, result, approval, output: '', persisted: false, stepIds: new Set(), startedAt: Date.now() }
+  const live = { row, status, progress, details, detailsSummary, plan, activity, result, output: '', persisted: false, stepIds: new Set(), startedAt: Date.now() }
   state.activeAgentMessage = live
   return live
 }
@@ -196,6 +196,7 @@ function markInlineStep(id, stateName) {
 function addInlineActivity(text, kind = '') {
   const live = state.activeAgentMessage
   if (!live) return
+  live.progress.textContent = String(text || '正在继续执行…').replace(/\s+/g, ' ').trim()
   const line = document.createElement('div'); line.className = `inline-activity-line ${kind}`; line.textContent = text
   live.activity.appendChild(line); live.activity.scrollTop = live.activity.scrollHeight; els.messages.scrollTop = els.messages.scrollHeight
 }
@@ -204,18 +205,26 @@ function showInlineApproval(data) {
   const live = state.activeAgentMessage
   if (!live) return
   state.pendingApproval = data
-  live.approval.classList.remove('hidden')
-  live.approval.innerHTML = `<strong>${escapeHtml(data.capabilityLabel)} · 需要你的确认</strong><p>${escapeHtml(data.preview || data.label)}</p><div class="inline-approval-actions"><button type="button" data-approval="once">允许一次</button><button type="button" data-approval="always">记住权限</button><button type="button" data-approval="reject">拒绝</button></div>`
-  live.approval.querySelector('[data-approval="once"]').addEventListener('click', () => approve(false))
-  live.approval.querySelector('[data-approval="always"]').addEventListener('click', () => approve(true))
-  live.approval.querySelector('[data-approval="reject"]').addEventListener('click', reject)
+  renderComposerApproval(data)
   setAgentStatus('等待你确认本机执行权限…', 'waiting')
-  els.messages.scrollTop = els.messages.scrollHeight
+  addInlineActivity(`等待确认：${data.capabilityLabel || data.label}`, 'warning')
+}
+
+function renderComposerApproval(data, { pending = false, error = '' } = {}) {
+  if (!els.composerApproval) return
+  els.composerApproval.classList.remove('hidden')
+  const title = error || (pending ? '已授权，正在继续执行…' : `${data.capabilityLabel || data.label} · 需要确认`)
+  const preview = pending ? '正在把这次授权交给正在运行的任务。' : (data.preview || data.label || '该操作需要你的确认。')
+  els.composerApproval.innerHTML = `<div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(preview)}</small></div><div class="composer-approval-actions"><button type="button" data-composer-approval="once" ${pending ? 'disabled' : ''}>${pending ? '处理中…' : '允许一次'}</button><button type="button" data-composer-approval="always" ${pending ? 'disabled' : ''}>记住权限</button><button type="button" data-composer-approval="reject" ${pending ? 'disabled' : ''}>拒绝</button></div>`
+  if (!pending) {
+    els.composerApproval.querySelector('[data-composer-approval="once"]').addEventListener('click', () => approve(false))
+    els.composerApproval.querySelector('[data-composer-approval="always"]').addEventListener('click', () => approve(true))
+    els.composerApproval.querySelector('[data-composer-approval="reject"]').addEventListener('click', reject)
+  }
 }
 
 function hideInlineApproval() {
-  const live = state.activeAgentMessage
-  if (live?.approval) { live.approval.classList.add('hidden'); live.approval.innerHTML = '' }
+  if (els.composerApproval) { els.composerApproval.classList.add('hidden'); els.composerApproval.innerHTML = '' }
   state.pendingApproval = null
 }
 
@@ -388,7 +397,7 @@ async function runAgentTask() {
     setNotice(presentation.summary)
     return request
   }
-  recordChatMessage('user', task); recordChatMessage('assistant', `**${presentation.title}**\n\n${presentation.summary}`); renderMessages(); renderChatHistory(); els.taskInput.value = ''
+  recordChatMessage('user', task); renderMessages(); renderChatHistory(); els.taskInput.value = ''
   const live = appendAgentMessage(task, presentation)
   state.activeAgentTask = task
   resetExecution()
@@ -406,8 +415,40 @@ async function runAgentTask() {
     state.reader = null; els.taskInput.disabled = false; els.run.disabled = false; els.taskInput.focus()
   }
 }
-async function approve(remember) { if (!state.taskId || !state.pendingApproval) return; const { capability } = state.pendingApproval; const response = await apiFetch(`/api/tasks/${state.taskId}/approve`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ capability, remember }) }); const body = await readJson(response); if (!response.ok) addLog(body.error || '批准失败', 'warning'); else { addLog(remember ? `已记住权限：${capability}` : `已允许一次：${capability}`, 'result'); hideApproval(); hideInlineApproval() } }
-async function reject() { if (!state.taskId) return; const response = await apiFetch(`/api/tasks/${state.taskId}/reject`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason: '用户拒绝了这一步' }) }); const body = await readJson(response); if (!response.ok) addLog(body.error || '拒绝失败', 'warning'); else { hideApproval(); hideInlineApproval() } }
+async function approve(remember) {
+  if (!state.taskId || !state.pendingApproval) return
+  const approval = state.pendingApproval
+  const { capability } = approval
+  renderComposerApproval(approval, { pending: true })
+  setAgentStatus('已授权，正在继续执行…', 'running')
+  addInlineActivity(remember ? `已记住 ${approval.capabilityLabel || capability}，正在继续执行…` : '已授权，正在继续执行…', 'result')
+  try {
+    const response = await apiFetch(`/api/tasks/${state.taskId}/approve`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ capability, remember }) })
+    const body = await readJson(response)
+    if (!response.ok) throw new Error(body.error || '批准失败')
+    addLog(remember ? `已记住权限：${capability}` : `已允许一次：${capability}`, 'result')
+    hideApproval(); hideInlineApproval()
+  } catch (error) {
+    addLog(error.message || '批准失败', 'warning')
+    renderComposerApproval(approval, { error: '授权暂未成功，请重试' })
+    setAgentStatus('授权暂未成功，请重试。', 'waiting')
+  }
+}
+async function reject() {
+  if (!state.taskId || !state.pendingApproval) return
+  const approval = state.pendingApproval
+  renderComposerApproval(approval, { pending: true })
+  try {
+    const response = await apiFetch(`/api/tasks/${state.taskId}/reject`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason: '用户拒绝了这一步' }) })
+    const body = await readJson(response)
+    if (!response.ok) throw new Error(body.error || '拒绝失败')
+    hideApproval(); hideInlineApproval()
+    setAgentStatus('已拒绝该操作，任务已暂停。', 'error')
+  } catch (error) {
+    addLog(error.message || '拒绝失败', 'warning')
+    renderComposerApproval(approval, { error: '操作暂未提交，请重试' })
+  }
+}
 async function updatePermission(capability, enabled) { const response = await apiFetch('/api/permissions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ capability, enabled }) }); const body = await readJson(response); if (!response.ok) addLog(body.error || '权限更新失败', 'warning'); else addLog(`${enabled ? '已开启' : '已关闭'}权限：${capability}`, enabled ? 'warning' : '') }
 async function updateAuthorization() { const response = await apiFetch('/api/authorization', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ authorized: true }) }); const body = await readJson(response); if (!response.ok) { addLog(body.error || '本机授权失败', 'warning'); return } addLog('已确认：Agent 只可在当前设备执行', 'result'); refreshState() }
 function renderExecutionHistory(items = []) { const data = items.slice().reverse(); if (!data.length) { els.history.innerHTML = '<div class="empty-history">还没有执行记录</div>'; return } els.history.innerHTML = data.map(item => `<button class="history-item"><strong>${escapeHtml(item.task)}</strong><small>${escapeHtml(item.status)} · ${new Date(item.createdAt).toLocaleString()}</small></button>`).join('') }

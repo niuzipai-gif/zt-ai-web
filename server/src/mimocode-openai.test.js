@@ -156,3 +156,25 @@ test('gateway bridge forwards tool envelopes to the configured provider without 
   assert.match(received.options.body, /"tools"/)
   assert.deepEqual(chunks, [{ type: 'tool_call', id: 'call_1', name: 'read', arguments: '{"file_path":"README.md"}' }])
 })
+
+test('gateway never forwards MiniMax reasoning tags or reasoning deltas to MiMoCode', async () => {
+  const upstream = [
+    { choices: [{ delta: { content: '<thi' } }] },
+    { choices: [{ delta: { content: 'nk>隐含推理</think>' } }] },
+    { choices: [{ delta: { reasoning_content: '也不应显示' } }] },
+    { choices: [{ delta: { content: '**已完成**\n- 已读取桌面文件。' } }] },
+  ].map(frame => `data: ${JSON.stringify(frame)}\n\n`).join('') + 'data: [DONE]\n\n'
+
+  const chunks = await collect(streamGatewayChat({
+    model: 'minimax',
+    messages: [{ role: 'user', content: '查看桌面' }],
+    tools: [],
+  }, {
+    env: { MINIMAX_API_KEY: 'fixture-only', MINIMAX_BASE_URL: 'https://fixture.invalid/v1', MINIMAX_TEXT_MODEL: 'fixture-model' },
+    fetchImpl: async () => new Response(upstream, { status: 200 }),
+  }))
+
+  const visible = chunks.filter(chunk => chunk.type === 'text').map(chunk => chunk.text).join('')
+  assert.equal(visible, '**已完成**\n- 已读取桌面文件。')
+  assert.doesNotMatch(visible, /think|隐含推理|也不应显示/i)
+})

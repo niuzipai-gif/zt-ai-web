@@ -21,11 +21,11 @@ test('provider failures stay actionable and do not expose raw upstream details',
   assert.doesNotMatch(copy, /401|secret|上游模型/)
 })
 
-test('terminal Buddy executions collapse into a concise audit drawer label', () => {
+test('Buddy execution details stay collapsed by default while retaining a concise audit label', () => {
   assert.deepEqual(executionDrawerPresentation({ status: 'done', elapsedMs: 1240, stepCount: 3 }), {
     open: false,
     label: '执行详情 · 已完成 · 1.2 秒 · 3 步',
   })
-  assert.equal(executionDrawerPresentation({ status: 'running', elapsedMs: 0, stepCount: 1 }).open, true)
+  assert.equal(executionDrawerPresentation({ status: 'running', elapsedMs: 0, stepCount: 1 }).open, false)
   assert.match(executionDrawerPresentation({ status: 'blocked', elapsedMs: 60_000, stepCount: 2 }).label, /等待确认/)
 })

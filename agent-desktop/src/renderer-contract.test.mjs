@@ -48,6 +48,14 @@ test('desktop Buddy renders execution progress inside the conversation timeline'
   assert.match(html, /executionDrawerPresentation/)
 })
 
+test('desktop Buddy keeps execution details closed and surfaces only the latest live action', async () => {
+  const app = await fs.readFile(path.join(root, 'app.js'), 'utf8')
+  assert.match(app, /details\.open = false/)
+  assert.match(app, /agent-live-progress/)
+  assert.match(app, /composer-approval/)
+  assert.match(app, /已授权，正在继续执行/)
+})
+
 test('desktop renderer uses the same smooth stream queue for chat and Buddy summaries', async () => {
   const html = await fs.readFile(path.join(root, 'app.js'), 'utf8')
   assert.match(html, /createSmoothStream/)

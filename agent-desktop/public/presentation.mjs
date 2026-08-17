@@ -17,10 +17,9 @@ export function conversationFailurePresentation() {
 }
 
 export function executionDrawerPresentation({ status = 'running', elapsedMs = 0, stepCount = 0 } = {}) {
-  const terminal = status === 'done' || status === 'blocked' || status === 'error'
   const stateLabel = status === 'done' ? '已完成' : status === 'blocked' ? '等待确认' : status === 'error' ? '未完成' : '执行中'
   const seconds = Math.max(0, Number(elapsedMs) || 0) / 1_000
   const duration = seconds >= 10 ? `${seconds.toFixed(0)} 秒` : `${seconds.toFixed(1)} 秒`
   const steps = Math.max(0, Number(stepCount) || 0)
-  return { open: !terminal, label: `执行详情 · ${stateLabel} · ${duration} · ${steps} 步` }
+  return { open: false, label: `执行详情 · ${stateLabel} · ${duration} · ${steps} 步` }
 }

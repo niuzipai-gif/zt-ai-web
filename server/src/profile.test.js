@@ -18,3 +18,9 @@ test('desktop agent prompt is execution-first and permission-aware', () => {
   assert.match(AGENT_SYSTEM_PROMPT, /权限/)
   assert.match(AGENT_SYSTEM_PROMPT, /批准/)
 })
+
+test('desktop agent prompt requires concise user-facing execution summaries without hidden reasoning', () => {
+  assert.match(AGENT_SYSTEM_PROMPT, /不展示思维链|推理过程/)
+  assert.match(AGENT_SYSTEM_PROMPT, /最多 6 条/)
+  assert.match(AGENT_SYSTEM_PROMPT, /不要直接倾倒原始工具日志/)
+})

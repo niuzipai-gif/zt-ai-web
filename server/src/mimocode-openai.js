@@ -243,6 +243,59 @@ function providerConfig(model, env) {
   }
 }
 
+function createVisibleTextFilter() {
+  const openTag = '<think>'
+  const closeTag = '</think>'
+  let pending = ''
+  let hiding = false
+
+  const trailingTagPrefix = (text, tag) => {
+    for (let length = Math.min(text.length, tag.length - 1); length > 0; length -= 1) {
+      if (text.slice(-length).toLowerCase() === tag.slice(0, length)) return length
+    }
+    return 0
+  }
+
+  return {
+    push(chunk) {
+      let source = pending + String(chunk || '')
+      pending = ''
+      let visible = ''
+      while (source) {
+        if (hiding) {
+          const closingAt = source.toLowerCase().indexOf(closeTag)
+          if (closingAt >= 0) {
+            source = source.slice(closingAt + closeTag.length)
+            hiding = false
+            continue
+          }
+          const suffixLength = trailingTagPrefix(source, closeTag)
+          pending = suffixLength ? source.slice(-suffixLength) : ''
+          return visible
+        }
+        const openingAt = source.toLowerCase().indexOf(openTag)
+        if (openingAt >= 0) {
+          visible += source.slice(0, openingAt)
+          source = source.slice(openingAt + openTag.length)
+          hiding = true
+          continue
+        }
+        const suffixLength = trailingTagPrefix(source, openTag)
+        visible += suffixLength ? source.slice(0, -suffixLength) : source
+        pending = suffixLength ? source.slice(-suffixLength) : ''
+        return visible
+      }
+      return visible
+    },
+    finish() {
+      const visible = hiding ? '' : pending
+      pending = ''
+      hiding = false
+      return visible
+    },
+  }
+}
+
 export async function* streamGatewayChat({ model, messages, tools }, { fetchImpl = fetch, env = process.env } = {}) {
   const provider = providerConfig(model, env)
   if (!provider.apiKey) throw new Error('所选模型当前不可用')
@@ -261,6 +314,7 @@ export async function* streamGatewayChat({ model, messages, tools }, { fetchImpl
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   const toolCalls = new Map()
+  const visibleText = createVisibleTextFilter()
   let buffer = ''
   try {
     while (true) {
@@ -275,7 +329,10 @@ export async function* streamGatewayChat({ model, messages, tools }, { fetchImpl
         if (!data || data === '[DONE]') continue
         try {
           const delta = JSON.parse(data).choices?.[0]?.delta || {}
-          if (delta.content) yield { type: 'text', text: delta.content }
+          if (delta.content) {
+            const text = visibleText.push(delta.content)
+            if (text) yield { type: 'text', text }
+          }
           for (const call of delta.tool_calls || []) {
             const existing = toolCalls.get(call.index) || { id: call.id || id('call'), name: '', arguments: '' }
             if (call.id) existing.id = call.id
@@ -291,5 +348,7 @@ export async function* streamGatewayChat({ model, messages, tools }, { fetchImpl
   } finally {
     reader.releaseLock()
   }
+  const remainingText = visibleText.finish()
+  if (remainingText) yield { type: 'text', text: remainingText }
   for (const call of toolCalls.values()) if (call.name) yield { type: 'tool_call', ...call }
 }
