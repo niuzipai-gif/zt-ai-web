@@ -51,3 +51,14 @@ test('desktop renderer uses the same smooth stream queue for chat and Buddy summ
   assert.match(html, /createSmoothStream/)
   assert.match(html, /agentStream/)
 })
+
+test('desktop login exposes a live loading status and the composer uses IME-safe Enter submission', async () => {
+  const html = await fs.readFile(path.join(root, 'index.html'), 'utf8')
+  const app = await fs.readFile(path.join(root, 'app.js'), 'utf8')
+  assert.match(html, /id="auth-status"/)
+  assert.match(html, /aria-live="polite"/)
+  assert.match(app, /authPresentation/)
+  assert.match(app, /auth-spinner/)
+  assert.match(app, /shouldSubmitComposer/)
+  assert.match(app, /event\.isComposing \|\| event\.keyCode === 229/)
+})

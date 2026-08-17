@@ -283,7 +283,7 @@ git commit -m "feat: proxy MiMoCode model calls through gateway"
 - Test: `agent-desktop/src/interaction-state.test.mjs`
 - Test: `agent-desktop/src/renderer-contract.test.mjs`
 
-- [ ] **Step 1: Write failing pure interaction tests**
+- [x] **Step 1: Write failing pure interaction tests**
 
 Write tests for:
 
@@ -295,13 +295,13 @@ assert.deepEqual(authPresentation({ registering: false, pending: true }), { butt
 assert.deepEqual(authPresentation({ registering: true, pending: true }), { button: '正在提交注册…', status: '注册申请已提交，请稍候…', busy: true })
 ```
 
-- [ ] **Step 2: Run interaction tests to verify they fail because the helpers are missing**
+- [x] **Step 2: Run interaction tests to verify they fail because the helpers are missing**
 
 Run: `node --test agent-desktop/src/interaction-state.test.mjs`
 
 Expected: FAIL with `ERR_MODULE_NOT_FOUND`.
 
-- [ ] **Step 3: Implement the interaction helpers and wire them into the renderer**
+- [x] **Step 3: Implement the interaction helpers and wire them into the renderer**
 
 Implement `shouldSubmitComposer` and `authPresentation` in the module. In `app.js`, replace the Ctrl/Cmd+Enter-only handler with:
 
@@ -319,13 +319,13 @@ if (shouldSubmitComposer({
 
 Add an `aria-live="polite"` auth status node and a spinner inside the submit button. At submit start, disable username/password/mode controls, set `aria-busy="true"`, and show the relevant `authPresentation`. In `finally`, restore the controls; on known failure/pending/timeout, keep the input values and show distinct Chinese feedback. Add `prefers-reduced-motion` CSS so the spinner does not animate for users who opt out.
 
-- [ ] **Step 4: Run focused renderer tests to verify they pass**
+- [x] **Step 4: Run focused renderer tests to verify they pass**
 
 Run: `node --test agent-desktop/src/interaction-state.test.mjs agent-desktop/src/renderer-contract.test.mjs`
 
 Expected: all focused tests pass.
 
-- [ ] **Step 5: Commit the interaction fixes**
+- [x] **Step 5: Commit the interaction fixes**
 
 ```bash
 git add agent-desktop/src/interaction-state.mjs agent-desktop/src/interaction-state.test.mjs agent-desktop/public/index.html agent-desktop/public/app.js agent-desktop/public/styles.css agent-desktop/src/renderer-contract.test.mjs

@@ -3,7 +3,8 @@ import { addConversationMessage, conversationTitle, createConversation, normaliz
 import { createSmoothStream } from './streaming.mjs'
 import { renderMarkdown } from './markdown.mjs'
 import { classifyIntent } from './intent-router.mjs'
-import { executionPresentation } from './presentation.mjs'
+import { conversationFailurePresentation, executionPresentation } from './presentation.mjs'
+import { authPresentation, shouldSubmitComposer } from './interaction-state.mjs'
 
 const $ = selector => document.querySelector(selector)
 const state = {
@@ -22,6 +23,7 @@ const state = {
   activeChatId: '',
   activeSkills: [],
   activeAgentMessage: null,
+  activeAgentTask: '',
   agentStream: null,
   inspectorOpen: false,
 }
@@ -36,7 +38,7 @@ const els = {
   plan: $('#plan'), log: $('#activity-log'), logCount: $('#log-count'), title: $('#execution-title'), status: $('#execution-status'),
   taskId: $('#current-task-id'), resultPanel: $('#result-panel'), resultText: $('#result-text'), approval: $('#approval-card'), approvalTitle: $('#approval-title'), approvalPreview: $('#approval-preview'), skillBrowser: $('#skill-browser'),
   gateway: $('#gateway-url'), workspace: $('#workspace-path'), workspaceShort: $('#workspace-short'), selectWorkspace: $('#select-workspace'), gatewayStatus: $('#gateway-status'), authorize: $('#authorize-device'), authorizationStatus: $('#authorization-status'), logout: $('#logout'), accountLabel: $('#account-label'),
-  authGate: $('#auth-gate'), authForm: $('#auth-form'), authUsername: $('#auth-username'), authPassword: $('#auth-password'), authSubmit: $('#auth-submit'), authToggle: $('#auth-toggle'), authError: $('#auth-error'),
+  authGate: $('#auth-gate'), authForm: $('#auth-form'), authUsername: $('#auth-username'), authPassword: $('#auth-password'), authSubmit: $('#auth-submit'), authToggle: $('#auth-toggle'), authError: $('#auth-error'), authStatus: $('#auth-status'),
 }
 
 function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character])) }
@@ -235,6 +237,13 @@ function completeAgentMessage(summary, status = 'done') {
   }
   els.messages.scrollTop = els.messages.scrollHeight
 }
+function offerTaskRetry(live, task) {
+  if (!live?.result || !task || live.retry) return
+  const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'execution-log-toggle'; retry.textContent = '重新尝试'
+  retry.addEventListener('click', () => { els.taskInput.value = task; els.taskInput.focus() })
+  live.result.after(retry)
+  live.retry = retry
+}
 function resetExecution() {
   state.taskId = null; state.eventCount = 0; if (els.taskId) els.taskId.textContent = 'READY'; if (els.title) els.title.textContent = '等待新的任务'; if (els.status) setStatus('IDLE')
   if (els.plan) els.plan.innerHTML = '<div class="empty-state"><span class="empty-mark">◎</span><p>任务开始后，执行计划会出现在这里。</p></div>'
@@ -251,24 +260,38 @@ function hideApproval() { state.pendingApproval = null; els.approval.classList.a
 async function readJson(response) { const text = await response.text(); try { return JSON.parse(text) } catch { return { error: text } } }
 async function apiFetch(path, options = {}) { const headers = { ...(options.headers || {}), 'x-zt-agent-secret': state.localSecret }; if (state.authToken) headers.authorization = `Bearer ${state.authToken}`; return fetch(path, { ...options, headers }) }
 function showAuthError(message = '') { els.authError.textContent = message }
-function showWorkspace() { els.authGate.classList.add('hidden'); els.taskInput.disabled = false; els.accountLabel.textContent = 'ACCOUNT ACTIVE' }
-function showLogin() { els.authGate.classList.remove('hidden'); els.taskInput.disabled = true; showAuthError('') }
+function setAuthStatus(message = '') { if (els.authStatus) els.authStatus.textContent = message }
+function setAuthPending(pending) {
+  const view = authPresentation({ registering: state.registering, pending })
+  els.authForm.setAttribute('aria-busy', String(view.busy))
+  els.authSubmit.disabled = view.busy
+  els.authSubmit.classList.toggle('is-loading', view.busy)
+  els.authSubmit.innerHTML = `${view.busy ? '<span class="auth-spinner" aria-hidden="true"></span>' : ''}<span>${view.button}</span>`
+  els.authUsername.disabled = view.busy
+  els.authPassword.disabled = view.busy
+  els.authToggle.disabled = view.busy
+  setAuthStatus(view.status)
+}
+function showWorkspace() { els.authGate.classList.add('hidden'); els.taskInput.disabled = false; els.accountLabel.textContent = 'ACCOUNT ACTIVE'; setAuthPending(false) }
+function showLogin() { els.authGate.classList.remove('hidden'); els.taskInput.disabled = true; showAuthError(''); setAuthPending(false) }
 function describeNetworkError(error, action = '连接 ZT.AI 网关') { const message = String(error?.message || error || ''); return /failed to fetch|networkerror|load failed/i.test(message) ? `${action}失败：当前无法访问 ${state.gatewayUrl || 'ZT.AI 网关'}，请确认网络正常或稍后重试。` : message || `${action}失败` }
 
 async function submitAuth(event) {
-  event.preventDefault(); showAuthError(''); els.authSubmit.disabled = true
+  event.preventDefault(); showAuthError(''); setAuthPending(true)
   const registering = state.registering
+  let registrationSubmitted = false
   try {
     const response = await fetch(`${state.gatewayUrl}/api/auth/${registering ? 'register' : 'login'}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: els.authUsername.value.trim(), password: els.authPassword.value }) })
     const body = await readJson(response)
     if (!response.ok) throw new Error(body.error || (registering ? '注册失败' : '登录失败'))
     if (registering) {
+      registrationSubmitted = true
       els.authPassword.value = ''
       state.registering = false
       els.authSubmit.textContent = '登录'
       els.authToggle.textContent = '没有账户？注册一个'
       els.authPassword.autocomplete = 'current-password'
-      showAuthError('注册申请已提交，请等待管理员审核通过后再登录。')
+      setAuthStatus('注册申请已提交，请等待管理员审核通过后再登录。')
       return
     }
     if (!body.token) throw new Error('登录响应缺少账户凭证')
@@ -277,7 +300,7 @@ async function submitAuth(event) {
     els.authPassword.value = ''
     showWorkspace()
     await refreshState()
-  } catch (error) { showAuthError(describeNetworkError(error, registering ? '注册账户' : '登录账户')) } finally { els.authSubmit.disabled = false }
+  } catch (error) { showAuthError(describeNetworkError(error, registering ? '注册账户' : '登录账户')) } finally { setAuthPending(false); if (registrationSubmitted) setAuthStatus('注册申请已提交，请等待管理员审核通过后再登录。') }
 }
 async function logout() { if (state.authToken) await fetch(`${state.gatewayUrl}/api/auth/logout`, { method: 'POST', headers: { authorization: `Bearer ${state.authToken}` } }).catch(() => {}); state.authToken = ''; localStorage.removeItem('zt-ai:desktop-token'); showLogin() }
 
@@ -297,7 +320,7 @@ async function runChat() {
     const conversation = currentConversation()
     const messages = conversation?.messages || [{ role: 'user', content: task }]
     const response = await fetch(`${state.gatewayUrl}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: state.model === 'DEEPSEEK' ? 'deepseek' : 'minimax', language: 'zh', skills: state.activeSkills.map(skill => skill.name), messages }) })
-    await consumeSse(response, (event, data) => { if (event === 'message.delta') smooth.push(data.text || ''); if (event === 'message.error') smooth.push(data.message || '模型请求失败') })
+    await consumeSse(response, (event, data) => { if (event === 'message.delta') smooth.push(data.text || ''); if (event === 'message.error') smooth.push(conversationFailurePresentation(data.message)) })
     smooth.finish()
     const output = await smooth.done
     recordChatMessage('assistant', output)
@@ -338,7 +361,8 @@ function handleAgentEvent(event, data) {
   } else if (event === 'task.blocked') {
     setStatus('BLOCKED', 'blocked'); addInlineActivity(data.reason, 'warning'); setAgentStatus('任务已暂停，等待后续操作…', 'error'); hideApproval(); hideInlineApproval(); completeAgentMessage(data.reason, 'blocked')
   } else if (event === 'task.error') {
-    setStatus('ERROR', 'error'); addInlineActivity(data.message, 'warning'); setAgentStatus('执行失败，请检查权限或网关状态。', 'error'); completeAgentMessage(data.message, 'error')
+    const message = '任务暂时没有完成。请检查设备授权或网关连接后重新尝试。'
+    setStatus('ERROR', 'error'); addLog(data.message || '任务执行失败', 'warning'); addInlineActivity('执行没有完成，已保留原任务。', 'warning'); setAgentStatus(message, 'error'); completeAgentMessage(message, 'error'); offerTaskRetry(state.activeAgentMessage, state.activeAgentTask)
   } else if (event === 'task.done') {
     if (state.agentStream) { state.agentStream.finish(); void state.agentStream.done.then(output => { const summary = data.summary || output; completeAgentMessage(summary, data.status); state.agentStream = null }) } else completeAgentMessage(data.summary, data.status)
     setStatus(data.status === 'done' ? 'DONE' : data.status.toUpperCase(), data.status === 'done' ? 'done' : 'blocked')
@@ -357,19 +381,18 @@ async function runAgentTask() {
   }
   recordChatMessage('user', task); recordChatMessage('assistant', `**${presentation.title}**\n\n${presentation.summary}`); renderMessages(); renderChatHistory(); els.taskInput.value = ''
   const live = appendAgentMessage(task, presentation)
+  state.activeAgentTask = task
   resetExecution()
   state.activeAgentMessage = live
   els.taskInput.disabled = true; els.run.disabled = true
   try {
-    const response = await apiFetch('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ task, model: state.model, accountToken: state.authToken }) })
+    const response = await apiFetch('/api/tasks', { method: 'POST', headers: { 'content-type': 'application/json', 'x-zt-conversation-id': state.activeChatId }, body: JSON.stringify({ task, model: state.model, accountToken: state.authToken }) })
     await consumeSse(response, handleAgentEvent)
   } catch (error) {
     const rawMessage = describeNetworkError(error, '执行任务')
     const message = '任务暂时没有完成。请检查设备授权或网关连接后重新尝试。'
     addLog(rawMessage, 'warning'); addInlineActivity('执行连接失败，已保留原任务。', 'warning'); setAgentStatus(message, 'error'); completeAgentMessage(message, 'error'); setStatus('ERROR', 'error')
-    const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'execution-log-toggle'; retry.textContent = '重新尝试'
-    retry.addEventListener('click', () => { els.taskInput.value = task; els.taskInput.focus() })
-    live.result.after(retry)
+    offerTaskRetry(live, task)
   } finally {
     state.reader = null; els.taskInput.disabled = false; els.run.disabled = false; els.taskInput.focus()
   }
@@ -428,7 +451,7 @@ els.modelSelect.addEventListener('change', () => { state.model = normalizeModel(
 els.toolTrigger.addEventListener('click', toggleDrawer); els.permissionTrigger.addEventListener('click', () => { setInspectorOpen(true); $('#buddy-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }); els.inspectorToggle?.addEventListener('click', () => setInspectorOpen(!state.inspectorOpen)); els.voice.addEventListener('click', () => { setNotice('语音入口已准备；接入声音模型后可开始语音输入。') })
 document.querySelectorAll('.drawer-option').forEach(button => button.addEventListener('click', async () => { if (button.dataset.tool === 'skills') { await showSkillBrowser(); return } toolAction(button.dataset.tool); toggleDrawer() }))
 document.querySelectorAll('[data-capability]').forEach(input => input.addEventListener('change', () => updatePermission(input.dataset.capability, input.checked)))
-els.composer.addEventListener('submit', event => { event.preventDefault(); state.mode === 'BUDDY' ? runAgentTask() : runChat() }); els.taskInput.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); state.mode === 'BUDDY' ? runAgentTask() : runChat() } }); els.newTask.addEventListener('click', startNewChat); els.refresh.addEventListener('click', refreshState); els.authorize.addEventListener('click', updateAuthorization); $('#approve-once').addEventListener('click', () => approve(false)); $('#approve-always').addEventListener('click', () => approve(true)); $('#reject').addEventListener('click', reject); els.authForm.addEventListener('submit', submitAuth); els.authToggle.addEventListener('click', () => { state.registering = !state.registering; els.authSubmit.textContent = state.registering ? '注册并进入' : '登录'; els.authToggle.textContent = state.registering ? '已有账户？返回登录' : '没有账户？注册一个'; els.authPassword.autocomplete = state.registering ? 'new-password' : 'current-password'; showAuthError('') }); els.logout.addEventListener('click', logout)
+els.composer.addEventListener('submit', event => { event.preventDefault(); state.mode === 'BUDDY' ? runAgentTask() : runChat() }); els.taskInput.addEventListener('keydown', event => { if (shouldSubmitComposer({ key: event.key, shiftKey: event.shiftKey, isComposing: event.isComposing || event.keyCode === 229, disabled: els.run.disabled })) { event.preventDefault(); state.mode === 'BUDDY' ? runAgentTask() : runChat() } }); els.newTask.addEventListener('click', startNewChat); els.refresh.addEventListener('click', refreshState); els.authorize.addEventListener('click', updateAuthorization); $('#approve-once').addEventListener('click', () => approve(false)); $('#approve-always').addEventListener('click', () => approve(true)); $('#reject').addEventListener('click', reject); els.authForm.addEventListener('submit', submitAuth); els.authToggle.addEventListener('click', () => { state.registering = !state.registering; setAuthPending(false); els.authToggle.textContent = state.registering ? '已有账户？返回登录' : '没有账户？注册一个'; els.authPassword.autocomplete = state.registering ? 'new-password' : 'current-password'; showAuthError('') }); els.logout.addEventListener('click', logout)
 els.run.onclick = event => { event.preventDefault(); if (els.run.disabled) return; state.mode === 'BUDDY' ? runAgentTask() : runChat() };
 els.selectWorkspace?.addEventListener('click', selectWorkspace)
 
