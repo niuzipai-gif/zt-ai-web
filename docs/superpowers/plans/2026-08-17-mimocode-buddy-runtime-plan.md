@@ -168,7 +168,7 @@ git commit -m "feat: normalize MiMoCode events for Buddy"
 - Test: `agent-desktop/src/mimocode/runtime.test.mjs`
 - Test: `agent-desktop/src/agent-core.test.mjs`
 
-- [ ] **Step 1: Write failing bridge tests with a real local HTTP fixture**
+- [x] **Step 1: Write failing bridge tests with a real local HTTP fixture**
 
 Write a test that injects `spawnRuntime`, `fetchImpl`, and a temporary state directory into `new MiMoBuddyRuntime(...)`. Its fixture must record the order: server ready → session create → SSE subscribe → prompt → permission request → permission reply → task complete. Assert:
 
@@ -182,13 +182,13 @@ assert.equal(fixture.permissionReplies[0].response, 'once')
 
 Add a second test that calls `runtime.startTask` twice with the same `conversationId` and asserts the second prompt uses the same MiMo session ID after restart. Add a third test showing no write/command reply is sent before `approve` is called.
 
-- [ ] **Step 2: Run the bridge tests to verify they fail because `MiMoBuddyRuntime` is absent**
+- [x] **Step 2: Run the bridge tests to verify they fail because `MiMoBuddyRuntime` is absent**
 
 Run: `node --test agent-desktop/src/mimocode/runtime.test.mjs`
 
 Expected: FAIL with `ERR_MODULE_NOT_FOUND` or missing `MiMoBuddyRuntime` export.
 
-- [ ] **Step 3: Implement `MiMoBuddyRuntime` as process/session plumbing only**
+- [x] **Step 3: Implement `MiMoBuddyRuntime` as process/session plumbing only**
 
 Implement these public methods:
 
@@ -203,13 +203,13 @@ await runtime.dispose()
 
 `agent-desktop/src/server.mjs` must instantiate `MiMoBuddyRuntime` and make it the only implementation called by `POST /api/tasks`, `/approve`, and `/reject`. `AgentTaskManager` may remain for reading historical records during migration but cannot plan or execute newly submitted tasks.
 
-- [ ] **Step 4: Run bridge and legacy regression tests to verify they pass**
+- [x] **Step 4: Run bridge and legacy regression tests to verify they pass**
 
 Run: `node --test agent-desktop/src/mimocode/runtime.test.mjs agent-desktop/src/agent-core.test.mjs`
 
 Expected: all tests pass; the tests prove that approvals are held by default.
 
-- [ ] **Step 5: Commit the real runtime bridge**
+- [x] **Step 5: Commit the real runtime bridge**
 
 ```bash
 git add agent-desktop/src/mimocode/runtime.mjs agent-desktop/src/mimocode/runtime.test.mjs agent-desktop/src/server.mjs agent-desktop/src/agent-core.mjs
