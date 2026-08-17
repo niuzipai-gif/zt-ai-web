@@ -56,6 +56,13 @@ test('desktop Buddy keeps execution details closed and surfaces only the latest 
   assert.match(app, /已授权，正在继续执行/)
 })
 
+test('desktop conversation keeps the composer visible while the message history scrolls internally', async () => {
+  const styles = await fs.readFile(path.join(root, 'styles.css'), 'utf8')
+  assert.match(styles, /\.conversation\{height:calc\(100vh - 112px\);max-height:calc\(100vh - 112px\)\}/)
+  assert.match(styles, /@media\(max-width:800px\)\{\.conversation\{height:calc\(100vh - 90px\);max-height:calc\(100vh - 90px\)\}\}/)
+  assert.match(styles, /\.messages\{[^}]*overflow:auto;/)
+})
+
 test('desktop renderer uses the same smooth stream queue for chat and Buddy summaries', async () => {
   const html = await fs.readFile(path.join(root, 'app.js'), 'utf8')
   assert.match(html, /createSmoothStream/)
