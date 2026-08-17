@@ -56,11 +56,23 @@ test('translates upstream text and a tool call into an OpenAI Responses event st
 
   assert.equal(frames[0].type, 'response.created')
   assert.ok(frames.every(frame => frame.data.type === frame.type), 'every streamed Responses payload must repeat its event type for strict clients such as MiMoCode')
+  assert.equal(typeof frames[0].data.sequence_number, 'number')
+  assert.equal(typeof frames[0].data.response.created_at, 'number')
+  assert.equal(frames[0].data.response.model, 'zt-minimax-m3')
+  assert.equal(frames[0].data.response.parallel_tool_calls, true)
   assert.ok(frames.some(frame => frame.type === 'response.output_text.delta' && frame.data.delta === '我先读取文件。'))
   assert.ok(frames.some(frame => frame.type === 'response.function_call_arguments.done' && frame.data.arguments.includes('README.md')))
   const done = frames.find(frame => frame.type === 'response.completed')
   assert.equal(done.data.response.id, 'resp_test')
   assert.equal(done.data.response.status, 'completed')
+  assert.equal(typeof done.data.response.completed_at, 'number')
+  assert.deepEqual(done.data.response.usage, {
+    input_tokens: 0,
+    input_tokens_details: { cached_tokens: 0 },
+    output_tokens: 0,
+    output_tokens_details: { reasoning_tokens: 0 },
+    total_tokens: 0,
+  })
   assert.deepEqual(done.data.response.output.map(item => item.type), ['message', 'function_call'])
 })
 

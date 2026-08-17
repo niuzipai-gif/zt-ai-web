@@ -103,12 +103,40 @@ function id(prefix) {
   return `${prefix}_${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`
 }
 
-function responseEnvelope(responseId, status, output = []) {
-  return { id: responseId, object: 'response', status, output }
+function responseEnvelope(responseId, status, { output = [], createdAt, completedAt = null, model = 'zt-minimax-m3' } = {}) {
+  return {
+    id: responseId,
+    object: 'response',
+    created_at: createdAt,
+    completed_at: status === 'completed' ? completedAt ?? createdAt : null,
+    status,
+    error: null,
+    incomplete_details: null,
+    input: [],
+    instructions: null,
+    max_output_tokens: null,
+    model,
+    output,
+    parallel_tool_calls: true,
+    previous_response_id: null,
+    reasoning: { effort: null, summary: null },
+    store: false,
+    temperature: 0.3,
+    text: { format: { type: 'text' } },
+    tool_choice: 'auto',
+    tools: [],
+    top_p: 1,
+    truncation: 'disabled',
+    usage: status === 'completed'
+      ? { input_tokens: 0, input_tokens_details: { cached_tokens: 0 }, output_tokens: 0, output_tokens_details: { reasoning_tokens: 0 }, total_tokens: 0 }
+      : null,
+    user: null,
+    metadata: {},
+  }
 }
 
 function responseEvent(type, data) {
-  return { type, data: { type, ...data } }
+  return { type, data: { ...data, type } }
 }
 
 export async function* streamResponseEvents({ request, systemPrompt, streamChat, responseId = id('resp') }) {
@@ -117,17 +145,20 @@ export async function* streamResponseEvents({ request, systemPrompt, streamChat,
   let message = null
   let text = ''
   let outputIndex = 0
-  yield responseEvent('response.created', { response: responseEnvelope(responseId, 'in_progress') })
+  const createdAt = Math.floor(Date.now() / 1_000)
+  let sequenceNumber = 0
+  const event = (type, data) => responseEvent(type, { ...data, sequence_number: ++sequenceNumber })
+  yield event('response.created', { response: responseEnvelope(responseId, 'in_progress', { createdAt, model: normalized.modelId }) })
 
   for await (const item of streamChat(normalized)) {
     if (item?.type === 'text' && item.text) {
       if (!message) {
         message = { id: id('msg'), type: 'message', status: 'in_progress', role: 'assistant', content: [] }
-        yield responseEvent('response.output_item.added', { output_index: outputIndex, item: message })
+        yield event('response.output_item.added', { output_index: outputIndex, item: message })
       }
       const delta = String(item.text)
       text += delta
-      yield responseEvent('response.output_text.delta', { item_id: message.id, output_index: outputIndex, content_index: 0, delta })
+      yield event('response.output_text.delta', { item_id: message.id, output_index: outputIndex, content_index: 0, delta })
       continue
     }
     if (item?.type === 'tool_call' && item.name) {
@@ -139,25 +170,25 @@ export async function* streamResponseEvents({ request, systemPrompt, streamChat,
         name: String(item.name),
         arguments: '',
       }
-      yield responseEvent('response.output_item.added', { output_index: output.length + (message ? 1 : 0), item: tool })
+      yield event('response.output_item.added', { output_index: output.length + (message ? 1 : 0), item: tool })
       const argumentsText = String(item.arguments || '{}')
-      yield responseEvent('response.function_call_arguments.delta', { item_id: tool.id, output_index: output.length + (message ? 1 : 0), delta: argumentsText })
+      yield event('response.function_call_arguments.delta', { item_id: tool.id, output_index: output.length + (message ? 1 : 0), delta: argumentsText })
       tool.arguments = argumentsText
       tool.status = 'completed'
-      yield responseEvent('response.function_call_arguments.done', { item_id: tool.id, output_index: output.length + (message ? 1 : 0), arguments: argumentsText })
-      yield responseEvent('response.output_item.done', { output_index: output.length + (message ? 1 : 0), item: tool })
+      yield event('response.function_call_arguments.done', { item_id: tool.id, output_index: output.length + (message ? 1 : 0), arguments: argumentsText })
+      yield event('response.output_item.done', { output_index: output.length + (message ? 1 : 0), item: tool })
       output.push(tool)
     }
   }
 
   if (message) {
-    message.content = [{ type: 'output_text', text }]
+    message.content = [{ type: 'output_text', text, annotations: [] }]
     message.status = 'completed'
-    yield responseEvent('response.output_text.done', { item_id: message.id, output_index: 0, content_index: 0, text })
-    yield responseEvent('response.output_item.done', { output_index: 0, item: message })
+    yield event('response.output_text.done', { item_id: message.id, output_index: 0, content_index: 0, text })
+    yield event('response.output_item.done', { output_index: 0, item: message })
     output.unshift(message)
   }
-  yield responseEvent('response.completed', { response: responseEnvelope(responseId, 'completed', output) })
+  yield event('response.completed', { response: responseEnvelope(responseId, 'completed', { output, createdAt, completedAt: Math.floor(Date.now() / 1_000), model: normalized.modelId }) })
 }
 
 export async function completeMiMoResponse(options) {
