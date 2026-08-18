@@ -26,16 +26,20 @@ function costEstimate(model, inputTokens, outputTokens) {
   return Number(((inputTokens * input + outputTokens * output) / 1_000_000).toFixed(8))
 }
 
-function associatedUserId(data, visitor) {
-  if (visitor.userId) return visitor.userId
+function associatedUserIdForVisitor(data, visitorId, directUserId = null) {
+  if (directUserId) return directUserId
   const related = [
     ...(data.usageEvents || []),
     ...(data.conversations || []),
     ...(data.messages || []),
   ]
-    .filter(item => item.visitorId === visitor.id && item.userId)
+    .filter(item => item.visitorId === visitorId && item.userId)
     .sort((a, b) => Number(b.createdAt || b.updatedAt || 0) - Number(a.createdAt || a.updatedAt || 0))
   return related[0]?.userId || null
+}
+
+function associatedUserId(data, visitor) {
+  return associatedUserIdForVisitor(data, visitor.id, visitor.userId)
 }
 
 function withAssociatedUser(data, visitor) {
@@ -166,19 +170,20 @@ export function createTelemetry({ store = getDataStore(), now = () => Date.now()
       const data = await store.read()
       const normalizedQuery = String(query || '').toLowerCase()
       return data.usageEvents
-        .filter(item => (!product || item.product === product) && (!model || item.model === model) && (!normalizedQuery || `${item.visitorId} ${item.requestType} ${item.status}`.toLowerCase().includes(normalizedQuery)))
+        .filter(item => (!product || item.product === product) && (!model || item.model === model) && (!normalizedQuery || `${item.visitorId} ${item.userId || ''} ${item.requestType} ${item.status}`.toLowerCase().includes(normalizedQuery)))
         .sort((a, b) => b.createdAt - a.createdAt)
         .slice(0, Math.max(1, Math.min(Number(limit) || 200, 500)))
-        .map(({ ip, userAgent, ...safe }) => safe)
+        .map(({ ip, userAgent, ...safe }) => ({ ...safe, userId: associatedUserIdForVisitor(data, safe.visitorId, safe.userId) }))
     },
     async visitorDetail(id) {
       const data = await store.read()
       const visitor = data.visitors.find(item => item.id === id)
       if (!visitor) return null
-      const conversations = data.conversations.filter(item => item.visitorId === id)
-      const messages = data.messages.filter(item => item.visitorId === id).sort((a, b) => a.createdAt - b.createdAt)
+      const userId = associatedUserId(data, visitor)
+      const conversations = data.conversations.filter(item => item.visitorId === id).map(item => ({ ...item, userId: item.userId || userId }))
+      const messages = data.messages.filter(item => item.visitorId === id).map(item => ({ ...item, userId: item.userId || userId })).sort((a, b) => a.createdAt - b.createdAt)
       const pageViews = data.pageViews.filter(item => item.visitorId === id).sort((a, b) => a.createdAt - b.createdAt)
-      const usage = data.usageEvents.filter(item => item.visitorId === id)
+      const usage = data.usageEvents.filter(item => item.visitorId === id).map(item => ({ ...item, userId: associatedUserIdForVisitor(data, item.visitorId, item.userId) }))
       return { visitor: withAssociatedUser(data, visitor), conversations, pageViews, messages, usage }
     },
   }

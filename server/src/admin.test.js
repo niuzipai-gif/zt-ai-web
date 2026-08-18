@@ -51,6 +51,16 @@ test('admin usage requires authentication and returns filtered audit events', as
   assert.equal(result[0].estimatedTotalTokens, 4)
 })
 
+test('admin usage keeps the associated account visible for audit rows', async () => {
+  const { admin, auth, telemetry } = await setup()
+  const created = await auth.register({ username: 'usage-owner', phone: '13800000022', email: 'usage-owner@example.com', password: 'strong-pass-123' })
+  await telemetry.recordRequest({ product: 'desktop-agent', visitorId: 'anonymous', userId: created.user.id, model: 'MiniMax-M3', requestType: 'mimocode-responses', status: 'success', inputText: 'hello', outputText: 'world' })
+  const { token } = await admin.login('admin-test-password')
+  const result = await admin.usage(token, { product: 'desktop-agent' })
+  assert.equal(result[0].user.username, 'usage-owner')
+  assert.equal(result[0].user.email, 'usage-owner@example.com')
+})
+
 test('admin can review, approve, and revoke registered users', async () => {
   const { admin, auth } = await setup()
   const created = await auth.register({ username: 'review-me', phone: '13800000009', email: 'review@example.com', password: 'strong-pass-123' })

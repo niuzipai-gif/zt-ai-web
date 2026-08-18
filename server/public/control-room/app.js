@@ -55,5 +55,31 @@ renderVisitors = function renderVisitors(items) {
       : '<small class="visitor-user">匿名访客</small>'
     return `<tr data-id="${escapeHtml(item.id)}"><td>${account}<br><small>${escapeHtml(item.visitorId)}</small><br><small>${escapeHtml(item.id)}</small></td><td><span class="product-tag">${item.product === 'web' ? '公开网页' : '桌面 Agent'}</span></td><td>${escapeHtml(item.maskedIp)}</td><td>${Number(item.pageViewCount || 0)} / ${Number(item.requestCount || 0)}</td><td>${(item.models || []).map(escapeHtml).join(' · ') || '—'}</td><td>${date(item.lastSeenAt)}</td><td><button class="row-action" data-detail="${escapeHtml(item.id)}">查看 ↗</button></td></tr>`
   }).join('') : '<tr><td colspan="7" class="empty">暂无匹配访客</td></tr>'
-  table.querySelectorAll('[data-detail]').forEach(button => { button.onclick = () => openDetail(button.dataset.detail) })
+  table.querySelectorAll('[data-detail]').forEach(button => { button.onclick = () => window.openDetail(button.dataset.detail) })
 }
+
+renderUsage = function renderUsage(items) {
+  state.usage = items
+  const table = $('#usage-table')
+  if (!table) return
+  table.innerHTML = items.length ? items.map(item => {
+    const user = item.user
+    const account = user
+      ? `<strong class="visitor-account-name">👤 ${escapeHtml(user.username)}</strong><br><small>${escapeHtml(user.email || user.phone || '已关联账号')}</small>`
+      : '<small class="visitor-user">匿名访客</small>'
+    return `<tr><td>${date(item.createdAt)}</td><td><span class="product-tag">${item.product === 'web' ? '公开网页' : '桌面 Agent'}</span></td><td>${account}<br><small>${escapeHtml(item.visitorId)}</small></td><td>${escapeHtml(item.model)}</td><td>${escapeHtml(item.requestType)}</td><td>${escapeHtml(item.status)}</td><td>${Number(item.estimatedTotalTokens || 0).toLocaleString()}</td><td>${item.estimatedCostUsd == null ? '—' : `$${Number(item.estimatedCostUsd).toFixed(6)}`}</td></tr>`
+  }).join('') : '<tr><td colspan="8" class="empty">暂无匹配用量</td></tr>'
+}
+
+exportVisitors = function exportVisitors() {
+  downloadCsv('zt-ai-visitors.csv', ['用户名', '邮箱', '手机号', '访客ID', '产品', '脱敏IP', '页面访问次数', '请求数', '模型', '最近访问'], state.visitors.map(item => [item.user?.username || '匿名访客', item.user?.email || '', item.user?.phone || '', item.visitorId, item.product, item.maskedIp, item.pageViewCount || 0, item.requestCount || 0, (item.models || []).join(' / '), date(item.lastSeenAt)]))
+}
+
+exportUsage = function exportUsage() {
+  downloadCsv('zt-ai-usage.csv', ['时间', '用户名', '邮箱', '访客ID', '产品', '模型', '类型', '状态', '估算Tokens', '估算成本USD'], state.usage.map(item => [date(item.createdAt), item.user?.username || '匿名访客', item.user?.email || '', item.visitorId, item.product, item.model, item.requestType, item.status, item.estimatedTotalTokens, item.estimatedCostUsd ?? '']))
+}
+
+window.request = request
+window.escapeHtml = escapeHtml
+window.date = date
+window.openDetail = openDetail

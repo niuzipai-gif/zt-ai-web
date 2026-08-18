@@ -39,7 +39,12 @@ export function createAdminApi({ auth, telemetry }) {
       const query = String(filters?.query || '').trim().toLowerCase()
       return visitors.map(visitor => ({ ...visitor, user: adminUserSummary(byId.get(visitor.userId)) })).filter(visitor => !query || `${visitor.id} ${visitor.visitorId} ${visitor.maskedIp} ${visitor.product} ${visitor.user?.username || ''} ${visitor.user?.email || ''} ${visitor.user?.phone || ''}`.toLowerCase().includes(query))
     },
-    async usage(token, filters) { await requireAdmin(token); return telemetry.listUsage(filters) },
+    async usage(token, filters) {
+      await requireAdmin(token)
+      const [events, users] = await Promise.all([telemetry.listUsage(filters), auth.users()])
+      const byId = new Map(users.map(user => [user.id, user]))
+      return events.map(event => ({ ...event, user: adminUserSummary(byId.get(event.userId)) }))
+    },
     async detail(token, id) {
       await requireAdmin(token)
       const detail = await telemetry.visitorDetail(id)
