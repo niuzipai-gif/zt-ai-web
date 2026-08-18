@@ -71,7 +71,20 @@ export class PostgresDataStore {
         state JSONB NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )`)
-      await this.pool.query('INSERT INTO zt_ai_state (id, state) VALUES (1, $1::jsonb) ON CONFLICT (id) DO NOTHING', [JSON.stringify(emptyData())])
+      const existing = await this.pool.query('SELECT state FROM zt_ai_state WHERE id = 1')
+      if (!existing.rowCount) {
+        let initial = emptyData()
+        const legacyPath = String(process.env.ZT_AI_DATA_PATH || '').trim()
+        if (legacyPath) {
+          try {
+            const legacy = await new JsonDataStore(legacyPath).read()
+            if (COLLECTIONS.some(collection => legacy[collection].length > 0)) initial = legacy
+          } catch (error) {
+            if (!/读取 ZT\.AI 数据失败：.*ENOENT/i.test(error.message)) throw error
+          }
+        }
+        await this.pool.query('INSERT INTO zt_ai_state (id, state) VALUES (1, $1::jsonb)', [JSON.stringify(initial)])
+      }
       return this.pool
     })()
     return this.ready
