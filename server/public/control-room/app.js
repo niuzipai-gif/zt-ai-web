@@ -25,3 +25,35 @@ function selectView(view) { document.querySelectorAll('[data-nav]').forEach(butt
 document.querySelectorAll('[data-nav]').forEach(button => { button.addEventListener('click', () => selectView(button.dataset.nav)) })
 $('#login-form').addEventListener('submit', async event => { event.preventDefault(); const button = event.currentTarget.querySelector('button'); button.disabled = true; $('#login-error').textContent = ''; try { const body = await readJson(await fetch(apiUrl('/api/admin/login'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: $('#admin-username').value.trim(), password: $('#admin-password').value }) })); if (!body.token) throw new Error(body.error || '管理员登录失败'); state.token = body.token; sessionStorage.setItem('zt-ai:admin-token', state.token); $('#admin-password').value = ''; showApp(); await load() } catch (error) { $('#login-error').textContent = error.message } finally { button.disabled = false } })
 $('#logout').addEventListener('click', async () => { await fetch(apiUrl('/api/admin/logout'), { method: 'POST', headers: { authorization: `Bearer ${state.token}` } }).catch(() => {}); logout() }); $('#refresh').addEventListener('click', load); $('#export-visitors').addEventListener('click', exportVisitors); $('#export-usage').addEventListener('click', exportUsage); $('#drawer-close').addEventListener('click', () => $('#detail-drawer').classList.add('hidden')); $('#drawer-x').addEventListener('click', () => $('#detail-drawer').classList.add('hidden')); $('#product-filter').addEventListener('change', async event => { renderVisitors(await request(`/api/admin/visitors?product=${encodeURIComponent(event.target.value)}`)) }); let queryTimer; $('#visitor-query').addEventListener('input', event => { clearTimeout(queryTimer); queryTimer = setTimeout(async () => renderVisitors(await request(`/api/admin/visitors?q=${encodeURIComponent(event.target.value)}`)), 250) }); $('#usage-product-filter').addEventListener('change', loadUsage); $('#usage-model-filter').addEventListener('change', loadUsage); let usageQueryTimer; $('#usage-query').addEventListener('input', () => { clearTimeout(usageQueryTimer); usageQueryTimer = setTimeout(loadUsage, 250) }); $('#user-status-filter').addEventListener('change', loadUsers); let userQueryTimer; $('#user-query').addEventListener('input', () => { clearTimeout(userQueryTimer); userQueryTimer = setTimeout(loadUsers, 250) }); if (state.token) { showApp(); load() }
+// Account-aware render overrides. Kept as small named functions so older stored
+// telemetry can still be displayed even when its visitor label is anonymous.
+renderOverview = function renderOverview(data) {
+  $('#kpi-visitors').textContent = data.visitors
+  $('#kpi-pageviews').textContent = Number(data.pageViews || 0).toLocaleString()
+  $('#kpi-requests').textContent = data.requests
+  $('#kpi-tokens').textContent = Number(data.estimatedTokens || 0).toLocaleString()
+  $('#kpi-cost').textContent = data.estimatedCostUsd == null ? '未配置' : `$${data.estimatedCostUsd.toFixed(4)}`
+  if ($('#storage-status')) $('#storage-status').textContent = data.storage?.label || '未知'
+  if ($('#kpi-accounts')) $('#kpi-accounts').textContent = Number(data.accounts || 0).toLocaleString()
+  if ($('#kpi-pending-accounts')) $('#kpi-pending-accounts').textContent = Number(data.pendingAccounts || 0).toLocaleString()
+  if ($('#kpi-active-accounts')) $('#kpi-active-accounts').textContent = Number(data.activeAccounts || 0).toLocaleString()
+  const products = Object.entries(data.byProduct || {})
+  const max = Math.max(1, ...products.map(([, value]) => value))
+  $('#product-chart').innerHTML = products.length ? products.map(([key, value]) => `<div class="bar-row ${key === 'desktop-agent' ? 'agent' : ''}"><span>${key === 'web' ? '公开网页' : '桌面 Agent'}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.round(value / max * 100)}%"></div></div><strong>${value}</strong></div>`).join('') : '<div class="empty">还没有模型调用</div>'
+  const models = Object.entries(data.byModel || {})
+  $('#model-list').innerHTML = models.length ? models.map(([key, value]) => `<div class="model-row"><strong>${escapeHtml(key)}</strong><span>${value} 次调用</span></div>`).join('') : '<div class="empty">还没有模型调用</div>'
+}
+
+renderVisitors = function renderVisitors(items) {
+  state.visitors = items
+  const table = $('#visitor-table')
+  if (!table) return
+  table.innerHTML = items.length ? items.map(item => {
+    const user = item.user
+    const account = user
+      ? `<strong class="visitor-account-name">👤 ${escapeHtml(user.username)}</strong><br><small>${escapeHtml(user.email || user.phone || '已关联账号')}</small>`
+      : '<small class="visitor-user">匿名访客</small>'
+    return `<tr data-id="${escapeHtml(item.id)}"><td>${account}<br><small>${escapeHtml(item.visitorId)}</small><br><small>${escapeHtml(item.id)}</small></td><td><span class="product-tag">${item.product === 'web' ? '公开网页' : '桌面 Agent'}</span></td><td>${escapeHtml(item.maskedIp)}</td><td>${Number(item.pageViewCount || 0)} / ${Number(item.requestCount || 0)}</td><td>${(item.models || []).map(escapeHtml).join(' · ') || '—'}</td><td>${date(item.lastSeenAt)}</td><td><button class="row-action" data-detail="${escapeHtml(item.id)}">查看 ↗</button></td></tr>`
+  }).join('') : '<tr><td colspan="7" class="empty">暂无匹配访客</td></tr>'
+  table.querySelectorAll('[data-detail]').forEach(button => { button.onclick = () => openDetail(button.dataset.detail) })
+}

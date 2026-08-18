@@ -39,7 +39,7 @@ API 密钥只放在项目根目录的 `aikey.env`，该文件已被 `.gitignore`
 
 ## Control Room 管理网站
 
-管理员网站与公共网页、桌面 Agent 分离，地址为 Gateway 的 `/admin/`，例如 `https://zt-ai-gateway.onrender.com/admin/`。用 `tools/set-admin-password.ps1` 生成 `ADMIN_PASSWORD_SALT` 和 `ADMIN_PASSWORD_HASH` 后，只把这两个值填入 Render 私密环境变量；不要把密码、API key 或生成结果提交到仓库。`DATA_RETENTION_DAYS` 控制留存周期，`ZT_AI_DATA_PATH` 控制 JSON 审计库位置。
+管理员网站与公共网页、桌面 Agent 分离，地址为 Gateway 的 `/admin/`，例如 `https://zt-ai-gateway.onrender.com/admin/`。用 `tools/set-admin-password.ps1` 生成 `ADMIN_PASSWORD_SALT` 和 `ADMIN_PASSWORD_HASH` 后，只把这两个值填入 Render 私密环境变量；不要把密码、API key 或生成结果提交到仓库。`DATA_RETENTION_DAYS` 控制留存周期，`ZT_AI_DATA_PATH` 控制 JSON 审计库位置。生产环境建议配置 Render Postgres 的 `DATABASE_URL`；配置后账号、访客、会话、消息和模型用量会写入持久化数据库，未配置时仍会回退到 JSON 文件。
 
 列表默认显示脱敏 IP，完整 IP 和消息时间线仅在管理员登录后显示。线上 Render 若没有挂载持久化磁盘或外部数据库，JSON 审计数据会在实例重建时丢失；上线前应为 `ZT_AI_DATA_PATH` 配置持久化存储。
 

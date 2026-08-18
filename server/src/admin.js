@@ -22,7 +22,16 @@ export function createAdminApi({ auth, telemetry }) {
     async login(input) { return auth.loginAdmin(input) },
     async logout(token) { await requireAdmin(token); await auth.revoke(token, 'admin'); return { ok: true } },
     async me(token) { const session = await requireAdmin(token); return { id: session.user.id, username: session.user.username, expiresAt: session.expiresAt } },
-    async overview(token) { await requireAdmin(token); return telemetry.overview() },
+    async overview(token) {
+      await requireAdmin(token)
+      const [overview, users] = await Promise.all([telemetry.overview(), auth.users()])
+      return {
+        ...overview,
+        accounts: users.length,
+        pendingAccounts: users.filter(user => user.status === 'pending').length,
+        activeAccounts: users.filter(user => user.status === 'active' && !user.accessExpired).length,
+      }
+    },
     async visitors(token, filters) {
       await requireAdmin(token)
       const [visitors, users] = await Promise.all([telemetry.listVisitors({ ...(filters || {}), query: '' }), auth.users()])

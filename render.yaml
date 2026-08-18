@@ -42,6 +42,8 @@ services:
         sync: false
       - key: DATA_RETENTION_DAYS
         value: "90"
+      - key: DATABASE_URL
+        sync: false
       - key: ZT_AI_DATA_PATH
         value: data/zt-ai.json
       - key: MMX_ENABLED

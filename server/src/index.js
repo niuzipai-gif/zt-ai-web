@@ -92,10 +92,18 @@ function clientIp(request) {
   return String(request.headers['x-forwarded-for'] || request.headers['x-real-ip'] || request.socket.remoteAddress || 'unknown').split(',')[0].trim()
 }
 
-function clientContext(request, body) {
+export function clientContext(request, body = {}, session = null, product = 'web') {
+  const requestedVisitorId = String(body.visitorId || request.headers['x-zt-visitor-id'] || '').trim()
+  const accountId = String(session?.user?.id || '').trim()
+  // Authenticated desktop traffic is grouped by the account on the server. This
+  // prevents a missing renderer field (or a stale anonymous id) from creating a
+  // second visitor row that cannot be joined back to the account in Control Room.
+  const visitorId = accountId && product === 'desktop-agent'
+    ? `account-${accountId}`
+    : requestedVisitorId || 'anonymous'
   return {
-    visitorId: String(body.visitorId || 'anonymous').slice(0, 160),
-    conversationId: String(body.conversationId || '').slice(0, 160) || null,
+    visitorId: visitorId.slice(0, 160),
+    conversationId: String(body.conversationId || request.headers['x-zt-conversation-id'] || '').slice(0, 160) || null,
     ip: clientIp(request),
     userAgent: request.headers['user-agent'] || '',
   }
@@ -178,7 +186,7 @@ async function handleChat(request, response) {
     const note = `\n\n${attachmentNotes.join('\n')}`
     latestUser.content = typeof latestUser.content === 'string' ? `${latestUser.content}${note}` : [{ type: 'text', text: note }, ...(latestUser.content || [])]
   }
-  const context = clientContext(request, body)
+  const context = clientContext(request, body, null, 'web')
   const inputText = contentToText(providerMessages.findLast(message => message.role === 'user')?.content || '')
   let outputText = ''
   let status = 'success'
@@ -216,7 +224,7 @@ async function handleAgentChat(request, response) {
   const { model, messages } = normalizeChatRequest(body)
   const language = ['zh', 'en', 'ja'].includes(body.language) ? body.language : 'zh'
   const providerMessages = [{ role: 'system', content: `${AGENT_SYSTEM_PROMPT}\n${CHAT_LANGUAGE_PROMPTS[language]}` }, ...messages.filter(message => message.role !== 'system')]
-  const context = clientContext(request, body)
+  const context = clientContext(request, body, session, 'desktop-agent')
   const inputText = contentToText(providerMessages.findLast(message => message.role === 'user')?.content || '')
   let outputText = ''
   let status = 'success'
@@ -240,7 +248,7 @@ async function handleAgentPlan(request, response) {
   if (!task) { sendJson(request, response, 400, { error: '缺少 Agent 任务目标' }); return }
   const model = String(body.model || '').toLowerCase() === 'deepseek' ? 'deepseek' : 'minimax'
   const language = ['zh', 'en', 'ja'].includes(body.language) ? body.language : 'zh'
-  const context = clientContext(request, body)
+  const context = clientContext(request, body, session, 'desktop-agent')
   const providerMessages = [{ role: 'system', content: `${AGENT_SYSTEM_PROMPT}\n${AGENT_PLANNER_PROMPT}\n${CHAT_LANGUAGE_PROMPTS[language]}` }, { role: 'user', content: `工作目标：\n${task}\n\n请只返回符合约束的 JSON 计划。` }]
   try {
     const stream = model === 'deepseek' ? streamDeepseek({ model: CHAT_MODELS.deepseek, messages: providerMessages }) : streamMinimax({ model: CHAT_MODELS.minimax, messages: providerMessages })
@@ -276,7 +284,7 @@ async function handleMiMoOpenAI(request, response, route) {
     return
   }
   const body = await readBody(request)
-  const context = clientContext(request, body)
+  const context = clientContext(request, body, session, 'desktop-agent')
   const streamChat = input => streamGatewayChat(input)
   const responseId = `resp_zt_${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`
   const requestedModel = String(body.model || 'zt-minimax-m3')
@@ -353,7 +361,7 @@ export function createServer() {
       if (request.method === 'POST' && route === '/api/visit') {
         if (!rateLimit(request)) return sendJson(request, response, 429, { error: '访问过于频繁，请稍后再试' })
         const body = await readBody(request)
-        await recordVisit({ ...clientContext(request, body), product: 'web', page: String(body.page || '/'), language: String(body.language || '') })
+        await recordVisit({ ...clientContext(request, body, null, 'web'), product: 'web', page: String(body.page || '/'), language: String(body.language || '') })
         return sendJson(request, response, 200, { ok: true })
       }
       if ((request.method === 'GET' && route === '/api/agent/openai/v1/models') || (request.method === 'POST' && (route === '/api/agent/openai/v1/responses' || route === '/api/agent/openai/v1/chat/completions'))) return await handleMiMoOpenAI(request, response, route)

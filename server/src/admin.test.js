@@ -80,6 +80,18 @@ test('admin visitor records include the associated account details', async () =>
   assert.equal(detail.conversations[0].id, 'chat-user')
 })
 
+test('admin resolves an account from historical anonymous telemetry and reports account counts', async () => {
+  const { admin, auth, telemetry } = await setup()
+  const created = await auth.register({ username: 'niulai', phone: '13800000021', email: 'niulai@example.com', password: 'strong-pass-123' })
+  await telemetry.recordRequest({ product: 'desktop-agent', visitorId: 'anonymous', conversationId: 'old-chat', userId: created.user.id, model: 'MiniMax-M3', requestType: 'mimocode-responses', status: 'success', inputText: 'hello', outputText: 'world' })
+  const { token } = await admin.login('admin-test-password')
+  const visitors = await admin.visitors(token, { product: 'desktop-agent' })
+  assert.equal(visitors[0].user.username, 'niulai')
+  const overview = await admin.overview(token)
+  assert.equal(overview.accounts, 1)
+  assert.equal(overview.pendingAccounts, 1)
+})
+
 test('admin can change an approved account duration or make it permanent', async () => {
   let now = Date.now()
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'zt-ai-admin-access-'))

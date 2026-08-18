@@ -1,5 +1,5 @@
 import crypto from 'node:crypto'
-import { getDataStore } from './data-store.js'
+import { dataStoreInfo, getDataStore } from './data-store.js'
 
 export function estimateTokens(text = '') {
   return Math.ceil(String(text || '').length / 4)
@@ -26,9 +26,26 @@ function costEstimate(model, inputTokens, outputTokens) {
   return Number(((inputTokens * input + outputTokens * output) / 1_000_000).toFixed(8))
 }
 
+function associatedUserId(data, visitor) {
+  if (visitor.userId) return visitor.userId
+  const related = [
+    ...(data.usageEvents || []),
+    ...(data.conversations || []),
+    ...(data.messages || []),
+  ]
+    .filter(item => item.visitorId === visitor.id && item.userId)
+    .sort((a, b) => Number(b.createdAt || b.updatedAt || 0) - Number(a.createdAt || a.updatedAt || 0))
+  return related[0]?.userId || null
+}
+
+function withAssociatedUser(data, visitor) {
+  return { ...visitor, userId: associatedUserId(data, visitor) }
+}
+
 export function createTelemetry({ store = getDataStore(), now = () => Date.now(), retentionDays = Number(process.env.DATA_RETENTION_DAYS || 90) } = {}) {
   return {
     store,
+    storage: dataStoreInfo(store),
     async recordVisit({ product = 'web', visitorId, page = '/', ip, userAgent, language = '' }) {
       const timestamp = now()
       const scopedId = scopedVisitorId(product, visitorId)
@@ -132,11 +149,18 @@ export function createTelemetry({ store = getDataStore(), now = () => Date.now()
         estimatedCostUsd: usage.every(item => item.estimatedCostUsd == null) ? null : Number(usage.reduce((sum, item) => sum + (item.estimatedCostUsd || 0), 0).toFixed(8)),
         byProduct: Object.fromEntries([...new Set(usage.map(item => item.product))].map(product => [product, usage.filter(item => item.product === product).length])),
         byModel: Object.fromEntries([...new Set(usage.map(item => item.model))].map(model => [model, usage.filter(item => item.model === model).length])),
+        storage: dataStoreInfo(store),
       }
     },
     async listVisitors({ product, query } = {}) {
       const data = await store.read()
-      return data.visitors.filter(item => (!product || item.product === product) && (!query || `${item.id} ${item.maskedIp} ${item.product}`.toLowerCase().includes(String(query).toLowerCase()))).map(({ lastIp, ...safe }) => safe).sort((a, b) => b.lastSeenAt - a.lastSeenAt)
+      return data.visitors
+        .filter(item => (!product || item.product === product) && (!query || `${item.id} ${item.maskedIp} ${item.product}`.toLowerCase().includes(String(query).toLowerCase())))
+        .map(item => {
+          const { lastIp, ...safe } = withAssociatedUser(data, item)
+          return safe
+        })
+        .sort((a, b) => b.lastSeenAt - a.lastSeenAt)
     },
     async listUsage({ product, model, query, limit = 200 } = {}) {
       const data = await store.read()
@@ -155,7 +179,7 @@ export function createTelemetry({ store = getDataStore(), now = () => Date.now()
       const messages = data.messages.filter(item => item.visitorId === id).sort((a, b) => a.createdAt - b.createdAt)
       const pageViews = data.pageViews.filter(item => item.visitorId === id).sort((a, b) => a.createdAt - b.createdAt)
       const usage = data.usageEvents.filter(item => item.visitorId === id)
-      return { visitor, conversations, pageViews, messages, usage }
+      return { visitor: withAssociatedUser(data, visitor), conversations, pageViews, messages, usage }
     },
   }
 }

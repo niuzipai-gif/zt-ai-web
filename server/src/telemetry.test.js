@@ -61,3 +61,17 @@ test('lists usage events newest first with product and model filters', async () 
   assert.equal((await audit.listUsage({ product: 'web' }))[0].model, 'MiniMax-M3')
   assert.equal((await audit.listUsage({ model: 'deepseek-v4-flash' }))[0].requestType, 'agent-plan')
 })
+
+test('recovers the associated account from historical request records', async () => {
+  const audit = await telemetry()
+  const visitorId = 'desktop-agent:anonymous'
+  await audit.store.update(data => {
+    data.visitors.push({ id: visitorId, product: 'desktop-agent', visitorId: 'anonymous', userId: null, firstSeenAt: 1, lastSeenAt: 3, pageViewCount: 0, requestCount: 1, models: ['MiniMax-M3'], maskedIp: '203.0.*.*' })
+    data.usageEvents.push({ id: 'usage-1', visitorId, userId: 'user-niulai', createdAt: 3 })
+    data.messages.push({ id: 'message-1', visitorId, userId: 'user-niulai', createdAt: 3, role: 'assistant', content: 'ok' })
+  })
+  const listed = await audit.listVisitors({ product: 'desktop-agent' })
+  assert.equal(listed[0].userId, 'user-niulai')
+  const detail = await audit.visitorDetail(visitorId)
+  assert.equal(detail.visitor.userId, 'user-niulai')
+})
