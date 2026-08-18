@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
-import { listWorkspace, moveFile, parseSearchResults, readFile, resolveWorkspacePath } from './tools.mjs'
+import { listWorkspace, moveFile, normalizeFirecrawlSearch, parseSearchResults, readFile, resolveWorkspacePath, searchWeb } from './tools.mjs'
 
 test('workspace paths cannot escape the selected workspace', () => {
   const root = path.resolve(os.tmpdir(), 'zt-ai-workspace')
@@ -34,4 +34,31 @@ test('move tool relocates a file only inside the selected workspace', async () =
 test('web search parser keeps source title, url and snippet', () => {
   const html = '<a class="result__a" href="https://example.com/a">Official <b>Docs</b></a><a class="result__snippet">Primary source summary</a>'
   assert.deepEqual(parseSearchResults(html), [{ rank: 1, title: 'Official Docs', url: 'https://example.com/a', snippet: 'Primary source summary' }])
+})
+
+test('Firecrawl v2 results become stable source records with page fingerprints', () => {
+  assert.deepEqual(normalizeFirecrawlSearch({ data: { web: [{ title: 'Official Docs', url: 'https://example.com/docs', description: 'Primary source summary', markdown: '# Docs\n\nDetails' }] } }), [{
+    rank: 1,
+    title: 'Official Docs',
+    url: 'https://example.com/docs',
+    snippet: 'Primary source summary',
+    fingerprint: 'Details',
+  }])
+})
+
+test('Firecrawl search uses the keyless free path when no API key is configured', async () => {
+  const progress = []
+  let request
+  const result = await searchWeb({
+    query: 'ZT.AI official',
+    fetchImpl: async (url, options) => {
+      request = { url, options }
+      return new Response(JSON.stringify({ data: { web: [{ title: 'Official', url: 'https://example.com', description: 'source', markdown: 'source page' }] } }), { status: 200, headers: { 'content-type': 'application/json' } })
+    },
+    onProgress: message => progress.push(message),
+  })
+  assert.equal(request.options.headers.authorization, undefined)
+  assert.equal(result.provider, 'firecrawl')
+  assert.equal(result.results[0].url, 'https://example.com')
+  assert.ok(progress.some(message => /连接/.test(message)))
 })

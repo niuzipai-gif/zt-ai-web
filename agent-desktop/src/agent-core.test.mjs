@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { AgentTaskManager, buildPlan, ensureResearchPlan, extractFilePath, parseAgentPlan } from './agent-core.mjs'
+import { AgentTaskManager, buildPlan, ensureResearchPlan, extractFilePath, isStepAllowed, parseAgentPlan } from './agent-core.mjs'
 
 test('execution-first planning identifies read, write and test work', () => {
   assert.equal(extractFilePath('请读取 README.md'), 'README.md')
@@ -51,4 +51,11 @@ test('research tasks replace legacy shell scraping plans with the web search too
   const plan = ensureResearchPlan('检索 MiniMax 官方 API 文档并给出来源', legacyPlan)
   assert.deepEqual(plan.map(step => step.tool), ['list_workspace', 'web_search'])
   assert.match(plan[1].query, /MiniMax 官方 API 文档/)
+})
+
+test('one-time approval is scoped to the exact execution step', () => {
+  const state = { approvedSteps: new Set(['step-1']), fullAccess: false }
+  const permissionStore = { has: () => false }
+  assert.equal(isStepAllowed({ state, step: { id: 'step-1' }, capability: 'web_research', permissionStore }), true)
+  assert.equal(isStepAllowed({ state, step: { id: 'step-2' }, capability: 'web_research', permissionStore }), false)
 })

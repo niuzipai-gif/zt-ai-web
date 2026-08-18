@@ -16,3 +16,9 @@ test('desktop task API routes new work through MiMoBuddyRuntime rather than the 
   assert.match(source, /process\.env\.ZT_AI_TEST_MODE === '1'/)
   assert.doesNotMatch(source, /const mimocodeRuntimeUrl = process\.env\.ZT_AI_MIMOCODE_URL \|\| ''/)
 })
+
+test('desktop event bridge keeps the runtime implementation name out of user-facing labels', async () => {
+  const source = await fs.readFile(sourcePath, 'utf8')
+  assert.doesNotMatch(source, /MiMoCode 正在分析|MiMoCode 请求执行|MiMoCode 本机运行时暂时不可用/)
+  assert.match(source, /执行引擎/)
+})

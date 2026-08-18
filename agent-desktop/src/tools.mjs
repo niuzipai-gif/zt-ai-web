@@ -4,6 +4,9 @@ import { spawn } from 'node:child_process'
 
 const MAX_READ_BYTES = 1_000_000
 const MAX_SEARCH_RESULTS = 6
+const DEFAULT_WEB_TIMEOUT_MS = 25_000
+const FIRECRAWL_BASE_URL = String(process.env.ZT_AI_FIRECRAWL_BASE_URL || process.env.FIRECRAWL_BASE_URL || 'https://api.firecrawl.dev/v2').replace(/\/$/, '')
+const FIRECRAWL_API_KEY = process.env.ZT_AI_FIRECRAWL_API_KEY || process.env.FIRECRAWL_API_KEY || ''
 
 export function resolveWorkspacePath(workspaceRoot, inputPath = '.') {
   const root = path.resolve(workspaceRoot)
@@ -85,16 +88,84 @@ export function parseSearchResults(html, limit = MAX_SEARCH_RESULTS) {
   }).filter(item => item.title && /^https?:\/\//i.test(item.url))
 }
 
-export async function searchWeb({ query, limit = MAX_SEARCH_RESULTS }) {
+function cleanMarkdownFingerprint(value) {
+  return String(value || '')
+    .replace(/^\s*#{1,6}\s+.*$/gm, '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+    .replace(/[*_>`#~-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 260)
+}
+
+export function normalizeFirecrawlSearch(body, limit = MAX_SEARCH_RESULTS) {
+  const raw = Array.isArray(body?.data?.web) ? body.data.web : Array.isArray(body?.data) ? body.data : []
+  return raw.slice(0, Math.min(MAX_SEARCH_RESULTS, Math.max(1, Number(limit) || MAX_SEARCH_RESULTS))).map((item, index) => ({
+    rank: index + 1,
+    title: String(item?.title || item?.metadata?.title || '未命名页面').trim(),
+    url: String(item?.url || item?.metadata?.sourceURL || '').trim(),
+    snippet: String(item?.description || item?.metadata?.description || '').replace(/\s+/g, ' ').trim().slice(0, 420),
+    fingerprint: cleanMarkdownFingerprint(item?.markdown || item?.description || item?.metadata?.description || ''),
+  })).filter(item => item.url && /^https?:\/\//i.test(item.url))
+}
+
+async function firecrawlRequest(pathname, body, { fetchImpl = fetch, timeoutMs = DEFAULT_WEB_TIMEOUT_MS } = {}) {
+  const authorization = FIRECRAWL_API_KEY ? { authorization: `Bearer ${FIRECRAWL_API_KEY}` } : {}
+  const response = await fetchImpl(`${FIRECRAWL_BASE_URL}${pathname}`, {
+    method: 'POST',
+    headers: { ...authorization, 'content-type': 'application/json', 'user-agent': 'ZT.AI Desktop Research/0.3' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+  const raw = await response.text()
+  let parsed = {}
+  try { parsed = raw ? JSON.parse(raw) : {} } catch { parsed = {} }
+  if (!response.ok || parsed.success === false) {
+    const fallback = !FIRECRAWL_API_KEY && [401, 403].includes(response.status)
+      ? 'Firecrawl Keyless 当前不可用，请稍后重试或配置 FIRECRAWL_API_KEY。'
+      : `Firecrawl 检索服务返回 ${response.status}`
+    throw new Error(parsed.error || fallback)
+  }
+  return parsed
+}
+
+export async function searchWeb({ query, limit = MAX_SEARCH_RESULTS, fetchImpl = fetch, onProgress } = {}) {
   const cleanQuery = String(query || '').trim().slice(0, 240)
   if (!cleanQuery) throw new Error('资料检索缺少 query')
-  const response = await fetch(`https://html.duckduckgo.com/html/?${new URLSearchParams({ q: cleanQuery, kl: 'wt-wt' })}`, {
-    headers: { 'user-agent': 'ZT.AI Desktop Research/0.2' },
-    signal: AbortSignal.timeout(15_000),
-  })
-  if (!response.ok) throw new Error(`资料检索服务返回 ${response.status}`)
-  const html = await response.text()
-  return { tool: 'web_search', query: cleanQuery, results: parseSearchResults(html, Math.min(MAX_SEARCH_RESULTS, Math.max(1, Number(limit) || MAX_SEARCH_RESULTS))) }
+  onProgress?.('正在连接公开资料检索…')
+  const body = await firecrawlRequest('/search', {
+    query: cleanQuery,
+    limit: Math.min(MAX_SEARCH_RESULTS, Math.max(1, Number(limit) || MAX_SEARCH_RESULTS)),
+    sources: ['web'],
+    scrapeOptions: { formats: [{ type: 'markdown' }] },
+  }, { fetchImpl })
+  const results = normalizeFirecrawlSearch(body, limit)
+  onProgress?.(`已获得 ${results.length} 条公开来源，正在整理页面指纹…`)
+  return { tool: 'web_search', provider: 'firecrawl', query: cleanQuery, results }
+}
+
+export async function browseWeb({ url, timeoutMs = DEFAULT_WEB_TIMEOUT_MS } = {}) {
+  const target = String(url || '').trim()
+  if (!/^https?:\/\//i.test(target)) throw new Error('浏览器入口需要有效的 http(s) URL')
+  let module
+  try {
+    module = await import('cloakbrowser')
+  } catch {
+    throw new Error('本机未安装 CloakBrowser，请在桌面端运行环境中安装 cloakbrowser 后重试。')
+  }
+  const launch = module.launch || module.default?.launch
+  if (typeof launch !== 'function') throw new Error('CloakBrowser 适配器未找到 launch 接口')
+  const browser = await launch({ headless: true })
+  try {
+    const page = await browser.newPage()
+    await page.goto(target, { waitUntil: 'domcontentloaded', timeout: timeoutMs })
+    const title = await page.title()
+    const content = await page.locator('body').innerText().catch(() => page.content())
+    return { tool: 'browse_web', url: target, title, fingerprint: cleanMarkdownFingerprint(content) }
+  } finally {
+    await browser.close().catch(() => {})
+  }
 }
 
 export async function runCommand({ workspaceRoot, command, timeoutMs = 30_000 }) {
@@ -117,7 +188,8 @@ export async function executeTool(step, context) {
   if (step.tool === 'read_file') return readFile(context)
   if (step.tool === 'write_file') return writeFile(context)
   if (step.tool === 'move_file') return moveFile(context)
-  if (step.tool === 'web_search') return searchWeb({ query: step.query })
+  if (step.tool === 'web_search') return searchWeb({ query: step.query, onProgress: context.onProgress })
+  if (step.tool === 'browse_url') return browseWeb({ url: step.url })
   if (step.tool === 'run_command') return runCommand(context)
   throw new Error(`未知工具：${step.tool}`)
 }

@@ -156,6 +156,9 @@ test('uses MiMoCode\'s OpenAI-compatible custom provider for the private gateway
   assert.equal(config.provider.zt.only_configured_models, true)
   assert.ok(config.provider.zt.models['zt-minimax-m3'])
   assert.ok(config.provider.zt.models['zt-deepseek-v4-flash'])
+  assert.equal(config.default_agent, 'build')
+  assert.match(config.agent.build.prompt, /不要提及|内部运行时/)
+  assert.equal(config.permission.websearch, 'ask')
 })
 
 test('reject forwards a closed permission response and ends no task optimistically', async () => {
@@ -173,6 +176,28 @@ test('reject forwards a closed permission response and ends no task optimistical
     assert.equal(await runtime.reject({ taskId: started.taskId, permissionId: 'per_1' }), true)
     assert.equal(fixture.permissionReplies[0].reply, 'reject')
     assert.equal(events.at(-1)?.type, 'approval.required', 'only MiMo decides whether the rejected task is terminal')
+    await runtime.dispose()
+  } finally {
+    await fixture.close()
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('full access auto-approves runtime permission requests without showing a prompt', async () => {
+  const fixture = await createFixture()
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'zt-mimo-runtime-full-access-'))
+  const events = []
+  try {
+    const runtime = new MiMoBuddyRuntime({
+      workspaceRoot: root,
+      statePath: path.join(root, 'sessions.json'),
+      spawnRuntime: async () => ({ url: fixture.url, stop: async () => {} }),
+    })
+    await runtime.startTask({ task: '修改 src/app.js', model: 'MINIMAX', conversationId: 'conversation-full-access', fullAccess: true, onEvent: event => events.push(event) })
+    await waitFor(() => events.some(event => event.type === 'session.completed'))
+    assert.equal(fixture.permissionReplies[0].reply, 'once')
+    assert.ok(events.some(event => event.type === 'tool.progress' && /完全访问/.test(event.message)))
+    assert.equal(events.some(event => event.type === 'approval.required'), false)
     await runtime.dispose()
   } finally {
     await fixture.close()

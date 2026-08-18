@@ -7,6 +7,7 @@ import { CAPABILITIES, CAPABILITY_LABELS, PermissionStore } from './permissions.
 import { DeviceAuthorizationStore, requiresDeviceAuthorization } from './authorization.mjs'
 import { scanSkillRoots } from './skills.mjs'
 import { classifyIntent } from './intent-router.mjs'
+import { browseWeb, searchWeb } from './tools.mjs'
 import { MiMoBuddyRuntime } from './mimocode/runtime.mjs'
 import { scopedConversationId } from './mimocode/conversation-scope.mjs'
 
@@ -20,6 +21,8 @@ let workspaceRoot = path.resolve(process.env.ZT_AI_WORKSPACE || path.join(ROOT, 
 const gatewayUrl = process.env.ZT_AI_GATEWAY_URL || 'http://localhost:8790'
 const mimocodeRuntimeUrl = process.env.ZT_AI_TEST_MODE === '1' ? process.env.ZT_AI_MIMOCODE_URL || '' : ''
 const localSecret = process.env.ZT_AI_AGENT_SECRET || ''
+const toolBridgeSecret = crypto.randomBytes(32).toString('hex')
+const toolBridgeUrl = `http://127.0.0.1:${port}`
 const requireAccountAuth = process.env.ZT_AI_AGENT_REQUIRE_AUTH === '1'
 const userProfile = process.env.USERPROFILE || process.env.HOME || ''
 const skillRoots = [
@@ -40,6 +43,8 @@ const buddy = new MiMoBuddyRuntime({
   dataDir: path.join(DATA, 'mimocode'),
   gatewayUrl,
   runtimeUrl: mimocodeRuntimeUrl,
+  toolBridgeUrl,
+  toolBridgeSecret,
 })
 let taskHistory = []
 try {
@@ -56,6 +61,15 @@ try {
   conversationHistory = []
 }
 const activeTasks = new Map()
+const runtimeSessionTasks = new Map()
+const PUBLIC_RUNTIME_LABEL = '执行引擎'
+
+function publicText(value, fallback = '') {
+  return String(value ?? fallback)
+    .replace(/mimo\s*code/gi, PUBLIC_RUNTIME_LABEL)
+    .replace(/mimo/gi, PUBLIC_RUNTIME_LABEL)
+    .trim()
+}
 
 function conversationMessages(value) {
   return (Array.isArray(value) ? value : []).slice(-120).flatMap(message => {
@@ -80,7 +94,7 @@ function buildAccountConversations(accountId) {
     const id = String(item.conversationId || item.id)
     const existing = grouped.get(id) || { id, title: item.task, messages: [], createdAt: item.createdAt, updatedAt: item.createdAt }
     if (!existing.messages.some(message => message.role === 'user' && message.content === item.task)) existing.messages.push({ role: 'user', content: item.task })
-    if (item.summary && !existing.messages.some(message => message.role === 'assistant' && message.content === item.summary)) existing.messages.push({ role: 'assistant', content: item.summary })
+    if (item.summary && !existing.messages.some(message => message.role === 'assistant' && message.content === publicText(item.summary))) existing.messages.push({ role: 'assistant', content: publicText(item.summary) })
     existing.title = existing.title === '新对话' ? item.task : existing.title
     existing.updatedAt = Math.max(new Date(existing.updatedAt).getTime() || 0, new Date(item.createdAt).getTime() || 0)
     grouped.set(id, existing)
@@ -88,9 +102,9 @@ function buildAccountConversations(accountId) {
   for (const item of buddy.snapshot({ accountId }).sessions) {
     const id = localConversationId(item.conversationId, accountId)
     if (!id) continue
-    const existing = grouped.get(id) || { id, title: item.title || 'MiMoCode 对话', messages: [], createdAt: item.updatedAt || Date.now(), updatedAt: item.updatedAt || Date.now() }
+    const existing = grouped.get(id) || { id, title: publicText(item.title, 'ZT.buddy 对话'), messages: [], createdAt: item.updatedAt || Date.now(), updatedAt: item.updatedAt || Date.now() }
     existing.updatedAt = Math.max(new Date(existing.updatedAt).getTime() || 0, new Date(item.updatedAt).getTime() || 0)
-    if (item.title && existing.title === 'MiMoCode 对话') existing.title = item.title
+    if (item.title && existing.title === 'ZT.buddy 对话') existing.title = publicText(item.title)
     grouped.set(id, existing)
   }
   return [...grouped.values()].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 50)
@@ -158,10 +172,10 @@ function desktopCapability(capability) {
 
 function planStepForMiMo(event) {
   return {
-    id: 'mimocode-runtime',
-    tool: 'mimocode',
-    label: event.label || 'MiMoCode 正在分析任务',
-    capability: '按需授权',
+    id: 'runtime-analysis',
+    tool: 'runtime',
+    label: publicText(event.label, '正在分析并准备执行'),
+    capability: '执行工具',
   }
 }
 
@@ -169,6 +183,7 @@ function finishBuddyTask(state, { status = 'done', summary = '' } = {}) {
   if (!state || state.finished) return
   state.finished = true
   activeTasks.delete(state.id)
+  if (state.runtimeSessionId) runtimeSessionTasks.delete(state.runtimeSessionId)
   const record = {
     id: state.id,
     task: state.task,
@@ -177,7 +192,7 @@ function finishBuddyTask(state, { status = 'done', summary = '' } = {}) {
     model: state.model,
     status,
     createdAt: state.createdAt,
-    summary: summary || state.output || (status === 'done' ? '本机执行已完成。' : '任务未完成。'),
+    summary: publicText(summary || state.output || (status === 'done' ? '本机执行已完成。' : '任务未完成。')),
   }
   taskHistory = [...taskHistory, record].slice(-30)
   void fs.mkdir(path.dirname(TASK_HISTORY_PATH), { recursive: true })
@@ -192,15 +207,19 @@ function handleBuddyEvent(state, event) {
   if (!state || state.finished) return
   if (event.type === 'session.started') return
   if (event.type === 'plan.ready') {
-    sendTaskEvent(state, 'plan.ready', { source: 'mimocode', steps: [planStepForMiMo(event)] })
+    sendTaskEvent(state, 'plan.ready', { source: 'runtime', steps: [planStepForMiMo(event)] })
     return
   }
   if (event.type === 'tool.started') {
-    sendTaskEvent(state, 'tool.start', { id: event.toolId, label: event.label, capability: 'MiMoCode' })
+    sendTaskEvent(state, 'tool.start', { id: event.toolId, label: publicText(event.label, '调用工具'), capability: '执行工具' })
+    return
+  }
+  if (event.type === 'tool.progress') {
+    sendTaskEvent(state, 'tool.progress', { id: event.toolId, message: publicText(event.message, '正在继续执行…') })
     return
   }
   if (event.type === 'tool.completed') {
-    sendTaskEvent(state, 'tool.result', { id: event.toolId, result: event.result || '工具已返回结果' })
+    sendTaskEvent(state, 'tool.result', { id: event.toolId, result: publicText(event.result, '工具已返回结果') })
     return
   }
   if (event.type === 'approval.required') {
@@ -210,28 +229,51 @@ function handleBuddyEvent(state, event) {
       taskId: state.id,
       permissionId: event.permissionId,
       capability,
-      capabilityLabel: CAPABILITY_LABELS[capability] || event.label || '敏感操作',
-      label: event.label || '需要你的确认',
-      preview: event.details?.join('\n') || 'MiMoCode 请求执行本机操作。',
+      capabilityLabel: CAPABILITY_LABELS[capability] || publicText(event.label, '敏感操作'),
+      label: publicText(event.label, '需要你的确认'),
+      preview: publicText(event.details?.join('\n'), 'ZT.buddy 请求执行本机操作。'),
     })
     return
   }
   if (event.type === 'result.delta') {
-    state.output += event.text || ''
+    const text = publicText(event.text)
+    state.output += text
     if (!state.summaryStarted) {
       state.summaryStarted = true
       sendTaskEvent(state, 'agent.start', { model: state.model, mode: 'execute' })
     }
-    sendTaskEvent(state, 'agent.delta', { text: event.text || '' })
+    sendTaskEvent(state, 'agent.delta', { text })
     return
   }
   if (event.type === 'session.failed') {
-    sendTaskEvent(state, 'task.error', { message: event.message })
-    finishBuddyTask(state, { status: 'error', summary: event.message })
+    const message = publicText(event.message, '任务暂时没有完成，请检查权限或稍后重试。')
+    sendTaskEvent(state, 'task.error', { message })
+    finishBuddyTask(state, { status: 'error', summary: message })
     return
   }
   if (event.type === 'session.completed') {
     finishBuddyTask(state, { status: 'done', summary: state.output || '本机执行已完成。' })
+  }
+}
+
+function bridgeTask(sessionID) {
+  return runtimeSessionTasks.get(String(sessionID || '')) || null
+}
+
+async function handleWebBridge(request, response, pathname) {
+  if (request.headers['x-zt-tool-bridge-secret'] !== toolBridgeSecret) return json(request, response, 401, { ok: false, error: '联网工具桥接未通过本机校验' })
+  const body = await readBody(request)
+  const state = bridgeTask(body.sessionID)
+  if (!state || state.finished) return json(request, response, 409, { ok: false, error: '当前执行会话已结束，请重新发起任务' })
+  const progress = message => sendTaskEvent(state, 'tool.progress', { message: publicText(message, '正在联网核验…') })
+  try {
+    const data = pathname.endsWith('/search')
+      ? await searchWeb({ query: body.query, onProgress: progress })
+      : await browseWeb({ url: body.url })
+    return json(request, response, 200, { ok: true, data })
+  } catch (error) {
+    progress(`联网核验未完成：${publicText(error?.message, '请稍后重试')}`)
+    return json(request, response, 502, { ok: false, error: publicText(error?.message, '联网核验未完成，请稍后重试') })
   }
 }
 
@@ -255,17 +297,20 @@ async function startBuddyTask({ request, response, task, model, token, accountId
   activeTasks.set(id, state)
   sendTaskEvent(state, 'task.start', { id, task, model: state.model, mode: 'execute' })
   try {
-    await buddy.startTask({
+    const started = await buddy.startTask({
       task,
       model: state.model,
       taskId: id,
       conversationId: scopedConversationId(accountId || 'local', String(request.headers['x-zt-conversation-id'] || id)),
       accountToken: token,
+      fullAccess: permissions.has(CAPABILITIES.fullAccess),
       onEvent: event => handleBuddyEvent(state, event),
     })
+    state.runtimeSessionId = started.sessionId
+    runtimeSessionTasks.set(started.sessionId, state.id)
   } catch {
-    sendTaskEvent(state, 'task.error', { message: 'MiMoCode 本机运行时暂时不可用。' })
-    finishBuddyTask(state, { status: 'error', summary: 'MiMoCode 本机运行时暂时不可用，请使用完整桌面安装包后重试。' })
+    sendTaskEvent(state, 'task.error', { message: '本机执行引擎暂时不可用。' })
+    finishBuddyTask(state, { status: 'error', summary: '本机执行引擎暂时不可用，请检查完整安装包和网络后重试。' })
   }
 }
 
@@ -290,6 +335,7 @@ const server = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url, 'http://localhost')
     if (request.method === 'GET' && url.pathname === '/api/config') return json(request, response, 200, { ok: true, gatewayUrl, localSecret, mode: 'execute' })
+    if (request.method === 'POST' && (url.pathname === '/api/internal/web/search' || url.pathname === '/api/internal/web/fetch')) return handleWebBridge(request, response, url.pathname)
     if (url.pathname.startsWith('/api/') && !localAuthorized(request)) return json(request, response, 401, { error: '本机 Agent 请求未通过本地校验' })
     if (request.method === 'GET' && url.pathname === '/api/skills') {
       if (Date.now() - skillCache.at > 30_000) skillCache = { at: Date.now(), skills: await scanSkillRoots(skillRoots) }
@@ -301,7 +347,7 @@ const server = http.createServer(async (request, response) => {
       return json(request, response, 200, {
         ok: true,
         workspaceRoot,
-        history: accountId ? taskHistory.filter(item => item.accountId === accountId) : requireAccountAuth ? [] : taskHistory,
+        history: (accountId ? taskHistory.filter(item => item.accountId === accountId) : requireAccountAuth ? [] : taskHistory).map(item => ({ ...item, summary: publicText(item.summary) })),
         conversations: buildAccountConversations(accountId),
         runtime: buddy.snapshot({ accountId }),
         permissions: permissions.snapshot(),
@@ -340,12 +386,13 @@ const server = http.createServer(async (request, response) => {
       if (!authorization.authorized) {
         await permissions.set(CAPABILITIES.workspaceWrite, false)
         await permissions.set(CAPABILITIES.commandExec, false)
+        await permissions.set(CAPABILITIES.fullAccess, false)
       }
       return json(request, response, 200, { ok: true, deviceAuthorization: authorization, permissions: permissions.snapshot() })
     }
     if (request.method === 'POST' && url.pathname === '/api/permissions') {
       const body = await readBody(request)
-      if (body.enabled === true && requiresDeviceAuthorization(body.capability) && !deviceAuthorization.isAuthorized()) throw new Error('请先确认 Agent 只在这台设备上执行，再开启写入或命令权限')
+      if (body.enabled === true && requiresDeviceAuthorization(body.capability) && !deviceAuthorization.isAuthorized()) throw new Error('请先确认 Agent 只在这台设备上执行，再开启本机写入、命令或完全访问权限')
       const value = await permissions.set(body.capability, body.enabled)
       return json(request, response, 200, { ok: true, permissions: value })
     }
@@ -365,7 +412,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'POST' && approveMatch) {
       const body = await readBody(request)
       const state = activeTasks.get(approveMatch[1])
-      if (!state) return json(request, response, 404, { error: '没有找到正在执行的 MiMoCode 任务' })
+      if (!state) return json(request, response, 404, { error: '没有找到正在执行的 ZT.buddy 任务' })
       if (requireAccountAuth) {
         const account = await accountSession(accountToken(request, body))
         if (!account || account.id !== state.accountId) return json(request, response, 401, { error: '当前账号不能确认其他用户的任务' })

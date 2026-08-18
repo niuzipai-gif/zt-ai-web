@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 
 export function requiresDeviceAuthorization(capability) {
-  return capability === 'workspace_write' || capability === 'command_exec'
+  return capability === 'workspace_write' || capability === 'command_exec' || capability === 'full_access'
 }
 
 export class DeviceAuthorizationStore {

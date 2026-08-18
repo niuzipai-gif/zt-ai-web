@@ -357,7 +357,6 @@ export function createServer() {
         return sendJson(request, response, 200, { ok: true })
       }
       if ((request.method === 'GET' && route === '/api/agent/openai/v1/models') || (request.method === 'POST' && (route === '/api/agent/openai/v1/responses' || route === '/api/agent/openai/v1/chat/completions'))) return await handleMiMoOpenAI(request, response, route)
-      if (request.method === 'POST' && route === '/api/auth/send-code') { const body = await readBody(request); return sendJson(request, response, 200, await auth.requestEmailVerification(body.email)) }
       if (request.method === 'POST' && route === '/api/auth/register') { const body = await readBody(request); return sendJson(request, response, 201, await auth.register(body)) }
       if (request.method === 'POST' && route === '/api/auth/login') { const body = await readBody(request); return sendJson(request, response, 200, await auth.login(body)) }
       if (request.method === 'GET' && route === '/api/auth/me') { const session = await auth.getSession(bearerToken(request), 'user'); return session ? sendJson(request, response, 200, { user: session.user }) : sendJson(request, response, 401, { error: '未登录' }) }
@@ -390,11 +389,18 @@ export function createServer() {
         try { const query = new URL(request.url, 'http://localhost').searchParams; return sendJson(request, response, 200, await adminApi.users(adminToken(request), { status: query.get('status') || undefined, query: query.get('q') || undefined })) }
         catch (error) { return sendJson(request, response, adminErrorStatus(error), { error: error.message }) }
       }
-      const userActionMatch = route.match(/^\/api\/admin\/users\/([^/]+)\/(approve|revoke)$/)
+      const userActionMatch = route.match(/^\/api\/admin\/users\/([^/]+)\/(approve|access|revoke)$/)
       if (request.method === 'POST' && userActionMatch) {
         try {
           const userId = decodeURIComponent(userActionMatch[1])
-          const result = userActionMatch[2] === 'approve' ? await adminApi.approveUser(adminToken(request), userId) : await adminApi.revokeUser(adminToken(request), userId)
+          const action = userActionMatch[2]
+          const body = action === 'revoke' ? {} : await readBody(request)
+          const options = { durationHours: body.durationHours, permanent: body.permanent === true }
+          const result = action === 'approve'
+            ? await adminApi.approveUser(adminToken(request), userId, options)
+            : action === 'access'
+              ? await adminApi.setUserAccess(adminToken(request), userId, options)
+              : await adminApi.revokeUser(adminToken(request), userId)
           return sendJson(request, response, 200, result)
         } catch (error) { return sendJson(request, response, adminErrorStatus(error), { error: error.message }) }
       }

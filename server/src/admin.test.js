@@ -53,7 +53,7 @@ test('admin usage requires authentication and returns filtered audit events', as
 
 test('admin can review, approve, and revoke registered users', async () => {
   const { admin, auth } = await setup()
-  const created = await auth.register({ username: 'review-me', password: 'strong-pass-123' })
+  const created = await auth.register({ username: 'review-me', phone: '13800000009', email: 'review@example.com', password: 'strong-pass-123' })
   const { token } = await admin.login('admin-test-password')
   const pending = await admin.users(token, { status: 'pending' })
   assert.equal(pending.length, 1)
@@ -62,4 +62,23 @@ test('admin can review, approve, and revoke registered users', async () => {
   assert.equal(approved.status, 'active')
   const revoked = await admin.revokeUser(token, created.user.id)
   assert.equal(revoked.status, 'revoked')
+})
+
+test('admin can change an approved account duration or make it permanent', async () => {
+  let now = Date.now()
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'zt-ai-admin-access-'))
+  const store = new JsonDataStore(path.join(dir, 'data.json'))
+  const auth = createAuthService({ store, adminPassword: 'admin-test-password', requireEmailVerification: false, now: () => now })
+  const telemetry = createTelemetry({ store })
+  const admin = createAdminApi({ auth, telemetry })
+  const created = await auth.register({ username: 'duration-user', phone: '13800000010', email: 'duration@example.com', password: 'strong-pass-123' })
+  const { token } = await admin.login('admin-test-password')
+  const approved = await admin.approveUser(token, created.user.id)
+  assert.equal(approved.accessDurationHours, 24)
+  const extended = await admin.setUserAccess(token, created.user.id, { durationHours: 72 })
+  assert.equal(extended.accessDurationHours, 72)
+  assert.equal(extended.accessExpiresAt, now + 72 * 60 * 60 * 1000)
+  const permanent = await admin.setUserAccess(token, created.user.id, { permanent: true })
+  assert.equal(permanent.accessExpiresAt, null)
+  assert.equal(permanent.accessExpired, false)
 })

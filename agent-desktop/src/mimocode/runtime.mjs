@@ -5,6 +5,7 @@ import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { normalizeMiMoEvent } from './event-map.mjs'
+import { installRuntimeWebTools } from './custom-tools.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const MIMOCODE_VERSION = '0.1.12'
@@ -67,11 +68,18 @@ export function defaultConfig({ gatewayUrl, accountToken }) {
         },
       },
     },
-    permission: { read: 'ask', edit: 'ask', bash: 'ask', webfetch: 'ask' },
+    default_agent: 'build',
+    agent: {
+      build: {
+        mode: 'primary',
+        prompt: '你是 ZT.buddy，运行在 ZT.AI 桌面工作台中的执行型助手。不要提及、解释或比较任何内部运行时、实现引擎、供应商或代码来源；对用户只使用 ZT.buddy 这一名称。遇到不确定、可能变化或没有见过的事实，先使用网页工具核验并优先查看可靠的一手来源，再回答。执行任务时先给出简短计划，逐步使用工具，完成后用简洁中文总结结果、证据、未完成项和下一步。不要把内部思考过程原样输出。',
+      },
+    },
+    permission: { read: 'ask', edit: 'ask', bash: 'ask', webfetch: 'ask', websearch: 'ask' },
   }
 }
 
-async function defaultSpawnRuntime({ workspaceRoot, port, configPath, dataDir, password }) {
+async function defaultSpawnRuntime({ workspaceRoot, port, configPath, dataDir, password, bridgeUrl, bridgeSecret }) {
   const executable = process.platform === 'win32' ? 'mimo.exe' : 'mimo'
   const candidates = [
     process.env.ZT_AI_MIMOCODE_BIN,
@@ -94,6 +102,8 @@ async function defaultSpawnRuntime({ workspaceRoot, port, configPath, dataDir, p
       MIMOCODE_CONFIG: configPath,
       MIMOCODE_DISABLE_PROJECT_CONFIG: 'true',
       MIMOCODE_SERVER_PASSWORD: password,
+      ZT_AI_TOOL_BRIDGE_URL: bridgeUrl,
+      ZT_AI_TOOL_BRIDGE_SECRET: bridgeSecret,
     },
   })
   const url = `http://127.0.0.1:${port}`
@@ -106,13 +116,15 @@ async function defaultSpawnRuntime({ workspaceRoot, port, configPath, dataDir, p
 }
 
 export class MiMoBuddyRuntime {
-  constructor({ workspaceRoot, statePath, dataDir, gatewayUrl = '', runtimeUrl = '', fetchImpl = fetch, spawnRuntime = defaultSpawnRuntime } = {}) {
+  constructor({ workspaceRoot, statePath, dataDir, gatewayUrl = '', runtimeUrl = '', toolBridgeUrl = '', toolBridgeSecret = '', fetchImpl = fetch, spawnRuntime = defaultSpawnRuntime } = {}) {
     if (!workspaceRoot) throw new Error('MiMoCode 需要有效工作区')
     if (!statePath) throw new Error('MiMoCode 需要会话状态文件')
     this.workspaceRoot = path.resolve(workspaceRoot)
     this.statePath = statePath
     this.dataDir = dataDir || path.join(path.dirname(statePath), 'mimocode')
     this.gatewayUrl = gatewayUrl
+    this.toolBridgeUrl = toolBridgeUrl
+    this.toolBridgeSecret = toolBridgeSecret
     this.runtimeUrl = String(runtimeUrl || '').replace(/\/$/, '')
     this.fetch = fetchImpl
     this.spawnRuntime = spawnRuntime
@@ -139,7 +151,7 @@ export class MiMoBuddyRuntime {
     const prefix = accountId ? `${String(accountId)}:` : null
     return {
       workspaceRoot: this.workspaceRoot,
-      sessions: [...this.sessions.values()].filter(record => !prefix || record.conversationId.startsWith(prefix)).map(({ conversationId, sessionId, title, updatedAt }) => ({ conversationId, sessionId, title: title || 'MiMoCode 对话', updatedAt })),
+      sessions: [...this.sessions.values()].filter(record => !prefix || record.conversationId.startsWith(prefix)).map(({ conversationId, sessionId, title, updatedAt }) => ({ conversationId, sessionId, title: title || 'ZT.buddy 对话', updatedAt })),
       tasks: [...this.tasks.values()].filter(task => !prefix || task.conversationId.startsWith(prefix)).map(task => ({ id: task.taskId, sessionId: task.sessionId, task: task.task, status: task.status })),
     }
   }
@@ -180,6 +192,7 @@ export class MiMoBuddyRuntime {
     const configPath = path.join(this.dataDir, 'mimocode.json')
     await fs.mkdir(this.dataDir, { recursive: true })
     await fs.writeFile(configPath, `${JSON.stringify(defaultConfig({ gatewayUrl: this.gatewayUrl, accountToken }), null, 2)}\n`, 'utf8')
+    await installRuntimeWebTools({ dataDir: this.dataDir, workspaceRoot: this.workspaceRoot })
     const spawned = await this.spawnRuntime({
       workspaceRoot: this.workspaceRoot,
       port,
@@ -187,6 +200,8 @@ export class MiMoBuddyRuntime {
       dataDir: this.dataDir,
       password,
       version: MIMOCODE_VERSION,
+      bridgeUrl: this.toolBridgeUrl,
+      bridgeSecret: this.toolBridgeSecret,
     })
     if (!spawned?.url) throw new Error('MiMoCode 运行时没有返回本机地址')
     this.runtime = { ...spawned, password, tokenKey, configPath, headers: { authorization: basicAuth(password) } }
@@ -249,7 +264,15 @@ export class MiMoBuddyRuntime {
   emit(state, event) {
     if (!state || state.closed || !event) return
     const enriched = { ...event, taskId: state.taskId }
-    if (event.type === 'approval.required') state.pending.set(event.permissionId, enriched)
+    if (event.type === 'approval.required') {
+      state.pending.set(event.permissionId, enriched)
+      if (state.fullAccess === true) {
+        void this.respond({ taskId: state.taskId, permissionId: event.permissionId, reply: 'once' })
+          .then(() => state.onEvent({ type: 'tool.progress', sessionId: state.sessionId, message: '完全访问已授权，正在继续执行…' }))
+          .catch(() => this.emit(state, { type: 'session.failed', sessionId: state.sessionId, message: safeFailureMessage() }))
+        return
+      }
+    }
     if (event.type === 'result.delta') state.output += event.text || ''
     state.onEvent(enriched)
     if (event.type === 'session.completed' || event.type === 'session.failed') this.finishTask(state)
@@ -280,7 +303,7 @@ export class MiMoBuddyRuntime {
     })()
   }
 
-  async startTask({ task, model = 'MINIMAX', conversationId, taskId, onEvent, accountToken = '' } = {}) {
+  async startTask({ task, model = 'MINIMAX', conversationId, taskId, onEvent, accountToken = '', fullAccess = false } = {}) {
     const text = String(task || '').trim()
     if (!text) throw new Error('请输入任务目标')
     if (!conversationId) throw new Error('MiMoCode 任务缺少会话标识')
@@ -308,6 +331,7 @@ export class MiMoBuddyRuntime {
       pending: new Map(),
       output: '',
       status: 'running',
+      fullAccess: fullAccess === true,
       closed: false,
       eventsAbort: null,
       eventReader: null,

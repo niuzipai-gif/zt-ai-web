@@ -112,16 +112,17 @@ test('desktop workspace gives the conversation the full right side and moves con
   assert.match(html, /id="authorize-device"/)
 })
 
-test('desktop login and registration are separate views with email verification controls', async () => {
+test('desktop login and registration are separate views with phone collection', async () => {
   const html = await fs.readFile(path.join(root, 'index.html'), 'utf8')
   const app = await fs.readFile(path.join(root, 'app.js'), 'utf8')
   assert.match(html, /id="auth-login-view"/)
   assert.match(html, /id="auth-register-view"/)
+  assert.match(html, /id="auth-phone"/)
   assert.match(html, /id="auth-email"/)
-  assert.match(html, /id="auth-code"/)
-  assert.match(html, /id="auth-send-code"/)
-  assert.match(app, /\/api\/auth\/send-code/)
-  assert.match(app, /verificationId/)
+  assert.doesNotMatch(html, /验证码|auth-code|auth-send-code/)
+  assert.match(app, /phone:/)
+  assert.match(app, /email:/)
+  assert.doesNotMatch(app, /\/api\/auth\/send-code|verificationId/)
 })
 
 test('desktop restores account conversations from the durable MiMo-backed history response', async () => {

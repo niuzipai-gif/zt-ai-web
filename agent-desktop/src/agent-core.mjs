@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { capabilityForTool, CAPABILITY_LABELS } from './permissions.mjs'
+import { capabilityForTool, CAPABILITIES, CAPABILITY_LABELS } from './permissions.mjs'
 import { requiresDeviceAuthorization } from './authorization.mjs'
 import { executeTool, resolveWorkspacePath } from './tools.mjs'
 
@@ -11,12 +11,19 @@ const TOOL_LABELS = Object.freeze({
   write_file: '写入文件',
   move_file: '整理移动',
   web_search: '联网检索',
+  browse_url: '打开网页',
   run_command: '执行命令',
 })
 
 const ALLOWED_TOOLS = new Set(Object.keys(TOOL_LABELS))
 const MAX_PLAN_STEPS = 8
 const MAX_GENERATED_FILE_BYTES = 250_000
+
+export function isStepAllowed({ state, step, capability, permissionStore }) {
+  if (permissionStore.has(capability)) return true
+  if (state.fullAccess === true) return true
+  return state.approvedSteps?.has(String(step?.id || '')) === true
+}
 
 function compact(value, max = 2_000) {
   const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
@@ -67,6 +74,10 @@ export function parseAgentPlan(raw, { workspaceRoot = '.' } = {}) {
     if (tool === 'web_search') {
       step.query = String(rawStep.query || '').trim().slice(0, 240)
       if (!step.query) throw new Error('模型检索步骤缺少 query')
+    }
+    if (tool === 'browse_url') {
+      step.url = String(rawStep.url || '').trim().slice(0, 1_000)
+      if (!/^https?:\/\//i.test(step.url)) throw new Error('模型浏览步骤缺少有效 URL')
     }
     if (tool === 'run_command') {
       step.command = String(rawStep.command || '').trim().slice(0, 600)
@@ -179,7 +190,8 @@ export class AgentTaskManager {
       plan: [],
       index: 0,
       results: [],
-      approvedOnce: new Set(),
+      approvedSteps: new Set(),
+      fullAccess: this.permissionStore.has(CAPABILITIES.fullAccess),
       waiting: null,
       status: 'running',
       closed: false,
@@ -224,7 +236,7 @@ export class AgentTaskManager {
     if (state.waiting.capability !== capability) throw new Error('批准的权限与待执行动作不一致')
     if (requiresDeviceAuthorization(capability) && !this.deviceAuthorization.isAuthorized()) throw new Error('请先确认 Agent 只在当前设备执行')
     if (remember) await this.permissionStore.set(capability, true)
-    else state.approvedOnce.add(capability)
+    else state.approvedSteps.add(String(state.waiting.step.id))
     state.waiting = null
     state.status = 'running'
     void this.advance(state)
@@ -242,7 +254,7 @@ export class AgentTaskManager {
       while (state.index < state.plan.length) {
         const step = state.plan[state.index]
         const capability = capabilityForTool(step.tool)
-        const allowed = this.permissionStore.has(capability) || state.approvedOnce.has(capability)
+        const allowed = isStepAllowed({ state, step, capability, permissionStore: this.permissionStore })
         if (!allowed) {
           state.waiting = { capability, step }
           state.status = 'waiting_approval'
@@ -257,7 +269,14 @@ export class AgentTaskManager {
           return
         }
         this.send(state, 'tool.start', { id: step.id, tool: step.tool, label: TOOL_LABELS[step.tool], capability })
-        const result = await executeTool(step, { workspaceRoot: this.workspaceRoot, inputPath: step.inputPath, command: step.command, content: step.content, overwrite: step.overwrite })
+        const result = await executeTool(step, {
+          workspaceRoot: this.workspaceRoot,
+          inputPath: step.inputPath,
+          command: step.command,
+          content: step.content,
+          overwrite: step.overwrite,
+          onProgress: message => this.send(state, 'tool.progress', { id: step.id, message }),
+        })
         state.results.push({ step: step.id, tool: step.tool, result: compact(result) })
         this.send(state, 'tool.result', { id: step.id, tool: step.tool, result: compact(result) })
         state.index += 1

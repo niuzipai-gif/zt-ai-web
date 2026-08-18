@@ -151,12 +151,11 @@ let fixture
 try {
   await fs.writeFile(path.join(workspace, 'README.md'), '# ZT.buddy integration fixture\n', 'utf8')
   fixture = await createMiMoFixture()
-  gateway = spawnService(path.join(root, 'server'), 'src/index.js', { PORT: String(gatewayPort), ZT_AI_DATA_PATH: dataFile, ADMIN_PASSWORD: 'integration-admin', ZT_AI_TEST_MODE: '1', ZT_AI_EMAIL_CONSOLE: '1' })
+  gateway = spawnService(path.join(root, 'server'), 'src/index.js', { PORT: String(gatewayPort), ZT_AI_DATA_PATH: dataFile, ADMIN_PASSWORD: 'integration-admin', ZT_AI_TEST_MODE: '1' })
   await waitFor(`${base(gatewayPort)}/api/health`)
   const health = await responseJson(`${base(gatewayPort)}/api/health`)
 
-  const verification = await responseJson(`${base(gatewayPort)}/api/auth/send-code`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'integration@example.com' }) })
-  const register = await responseJson(`${base(gatewayPort)}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'integration', email: 'integration@example.com', password: 'strong-pass-123', verificationId: verification.body.verificationId, verificationCode: verification.body.debugCode }) })
+  const register = await responseJson(`${base(gatewayPort)}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'integration', phone: '13800000011', email: 'integration@example.com', password: 'strong-pass-123' }) })
   const admin = await responseJson(`${base(gatewayPort)}/api/admin/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'shali', password: 'integration-admin' }) })
   const approved = await responseJson(`${base(gatewayPort)}/api/admin/users/${encodeURIComponent(register.body.user.id)}/approve`, { method: 'POST', headers: { authorization: `Bearer ${admin.body.token}` } })
   const login = await responseJson(`${base(gatewayPort)}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'integration', password: 'strong-pass-123' }) })
@@ -208,8 +207,7 @@ try {
   })
 
   const adminPage = await fetch(`${base(gatewayPort)}/admin/`).then(response => response.text())
-  const secondVerification = await responseJson(`${base(gatewayPort)}/api/auth/send-code`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'isolated@example.com' }) })
-  const secondRegistration = await responseJson(`${base(gatewayPort)}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'isolated-user', email: 'isolated@example.com', password: 'strong-pass-456', verificationId: secondVerification.body.verificationId, verificationCode: secondVerification.body.debugCode }) })
+  const secondRegistration = await responseJson(`${base(gatewayPort)}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'isolated-user', phone: '13800000012', email: 'isolated@example.com', password: 'strong-pass-456' }) })
   await responseJson(`${base(gatewayPort)}/api/admin/users/${encodeURIComponent(secondRegistration.body.user.id)}/approve`, { method: 'POST', headers: { authorization: `Bearer ${admin.body.token}` } })
   const secondLogin = await responseJson(`${base(gatewayPort)}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'isolated-user', password: 'strong-pass-456' }) })
   const foreignState = await responseJson(`${base(agentPort)}/api/state`, { headers: { 'x-zt-agent-secret': 'local-secret', authorization: `Bearer ${secondLogin.body.token}` } })

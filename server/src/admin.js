@@ -14,7 +14,8 @@ export function createAdminApi({ auth, telemetry }) {
     async usage(token, filters) { await requireAdmin(token); return telemetry.listUsage(filters) },
     async detail(token, id) { await requireAdmin(token); const detail = await telemetry.visitorDetail(id); if (!detail) throw new Error('访客不存在'); return detail },
     async users(token, filters) { await requireAdmin(token); return auth.users(filters) },
-    async approveUser(token, id) { await requireAdmin(token); return auth.approveUser(id) },
+    async approveUser(token, id, options = {}) { await requireAdmin(token); return auth.approveUser(id, options) },
+    async setUserAccess(token, id, options = {}) { await requireAdmin(token); return auth.setUserAccess(id, options) },
     async revokeUser(token, id) { await requireAdmin(token); return auth.revokeUser(id) },
   }
 }
