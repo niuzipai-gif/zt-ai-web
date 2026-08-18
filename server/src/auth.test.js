@@ -8,7 +8,20 @@ import { JsonDataStore } from './data-store.js'
 
 async function service() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'zt-ai-auth-'))
-  return createAuthService({ store: new JsonDataStore(path.join(dir, 'data.json')), adminPassword: 'local-test-only' })
+  return createAuthService({ store: new JsonDataStore(path.join(dir, 'data.json')), adminPassword: 'local-test-only', requireEmailVerification: false })
+}
+
+async function verificationService() {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'zt-ai-email-auth-'))
+  const sent = []
+  const auth = createAuthService({
+    store: new JsonDataStore(path.join(dir, 'data.json')),
+    adminPassword: 'local-test-only',
+    requireEmailVerification: true,
+    verificationCode: () => '123456',
+    verificationMailer: async message => { sent.push(message) },
+  })
+  return { auth, sent }
 }
 
 test('registration is unique and password is not stored in plaintext', async () => {
@@ -24,7 +37,7 @@ test('registration is unique and password is not stored in plaintext', async () 
 test('user token expires and can be revoked', async () => {
   let now = Date.now()
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'zt-ai-auth-'))
-  const auth = createAuthService({ store: new JsonDataStore(path.join(dir, 'data.json')), adminPassword: 'local-test-only', now: () => now })
+  const auth = createAuthService({ store: new JsonDataStore(path.join(dir, 'data.json')), adminPassword: 'local-test-only', now: () => now, requireEmailVerification: false })
   const created = await auth.register({ username: 'bob', password: 'strong-pass-123' })
   await auth.approveUser(created.user.id)
   const { token } = await auth.login({ username: 'bob', password: 'strong-pass-123' })
@@ -95,4 +108,16 @@ test('permanent administrator credentials bootstrap a desktop workspace account'
   assert.equal(data.users.length, 1)
   assert.equal(data.users[0].status, 'active')
   assert.equal(JSON.stringify(data).includes('local-test-only'), false)
+})
+
+test('email verification is required before a new desktop account can be registered', async () => {
+  const { auth, sent } = await verificationService()
+  await assert.rejects(() => auth.register({ username: 'verified-user', password: 'strong-pass-123', email: 'user@example.com' }), /邮箱验证码/) 
+  const challenge = await auth.requestEmailVerification('user@example.com')
+  assert.equal(challenge.verificationId.length > 10, true)
+  assert.equal(sent[0].email, 'user@example.com')
+  const created = await auth.register({ username: 'verified-user', password: 'strong-pass-123', email: 'user@example.com', verificationId: challenge.verificationId, verificationCode: '123456' })
+  assert.equal(created.pending, true)
+  assert.equal(created.user.email, 'user@example.com')
+  assert.equal((await auth.store.read()).users[0].email, 'user@example.com')
 })

@@ -411,6 +411,9 @@ function App() {
   const activeSession = visitorState.sessions.find(session => session.id === visitorState.activeSessionId) || visitorState.sessions[0]
   useEffect(() => { saveVisitorState(localStorage, visitorState) }, [visitorState])
   useEffect(() => { try { localStorage.setItem('zt-ai:language', language) } catch {} }, [language])
+  useEffect(() => {
+    fetch(`${API_BASE}/api/visit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ visitorId: visitorState.visitorId, page, language }) }).catch(() => {})
+  }, [visitorState.visitorId, page, language])
   useEffect(() => { const onResize = () => setViewportWidth(window.innerWidth); window.addEventListener('resize', onResize); return () => window.removeEventListener('resize', onResize) }, [])
   useEffect(() => setProfileExpanded(false), [activeSession.id])
   const selectSession = id => setVisitorState(current => current.sessions.some(session => session.id === id) ? { ...current, activeSessionId: id } : current)

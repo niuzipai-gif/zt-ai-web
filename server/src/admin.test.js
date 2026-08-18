@@ -11,7 +11,7 @@ import { createTelemetry } from './telemetry.js'
 async function setup() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'zt-ai-admin-'))
   const store = new JsonDataStore(path.join(dir, 'data.json'))
-  const auth = createAuthService({ store, adminPassword: 'admin-test-password' })
+  const auth = createAuthService({ store, adminPassword: 'admin-test-password', requireEmailVerification: false })
   const telemetry = createTelemetry({ store })
   return { admin: createAdminApi({ auth, telemetry }), auth, telemetry }
 }

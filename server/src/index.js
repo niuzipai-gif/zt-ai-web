@@ -105,6 +105,10 @@ async function recordTelemetry(input) {
   try { await telemetry.recordRequest(input) } catch (error) { console.error('ZT.AI telemetry write failed:', error.message) }
 }
 
+async function recordVisit(input) {
+  try { await telemetry.recordVisit(input) } catch (error) { console.error('ZT.AI visit write failed:', error.message) }
+}
+
 function sseStart(request, response) {
   response.writeHead(200, {
     'content-type': 'text/event-stream; charset=utf-8',
@@ -346,7 +350,14 @@ export function createServer() {
       const route = request.url.split('?')[0]
       if ((route === '/admin' || route.startsWith('/admin/')) && !route.startsWith('/admin/api/')) return await serveControlRoom(request, response)
       if (request.method === 'GET' && route === '/api/health') return sendJson(request, response, 200, { ok: true, service: 'zt-ai-gateway', profile: { name: ZT_PROFILE.name, identity: ZT_PROFILE.identity }, models: CHAT_MODELS, providers: { minimax: Boolean(process.env.MINIMAX_API_KEY), deepseek: Boolean(process.env.DEEPSEEK_API_KEY) } })
+      if (request.method === 'POST' && route === '/api/visit') {
+        if (!rateLimit(request)) return sendJson(request, response, 429, { error: '访问过于频繁，请稍后再试' })
+        const body = await readBody(request)
+        await recordVisit({ ...clientContext(request, body), product: 'web', page: String(body.page || '/'), language: String(body.language || '') })
+        return sendJson(request, response, 200, { ok: true })
+      }
       if ((request.method === 'GET' && route === '/api/agent/openai/v1/models') || (request.method === 'POST' && (route === '/api/agent/openai/v1/responses' || route === '/api/agent/openai/v1/chat/completions'))) return await handleMiMoOpenAI(request, response, route)
+      if (request.method === 'POST' && route === '/api/auth/send-code') { const body = await readBody(request); return sendJson(request, response, 200, await auth.requestEmailVerification(body.email)) }
       if (request.method === 'POST' && route === '/api/auth/register') { const body = await readBody(request); return sendJson(request, response, 201, await auth.register(body)) }
       if (request.method === 'POST' && route === '/api/auth/login') { const body = await readBody(request); return sendJson(request, response, 200, await auth.login(body)) }
       if (request.method === 'GET' && route === '/api/auth/me') { const session = await auth.getSession(bearerToken(request), 'user'); return session ? sendJson(request, response, 200, { user: session.user }) : sendJson(request, response, 401, { error: '未登录' }) }

@@ -151,11 +151,12 @@ let fixture
 try {
   await fs.writeFile(path.join(workspace, 'README.md'), '# ZT.buddy integration fixture\n', 'utf8')
   fixture = await createMiMoFixture()
-  gateway = spawnService(path.join(root, 'server'), 'src/index.js', { PORT: String(gatewayPort), ZT_AI_DATA_PATH: dataFile, ADMIN_PASSWORD: 'integration-admin', ZT_AI_TEST_MODE: '1' })
+  gateway = spawnService(path.join(root, 'server'), 'src/index.js', { PORT: String(gatewayPort), ZT_AI_DATA_PATH: dataFile, ADMIN_PASSWORD: 'integration-admin', ZT_AI_TEST_MODE: '1', ZT_AI_EMAIL_CONSOLE: '1' })
   await waitFor(`${base(gatewayPort)}/api/health`)
   const health = await responseJson(`${base(gatewayPort)}/api/health`)
 
-  const register = await responseJson(`${base(gatewayPort)}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'integration', password: 'strong-pass-123' }) })
+  const verification = await responseJson(`${base(gatewayPort)}/api/auth/send-code`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'integration@example.com' }) })
+  const register = await responseJson(`${base(gatewayPort)}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'integration', email: 'integration@example.com', password: 'strong-pass-123', verificationId: verification.body.verificationId, verificationCode: verification.body.debugCode }) })
   const admin = await responseJson(`${base(gatewayPort)}/api/admin/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'shali', password: 'integration-admin' }) })
   const approved = await responseJson(`${base(gatewayPort)}/api/admin/users/${encodeURIComponent(register.body.user.id)}/approve`, { method: 'POST', headers: { authorization: `Bearer ${admin.body.token}` } })
   const login = await responseJson(`${base(gatewayPort)}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'integration', password: 'strong-pass-123' }) })
@@ -179,6 +180,8 @@ try {
   const secretHeaders = { 'content-type': 'application/json', 'x-zt-agent-secret': 'local-secret', authorization: `Bearer ${login.body.token}` }
   const noSecret = await responseJson(`${base(agentPort)}/api/state`)
   const state = await responseJson(`${base(agentPort)}/api/state`, { headers: { 'x-zt-agent-secret': 'local-secret' } })
+  const syncConversation = await responseJson(`${base(agentPort)}/api/conversations`, { method: 'POST', headers: secretHeaders, body: JSON.stringify({ conversations: [{ id: 'chat-persisted', title: '持久化会话', messages: [{ role: 'user', content: '保留这段记录' }, { role: 'assistant', content: '已保留' }], updatedAt: Date.now() }] }) })
+  const restoredConversations = await responseJson(`${base(agentPort)}/api/state`, { headers: secretHeaders })
   const invalidAccount = await responseJson(`${base(agentPort)}/api/tasks`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-zt-agent-secret': 'local-secret' }, body: JSON.stringify({ task: '查看 README.md', accountToken: 'invalid-token' }) })
   const normalChat = await fetch(`${base(agentPort)}/api/tasks`, { method: 'POST', headers: secretHeaders, body: JSON.stringify({ task: '你好', accountToken: login.body.token }) })
   const browserBridge = await fetch(`${base(gatewayPort)}/api/agent/openai/v1/responses`, {
@@ -205,7 +208,8 @@ try {
   })
 
   const adminPage = await fetch(`${base(gatewayPort)}/admin/`).then(response => response.text())
-  const secondRegistration = await responseJson(`${base(gatewayPort)}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'isolated-user', password: 'strong-pass-456' }) })
+  const secondVerification = await responseJson(`${base(gatewayPort)}/api/auth/send-code`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'isolated@example.com' }) })
+  const secondRegistration = await responseJson(`${base(gatewayPort)}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'isolated-user', email: 'isolated@example.com', password: 'strong-pass-456', verificationId: secondVerification.body.verificationId, verificationCode: secondVerification.body.debugCode }) })
   await responseJson(`${base(gatewayPort)}/api/admin/users/${encodeURIComponent(secondRegistration.body.user.id)}/approve`, { method: 'POST', headers: { authorization: `Bearer ${admin.body.token}` } })
   const secondLogin = await responseJson(`${base(gatewayPort)}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'isolated-user', password: 'strong-pass-456' }) })
   const foreignState = await responseJson(`${base(agentPort)}/api/state`, { headers: { 'x-zt-agent-secret': 'local-secret', authorization: `Bearer ${secondLogin.body.token}` } })
@@ -214,6 +218,7 @@ try {
     registered: register.response.status === 201 && approved.response.ok && login.response.ok,
     localSecretGate: noSecret.response.status === 401,
     agentState: state.response.status === 200 && state.body.mode === 'execute',
+    durableConversationSync: syncConversation.response.ok && restoredConversations.body.conversations.some(item => item.id === 'chat-persisted' && item.messages.length === 2),
     invalidAccount: invalidAccount.response.status === 401,
     controlRoom: admin.response.ok && adminPage.includes('产品监控中枢'),
     normalChatAvoidedTools: normalChat.status === 409 && fixture.record.prompts === 2,

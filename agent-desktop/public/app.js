@@ -1,5 +1,5 @@
 import { contextMeter, nextMode, normalizeModel } from './chat-state.mjs'
-import { addConversationMessage, conversationStorageKeys, conversationTitle, createConversation, normalizeConversations } from './conversation-state.mjs'
+import { addConversationMessage, conversationStorageKeys, conversationTitle, createConversation, mergeServerConversations, normalizeConversations } from './conversation-state.mjs'
 import { createSmoothStream } from './streaming.mjs'
 import { renderMarkdown } from './markdown.mjs'
 import { classifyIntent } from './intent-router.mjs'
@@ -7,6 +7,8 @@ import { conversationFailurePresentation, executionDrawerPresentation, execution
 import { authPresentation, shouldSubmitComposer } from './interaction-state.mjs'
 
 const $ = selector => document.querySelector(selector)
+const CHAT_TIMEOUT_MS = 45_000
+const CHAT_SLOW_NOTICE_MS = 8_000
 const state = {
   mode: localStorage.getItem('zt-ai:desktop-mode') === 'BUDDY' ? 'BUDDY' : 'CHAT',
   model: normalizeModel(localStorage.getItem('zt-ai:agent-model')),
@@ -27,19 +29,21 @@ const state = {
   activeAgentTask: '',
   agentStream: null,
   inspectorOpen: false,
+  verificationId: '',
+  chatController: null,
 }
 
 const els = {
   root: $('.app-shell'), modeChat: $('#mode-chat'), modeBuddy: $('#mode-buddy'), railTitle: $('#rail-title'), railStatus: $('#rail-status'),
   conversationEyebrow: $('#conversation-eyebrow'), conversationTitle: $('#conversation-title'), conversationSubtitle: $('#conversation-subtitle'),
   messages: $('#messages'), taskInput: $('#task-input'), composer: $('#composer'), run: $('#run-task'), newTask: $('#new-task'), refresh: $('#refresh'), history: $('#history'),
-  toolTrigger: $('#tool-trigger'), toolDrawer: $('#tool-drawer'), permissionTrigger: $('#permission-trigger'), voice: $('#voice-button'), modelSelect: $('#model-select'),
+  toolTrigger: $('#tool-trigger'), toolDrawer: $('#tool-drawer'), permissionDrawer: $('#permission-drawer'), permissionTrigger: $('#permission-trigger'), voice: $('#voice-button'), modelSelect: $('#model-select'),
   inspectorToggle: $('#inspector-toggle'), executionSummary: $('#execution-summary'),
   contextRing: $('#context-ring'), contextRingLarge: $('#context-ring-large'), contextPercent: $('#context-percent'), contextPercentLarge: $('#context-percent-large'), contextModel: $('#context-model'), contextUsed: $('#context-used'), contextUsedLarge: $('#context-used-large'), contextRemaining: $('#context-remaining'),
   plan: $('#plan'), log: $('#activity-log'), logCount: $('#log-count'), title: $('#execution-title'), status: $('#execution-status'),
   taskId: $('#current-task-id'), resultPanel: $('#result-panel'), resultText: $('#result-text'), approval: $('#approval-card'), approvalTitle: $('#approval-title'), approvalPreview: $('#approval-preview'), composerApproval: $('#composer-approval'), skillBrowser: $('#skill-browser'),
   gateway: $('#gateway-url'), workspace: $('#workspace-path'), workspaceShort: $('#workspace-short'), selectWorkspace: $('#select-workspace'), gatewayStatus: $('#gateway-status'), authorize: $('#authorize-device'), authorizationStatus: $('#authorization-status'), logout: $('#logout'), accountLabel: $('#account-label'),
-  authGate: $('#auth-gate'), authForm: $('#auth-form'), authUsername: $('#auth-username'), authPassword: $('#auth-password'), authSubmit: $('#auth-submit'), authToggle: $('#auth-toggle'), authError: $('#auth-error'), authStatus: $('#auth-status'),
+  authGate: $('#auth-gate'), authLoginView: $('#auth-login-view'), authRegisterView: $('#auth-register-view'), authForm: $('#auth-form'), authUsername: $('#auth-username'), authPassword: $('#auth-password'), authSubmit: $('#auth-submit'), authToggle: $('#auth-toggle'), authLoginToggle: $('#auth-login-toggle'), authError: $('#auth-error'), authStatus: $('#auth-status'), registerForm: $('#register-form'), registerUsername: $('#register-username'), registerPassword: $('#register-password'), authEmail: $('#auth-email'), authCode: $('#auth-code'), sendCode: $('#auth-send-code'), registerSubmit: $('#register-submit'), registerError: $('#register-error'), registerStatus: $('#register-status'),
 }
 
 function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character])) }
@@ -52,6 +56,7 @@ function persistChats() {
   const keys = storageKeys()
   localStorage.setItem(keys.chats, JSON.stringify(state.chatSessions.slice(0, 30)))
   localStorage.setItem(keys.active, state.activeChatId)
+  void apiFetch('/api/conversations', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ conversations: state.chatSessions.slice(0, 30) }) }).catch(() => {})
 }
 function initChatState() {
   if (!state.accountId) { state.chatSessions = []; state.activeChatId = ''; return }
@@ -70,8 +75,8 @@ function renderMessages() {
   if (!conversation) return
   for (const message of conversation.messages) appendMessage(message.role, message.content)
 }
-function recordChatMessage(role, content) {
-  const conversation = currentConversation()
+function recordChatMessage(role, content, chatId = state.activeChatId) {
+  const conversation = state.chatSessions.find(item => item.id === chatId) || null
   if (!conversation) return
   const updated = addConversationMessage(conversation, { role, content })
   state.chatSessions = state.chatSessions.map(item => item.id === updated.id ? updated : item)
@@ -89,6 +94,8 @@ function renderChatHistory() {
 }
 function startNewChat() {
   if (state.reader) { state.reader.cancel?.(); state.reader = null }
+  state.chatController?.abort()
+  state.chatController = null
   state.agentStream?.cancel?.(); state.agentStream = null; state.activeAgentMessage = null
   const conversation = createConversation(newChatId())
   state.chatSessions = [conversation, ...state.chatSessions.filter(item => item.id !== state.activeChatId)].slice(0, 30)
@@ -133,7 +140,7 @@ function setMode(mode) {
   els.railTitle.textContent = buddy ? 'ZT.buddy' : '普通聊天'; els.railStatus.textContent = buddy ? '本机执行工作区' : '本机工作区'
   els.conversationEyebrow.textContent = buddy ? 'SMART EXECUTION CHAT' : 'CONVERSATION'; els.conversationTitle.textContent = buddy ? 'ZT.buddy 工作区' : 'ZT.AI 对话'; els.conversationSubtitle.textContent = buddy ? '自动判断 · 执行优先 · 继续上次上下文' : '普通聊天 · 继续上次上下文'
   els.taskInput.placeholder = buddy ? '给 ZT.buddy 一个任务，或直接开始聊天……' : '给 ZT.AI 发消息……'
-  if (!buddy) { els.toolDrawer.classList.add('hidden'); hideApproval(); setInspectorOpen(false) }
+  if (!buddy) { closeDrawer(); hideApproval(); setInspectorOpen(false) }
   if (state.chatSessions.length) renderChatHistory()
   renderContext()
 }
@@ -282,7 +289,8 @@ function setAuthPending(pending) {
   setAuthStatus(view.status)
 }
 function showWorkspace() { els.authGate.classList.add('hidden'); els.taskInput.disabled = false; els.accountLabel.textContent = 'ACCOUNT ACTIVE'; setAuthPending(false) }
-function showLogin() { els.authGate.classList.remove('hidden'); els.taskInput.disabled = true; showAuthError(''); setAuthPending(false) }
+function showLogin() { els.authGate.classList.remove('hidden'); els.authLoginView.classList.remove('hidden'); els.authRegisterView.classList.add('hidden'); els.taskInput.disabled = true; showAuthError(''); if (els.registerError) els.registerError.textContent = ''; setAuthPending(false) }
+function showRegister() { els.authGate.classList.remove('hidden'); els.authLoginView.classList.add('hidden'); els.authRegisterView.classList.remove('hidden'); els.registerError.textContent = ''; els.registerStatus.textContent = ''; els.registerUsername.focus() }
 function setAccount(user) {
   state.accountId = String(user?.id || '')
   if (state.accountId) localStorage.setItem('zt-ai:desktop-account-id', state.accountId)
@@ -295,22 +303,10 @@ function describeNetworkError(error, action = '连接 ZT.AI 网关') { const mes
 
 async function submitAuth(event) {
   event.preventDefault(); showAuthError(''); setAuthPending(true)
-  const registering = state.registering
-  let registrationSubmitted = false
   try {
-    const response = await fetch(`${state.gatewayUrl}/api/auth/${registering ? 'register' : 'login'}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: els.authUsername.value.trim(), password: els.authPassword.value }) })
+    const response = await fetch(`${state.gatewayUrl}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: els.authUsername.value.trim(), password: els.authPassword.value }) })
     const body = await readJson(response)
-    if (!response.ok) throw new Error(body.error || (registering ? '注册失败' : '登录失败'))
-    if (registering) {
-      registrationSubmitted = true
-      els.authPassword.value = ''
-      state.registering = false
-      els.authSubmit.textContent = '登录'
-      els.authToggle.textContent = '没有账户？注册一个'
-      els.authPassword.autocomplete = 'current-password'
-      setAuthStatus('注册申请已提交，请等待管理员审核通过后再登录。')
-      return
-    }
+    if (!response.ok) throw new Error(body.error || '登录失败')
     if (!body.token) throw new Error('登录响应缺少账户凭证')
     state.authToken = body.token
     localStorage.setItem('zt-ai:desktop-token', state.authToken)
@@ -318,31 +314,89 @@ async function submitAuth(event) {
     setAccount(body.user)
     showWorkspace()
     await refreshState()
-  } catch (error) { showAuthError(describeNetworkError(error, registering ? '注册账户' : '登录账户')) } finally { setAuthPending(false); if (registrationSubmitted) setAuthStatus('注册申请已提交，请等待管理员审核通过后再登录。') }
+  } catch (error) { showAuthError(describeNetworkError(error, '登录账户')) } finally { setAuthPending(false) }
+}
+async function requestVerificationCode() {
+  if (!els.authEmail.reportValidity()) return
+  els.sendCode.disabled = true; els.sendCode.textContent = '发送中…'; els.registerError.textContent = ''; els.registerStatus.textContent = ''
+  try {
+    const response = await fetch(`${state.gatewayUrl}/api/auth/send-code`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: els.authEmail.value.trim() }) })
+    const body = await readJson(response)
+    if (!response.ok) throw new Error(body.error || '验证码发送失败')
+    state.verificationId = body.verificationId || ''
+    els.registerStatus.textContent = '验证码已发送，请检查邮箱；验证码 10 分钟内有效。'
+  } catch (error) { els.registerError.textContent = describeNetworkError(error, '发送邮箱验证码') } finally { els.sendCode.disabled = false; els.sendCode.textContent = '重新获取' }
+}
+async function submitRegistration(event) {
+  event.preventDefault(); els.registerError.textContent = ''; els.registerStatus.textContent = ''
+  if (!els.registerForm.reportValidity()) return
+  if (!state.verificationId) { els.registerError.textContent = '请先获取邮箱验证码'; return }
+  els.registerSubmit.disabled = true; els.registerSubmit.classList.add('is-loading'); els.registerSubmit.innerHTML = '<span class="auth-spinner" aria-hidden="true"></span><span>正在提交注册…</span>'
+  try {
+    const response = await fetch(`${state.gatewayUrl}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: els.registerUsername.value.trim(), email: els.authEmail.value.trim(), verificationId: state.verificationId, verificationCode: els.authCode.value.trim(), password: els.registerPassword.value }) })
+    const body = await readJson(response)
+    if (!response.ok) throw new Error(body.error || '注册失败')
+    state.verificationId = ''
+    els.authUsername.value = els.registerUsername.value.trim()
+    els.registerPassword.value = ''; els.authCode.value = ''; els.authPassword.value = ''
+    showLogin(); setAuthStatus('注册申请已提交，请等待管理员审核通过后再登录。')
+  } catch (error) { els.registerError.textContent = describeNetworkError(error, '提交注册申请') } finally { els.registerSubmit.disabled = false; els.registerSubmit.classList.remove('is-loading'); els.registerSubmit.innerHTML = '<span>提交注册申请</span>' }
 }
 async function logout() { if (state.authToken) await fetch(`${state.gatewayUrl}/api/auth/logout`, { method: 'POST', headers: { authorization: `Bearer ${state.authToken}` } }).catch(() => {}); state.authToken = ''; localStorage.removeItem('zt-ai:desktop-token'); setAccount(null); showLogin() }
 
-async function consumeSse(response, onEvent) {
+async function consumeSse(response, onEvent, { signal } = {}) {
   if (!response.ok || !response.body) { const body = await readJson(response); throw new Error(body.error || `请求失败（${response.status}）`) }
   const reader = response.body.getReader(); state.reader = reader; const decoder = new TextDecoder(); let buffer = ''
-  while (true) { const { value, done } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const chunks = buffer.split(/\r?\n\n/); buffer = chunks.pop() || ''; for (const chunk of chunks) { const eventLine = chunk.split(/\r?\n/).find(line => line.startsWith('event:')); const dataLine = chunk.split(/\r?\n/).find(line => line.startsWith('data:')); if (!eventLine || !dataLine) continue; let data = {}; try { data = JSON.parse(dataLine.slice(5).trim()) } catch { continue } onEvent(eventLine.slice(6).trim(), data) } }
+  const cancelReader = () => { void reader.cancel().catch(() => {}) }
+  if (signal) { if (signal.aborted) cancelReader(); else signal.addEventListener('abort', cancelReader, { once: true }) }
+  try {
+    while (true) { const { value, done } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const chunks = buffer.split(/\r?\n\n/); buffer = chunks.pop() || ''; for (const chunk of chunks) { const eventLine = chunk.split(/\r?\n/).find(line => line.startsWith('event:')); const dataLine = chunk.split(/\r?\n/).find(line => line.startsWith('data:')); if (!eventLine || !dataLine) continue; let data = {}; try { data = JSON.parse(dataLine.slice(5).trim()) } catch { continue } onEvent(eventLine.slice(6).trim(), data) } }
+  } finally { signal?.removeEventListener('abort', cancelReader) }
 }
 
-async function runChat() {
+function buddyCapabilityAnswer(input) {
+  const text = String(input || '').trim()
+  const mentionsBuddy = state.mode === 'BUDDY' && (/(zt\s*\.?\s*buddy)/i.test(text) || /^(你|你都|这个|它).*(能|可以).*(做什么|干什么|功能)/i.test(text))
+  const asksAboutCapabilities = /(是什么|能(?:为我|帮我)?做什么|能做哪些|能干什么|可以做什么|可以帮我什么|有什么功能|怎么使用|怎么用)/i.test(text)
+  if (!mentionsBuddy || !asksAboutCapabilities) return ''
+  return 'ZT.buddy 是 ZT.AI 的桌面执行型协作 Agent，不只是聊天。它可以在你授权的当前工作区里：\n\n- 检查项目文件、定位问题并解释结果；\n- 修改代码、整理文件、运行测试或构建；\n- 检索公开资料并返回来源；\n- 把重复工作整理成可复用的流程和工具。\n\n涉及读取、写入、命令或联网时，我会先按权限执行；高风险操作会在执行前请求你的确认。你可以直接告诉我目标，例如“检查这个项目并找出启动问题”或“整理工作区里的安装包”。'
+}
+
+async function runChat({ agent = false, localAnswer = '' } = {}) {
   const task = els.taskInput.value.trim(); if (!task || els.run.disabled) return
-  recordChatMessage('user', task); renderMessages(); els.taskInput.value = ''; els.taskInput.disabled = true; els.run.disabled = true
+  const chatId = state.activeChatId
+  recordChatMessage('user', task, chatId); renderMessages(); els.taskInput.value = ''; els.taskInput.disabled = true; els.run.disabled = true
   const body = appendMessage('assistant', '', true)
   const smooth = createSmoothStream({ onUpdate: output => { body.innerHTML = renderMarkdown(output); els.messages.scrollTop = els.messages.scrollHeight; state.usedTokens += 1; renderContext() } })
   state.agentStream = smooth
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS)
+  const slowNotice = window.setTimeout(() => { if (state.agentStream === smooth) setNotice('模型响应较慢，仍在等待结果；如果超过 45 秒会自动结束并允许重试。') }, CHAT_SLOW_NOTICE_MS)
+  state.chatController = controller
   try {
-    const conversation = currentConversation()
+    const conversation = state.chatSessions.find(item => item.id === chatId) || null
     const messages = conversation?.messages || [{ role: 'user', content: task }]
-    const response = await fetch(`${state.gatewayUrl}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: state.model === 'DEEPSEEK' ? 'deepseek' : 'minimax', language: 'zh', skills: state.activeSkills.map(skill => skill.name), messages }) })
-    await consumeSse(response, (event, data) => { if (event === 'message.delta') smooth.push(data.text || ''); if (event === 'message.error') smooth.push(conversationFailurePresentation(data.message)) })
+    if (localAnswer) {
+      smooth.push(localAnswer)
+    } else {
+      const headers = { 'content-type': 'application/json' }
+      if (agent && state.authToken) headers.authorization = `Bearer ${state.authToken}`
+      const endpoint = agent ? '/api/agent/chat' : '/api/chat'
+      const response = await fetch(`${state.gatewayUrl}${endpoint}`, { method: 'POST', headers, body: JSON.stringify({ model: state.model === 'DEEPSEEK' ? 'deepseek' : 'minimax', language: 'zh', skills: state.activeSkills.map(skill => skill.name), visitorId: `desktop-${state.accountId || 'guest'}`, conversationId: state.activeChatId, messages }), signal: controller.signal })
+      await consumeSse(response, (event, data) => { if (event === 'message.delta') smooth.push(data.text || ''); if (event === 'message.error') smooth.push(conversationFailurePresentation(data.message)) }, { signal: controller.signal })
+      if (controller.signal.aborted) throw new DOMException('聊天请求超时', 'AbortError')
+    }
     smooth.finish()
     const output = await smooth.done
-    recordChatMessage('assistant', output)
-  } catch (error) { smooth.push(describeNetworkError(error, '发送消息')); smooth.finish(); const output = await smooth.done; recordChatMessage('assistant', output) } finally { state.reader = null; state.agentStream = null; els.taskInput.disabled = false; els.run.disabled = false; renderChatHistory(); els.taskInput.focus() }
+    recordChatMessage('assistant', output, chatId)
+  } catch (error) {
+    const message = error?.name === 'AbortError' ? '这次回答等待超时了，网关没有及时返回结果。消息已保留，你可以直接重试。' : describeNetworkError(error, '发送消息')
+    smooth.push(message); smooth.finish(); const output = await smooth.done; recordChatMessage('assistant', output, chatId)
+  } finally {
+    window.clearTimeout(timeout); window.clearTimeout(slowNotice)
+    if (state.chatController === controller) state.chatController = null
+    state.reader = null; state.agentStream = null; els.taskInput.disabled = false; els.run.disabled = false; renderChatHistory(); els.taskInput.focus()
+  }
 }
 function handleAgentEvent(event, data) {
   if (event === 'task.start') {
@@ -393,7 +447,7 @@ async function runAgentTask() {
   const intent = classifyIntent(task, { mode: state.mode })
   const presentation = executionPresentation(intent)
   if (intent.route === 'chat') {
-    const request = runChat()
+    const request = runChat({ agent: true, localAnswer: buddyCapabilityAnswer(task) })
     setNotice(presentation.summary)
     return request
   }
@@ -451,11 +505,16 @@ async function reject() {
 }
 async function updatePermission(capability, enabled) { const response = await apiFetch('/api/permissions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ capability, enabled }) }); const body = await readJson(response); if (!response.ok) addLog(body.error || '权限更新失败', 'warning'); else addLog(`${enabled ? '已开启' : '已关闭'}权限：${capability}`, enabled ? 'warning' : '') }
 async function updateAuthorization() { const response = await apiFetch('/api/authorization', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ authorized: true }) }); const body = await readJson(response); if (!response.ok) { addLog(body.error || '本机授权失败', 'warning'); return } addLog('已确认：Agent 只可在当前设备执行', 'result'); refreshState() }
-function renderExecutionHistory(items = []) { const data = items.slice().reverse(); if (!data.length) { els.history.innerHTML = '<div class="empty-history">还没有执行记录</div>'; return } els.history.innerHTML = data.map(item => `<button class="history-item"><strong>${escapeHtml(item.task)}</strong><small>${escapeHtml(item.status)} · ${new Date(item.createdAt).toLocaleString()}</small></button>`).join('') }
 async function refreshState() {
   try {
     const response = await apiFetch('/api/state'); if (response.status === 401) { await logout(); return }
-    const data = await response.json(); if (state.mode === 'BUDDY') renderExecutionHistory(data.history); else renderChatHistory()
+    const data = await response.json()
+    if (Array.isArray(data.conversations)) {
+      state.chatSessions = mergeServerConversations(state.chatSessions, data.conversations)
+      if (!state.chatSessions.some(item => item.id === state.activeChatId)) state.activeChatId = state.chatSessions[0]?.id || ''
+      persistChats(); renderMessages()
+    }
+    renderChatHistory()
     if (els.workspaceShort) els.workspaceShort.textContent = data.workspaceRoot
     if (els.gatewayStatus) els.gatewayStatus.textContent = `本机已连接 · ${data.mode === 'execute' ? '执行模式' : '待机'}`
     const authorized = data.deviceAuthorization?.authorized === true
@@ -464,7 +523,29 @@ async function refreshState() {
     document.querySelectorAll('[data-capability]').forEach(input => { const needsDevice = ['workspace_write', 'command_exec'].includes(input.dataset.capability); if (needsDevice) input.disabled = !authorized; if (data.permissions[input.dataset.capability] !== undefined) input.checked = data.permissions[input.dataset.capability] })
   } catch (error) { if (els.gatewayStatus) els.gatewayStatus.textContent = '本机 Agent 未连接'; if (els.log) addLog(error.message, 'warning') }
 }
-function toggleDrawer() { els.toolDrawer.classList.toggle('hidden'); els.toolTrigger.classList.toggle('active', !els.toolDrawer.classList.contains('hidden')) }
+function setDrawerVisible(drawer, visible) {
+  if (!drawer) return
+  drawer.classList.toggle('hidden', !visible)
+  drawer.setAttribute('aria-hidden', String(!visible))
+}
+function closeDrawer(drawer = null) {
+  const drawers = drawer ? [drawer] : [els.toolDrawer, els.permissionDrawer]
+  drawers.forEach(item => setDrawerVisible(item, false))
+  if (!drawer || drawer === els.toolDrawer) els.toolTrigger.classList.remove('active')
+  if (!drawer || drawer === els.permissionDrawer) els.permissionTrigger.classList.remove('active')
+}
+function openToolDrawer() {
+  closeDrawer(els.permissionDrawer)
+  setDrawerVisible(els.toolDrawer, true)
+  els.toolTrigger.classList.add('active')
+}
+function openPermissionDrawer(section = 'permissions') {
+  closeDrawer(els.toolDrawer)
+  setDrawerVisible(els.permissionDrawer, true)
+  els.permissionTrigger.classList.add('active')
+  document.querySelector(`#permission-drawer [data-drawer-section="${section}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+}
+function toggleDrawer() { els.toolDrawer.classList.contains('hidden') ? openToolDrawer() : closeDrawer(els.toolDrawer) }
 function renderSkillBrowser(skills = []) {
   if (!els.skillBrowser) return
   if (!skills.length) { els.skillBrowser.innerHTML = '<div class="skill-empty">没有扫描到可用的本地 Skill</div>'; return }
@@ -476,7 +557,7 @@ function renderSkillBrowser(skills = []) {
     if (!state.activeSkills.some(item => item.id === skill.id)) state.activeSkills.push(skill)
     const reference = `@${skill.name}`
     if (!els.taskInput.value.includes(reference)) els.taskInput.value = `${els.taskInput.value.trim()} ${reference}`.trimStart() + ' '
-    els.toolDrawer.classList.add('hidden'); els.skillBrowser.classList.add('hidden'); els.toolTrigger.classList.remove('active'); els.taskInput.focus()
+    closeDrawer(); els.skillBrowser.classList.add('hidden'); els.taskInput.focus()
   }))
 }
 async function showSkillBrowser() {
@@ -496,12 +577,12 @@ async function selectWorkspace() {
   setNotice(`工作区已切换为：${body.workspaceRoot}`); await refreshState()
 }
 
-els.modeChat.addEventListener('click', () => setMode(nextMode('BUDDY'))); els.modeBuddy.addEventListener('click', () => setMode(nextMode('CHAT')))
+els.modeChat.addEventListener('click', () => setMode('CHAT')); els.modeBuddy.addEventListener('click', () => setMode('BUDDY'))
 els.modelSelect.addEventListener('change', () => { state.model = normalizeModel(els.modelSelect.value); localStorage.setItem('zt-ai:agent-model', state.model); renderContext() })
-els.toolTrigger.addEventListener('click', toggleDrawer); els.permissionTrigger.addEventListener('click', () => { setInspectorOpen(true); $('#buddy-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }); els.inspectorToggle?.addEventListener('click', () => setInspectorOpen(!state.inspectorOpen)); els.voice.addEventListener('click', () => { setNotice('语音入口已准备；接入声音模型后可开始语音输入。') })
+els.toolTrigger.addEventListener('click', toggleDrawer); $('#drawer-close')?.addEventListener('click', () => closeDrawer(els.toolDrawer)); $('#permission-drawer-close')?.addEventListener('click', () => closeDrawer(els.permissionDrawer)); els.permissionTrigger.addEventListener('click', () => { els.permissionDrawer.classList.contains('hidden') ? openPermissionDrawer() : closeDrawer(els.permissionDrawer) }); document.addEventListener('keydown', event => { if (event.key === 'Escape' && (!els.toolDrawer.classList.contains('hidden') || !els.permissionDrawer.classList.contains('hidden'))) closeDrawer() }); document.addEventListener('click', event => { const inDrawer = els.toolDrawer.contains(event.target) || els.permissionDrawer.contains(event.target); const onTrigger = els.toolTrigger.contains(event.target) || els.permissionTrigger.contains(event.target); if (!inDrawer && !onTrigger && (!els.toolDrawer.classList.contains('hidden') || !els.permissionDrawer.classList.contains('hidden'))) closeDrawer() }); els.inspectorToggle?.addEventListener('click', () => setInspectorOpen(!state.inspectorOpen)); els.voice.addEventListener('click', () => { setNotice('语音入口已准备；接入声音模型后可开始语音输入。') })
 document.querySelectorAll('.drawer-option').forEach(button => button.addEventListener('click', async () => { if (button.dataset.tool === 'skills') { await showSkillBrowser(); return } toolAction(button.dataset.tool); toggleDrawer() }))
 document.querySelectorAll('[data-capability]').forEach(input => input.addEventListener('change', () => updatePermission(input.dataset.capability, input.checked)))
-els.composer.addEventListener('submit', event => { event.preventDefault(); state.mode === 'BUDDY' ? runAgentTask() : runChat() }); els.taskInput.addEventListener('keydown', event => { if (shouldSubmitComposer({ key: event.key, shiftKey: event.shiftKey, isComposing: event.isComposing || event.keyCode === 229, disabled: els.run.disabled })) { event.preventDefault(); state.mode === 'BUDDY' ? runAgentTask() : runChat() } }); els.newTask.addEventListener('click', startNewChat); els.refresh.addEventListener('click', refreshState); els.authorize.addEventListener('click', updateAuthorization); $('#approve-once').addEventListener('click', () => approve(false)); $('#approve-always').addEventListener('click', () => approve(true)); $('#reject').addEventListener('click', reject); els.authForm.addEventListener('submit', submitAuth); els.authToggle.addEventListener('click', () => { state.registering = !state.registering; setAuthPending(false); els.authToggle.textContent = state.registering ? '已有账户？返回登录' : '没有账户？注册一个'; els.authPassword.autocomplete = state.registering ? 'new-password' : 'current-password'; showAuthError('') }); els.logout.addEventListener('click', logout)
+els.composer.addEventListener('submit', event => { event.preventDefault(); state.mode === 'BUDDY' ? runAgentTask() : runChat() }); els.taskInput.addEventListener('keydown', event => { if (shouldSubmitComposer({ key: event.key, shiftKey: event.shiftKey, isComposing: event.isComposing || event.keyCode === 229, disabled: els.run.disabled })) { event.preventDefault(); state.mode === 'BUDDY' ? runAgentTask() : runChat() } }); els.newTask.addEventListener('click', startNewChat); els.refresh.addEventListener('click', refreshState); els.authorize.addEventListener('click', updateAuthorization); $('#approve-once').addEventListener('click', () => approve(false)); $('#approve-always').addEventListener('click', () => approve(true)); $('#reject').addEventListener('click', reject); els.authForm.addEventListener('submit', submitAuth); els.registerForm.addEventListener('submit', submitRegistration); els.sendCode.addEventListener('click', requestVerificationCode); els.authToggle.addEventListener('click', showRegister); els.authLoginToggle.addEventListener('click', showLogin); els.logout.addEventListener('click', logout)
 els.run.onclick = event => { event.preventDefault(); if (els.run.disabled) return; state.mode === 'BUDDY' ? runAgentTask() : runChat() };
 els.selectWorkspace?.addEventListener('click', selectWorkspace)
 

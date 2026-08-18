@@ -54,3 +54,30 @@ export function normalizeConversations(value) {
 export function conversationTitle(conversation) {
   return titleFromMessages(conversation.messages, conversation.title)
 }
+
+function hasRealAssistantMessage(conversation) {
+  return conversation.messages.some(message => message.role === 'assistant' && !CHAT_WELCOME.some(welcome => welcome.content === message.content))
+}
+
+export function mergeServerConversations(localValue, serverValue) {
+  const local = normalizeConversations(localValue)
+  const remote = normalizeConversations(serverValue)
+  const merged = new Map(local.map(item => [item.id, item]))
+  for (const incoming of remote) {
+    const existing = merged.get(incoming.id)
+    if (!existing) {
+      merged.set(incoming.id, incoming)
+      continue
+    }
+    const keepLocal = hasRealAssistantMessage(existing) && existing.messages.length >= incoming.messages.length
+    merged.set(incoming.id, keepLocal ? existing : {
+      ...existing,
+      ...incoming,
+      messages: incoming.messages.length >= existing.messages.length ? incoming.messages : existing.messages,
+      title: incoming.title || existing.title,
+      createdAt: Math.min(existing.createdAt, incoming.createdAt),
+      updatedAt: Math.max(existing.updatedAt, incoming.updatedAt),
+    })
+  }
+  return [...merged.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 30)
+}

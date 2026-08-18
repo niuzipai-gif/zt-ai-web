@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 
 export const COLLECTIONS = Object.freeze([
-  'users', 'sessions', 'visitors', 'conversations', 'messages', 'usageEvents', 'adminSessions',
+  'users', 'sessions', 'visitors', 'pageViews', 'conversations', 'messages', 'usageEvents', 'adminSessions', 'verificationChallenges',
 ])
 
 export function emptyData() {

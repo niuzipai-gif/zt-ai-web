@@ -14,6 +14,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PUBLIC = path.join(ROOT, 'public')
 const DATA = path.resolve(process.env.ZT_AI_AGENT_DATA || path.join(ROOT, 'data'))
 const TASK_HISTORY_PATH = path.join(DATA, 'tasks.json')
+const CONVERSATION_HISTORY_PATH = path.join(DATA, 'conversations.json')
 const port = Number(process.env.ZT_AI_AGENT_PORT || process.env.PORT || 8788)
 let workspaceRoot = path.resolve(process.env.ZT_AI_WORKSPACE || path.join(ROOT, '..'))
 const gatewayUrl = process.env.ZT_AI_GATEWAY_URL || 'http://localhost:8790'
@@ -47,7 +48,58 @@ try {
 } catch {
   taskHistory = []
 }
+let conversationHistory = []
+try {
+  const saved = JSON.parse(await fs.readFile(CONVERSATION_HISTORY_PATH, 'utf8'))
+  if (Array.isArray(saved)) conversationHistory = saved.slice(-300)
+} catch {
+  conversationHistory = []
+}
 const activeTasks = new Map()
+
+function conversationMessages(value) {
+  return (Array.isArray(value) ? value : []).slice(-120).flatMap(message => {
+    const role = message?.role === 'user' ? 'user' : 'assistant'
+    const content = String(message?.content || '').trim().slice(0, 16_000)
+    return content ? [{ role, content }] : []
+  })
+}
+
+function localConversationId(scopedId, accountId) {
+  const prefix = `${String(accountId)}:`
+  return String(scopedId || '').startsWith(prefix) ? String(scopedId).slice(prefix.length) : String(scopedId || '')
+}
+
+function buildAccountConversations(accountId) {
+  if (!accountId) return []
+  const grouped = new Map()
+  for (const item of conversationHistory.filter(item => item.accountId === accountId)) {
+    grouped.set(item.id, { id: item.id, title: item.title || '新对话', messages: conversationMessages(item.messages), createdAt: item.createdAt || Date.now(), updatedAt: item.updatedAt || item.createdAt || Date.now() })
+  }
+  for (const item of taskHistory.filter(item => item.accountId === accountId)) {
+    const id = String(item.conversationId || item.id)
+    const existing = grouped.get(id) || { id, title: item.task, messages: [], createdAt: item.createdAt, updatedAt: item.createdAt }
+    if (!existing.messages.some(message => message.role === 'user' && message.content === item.task)) existing.messages.push({ role: 'user', content: item.task })
+    if (item.summary && !existing.messages.some(message => message.role === 'assistant' && message.content === item.summary)) existing.messages.push({ role: 'assistant', content: item.summary })
+    existing.title = existing.title === '新对话' ? item.task : existing.title
+    existing.updatedAt = Math.max(new Date(existing.updatedAt).getTime() || 0, new Date(item.createdAt).getTime() || 0)
+    grouped.set(id, existing)
+  }
+  for (const item of buddy.snapshot({ accountId }).sessions) {
+    const id = localConversationId(item.conversationId, accountId)
+    if (!id) continue
+    const existing = grouped.get(id) || { id, title: item.title || 'MiMoCode 对话', messages: [], createdAt: item.updatedAt || Date.now(), updatedAt: item.updatedAt || Date.now() }
+    existing.updatedAt = Math.max(new Date(existing.updatedAt).getTime() || 0, new Date(item.updatedAt).getTime() || 0)
+    if (item.title && existing.title === 'MiMoCode 对话') existing.title = item.title
+    grouped.set(id, existing)
+  }
+  return [...grouped.values()].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 50)
+}
+
+async function saveConversationHistory() {
+  await fs.mkdir(path.dirname(CONVERSATION_HISTORY_PATH), { recursive: true })
+  await fs.writeFile(CONVERSATION_HISTORY_PATH, `${JSON.stringify(conversationHistory.slice(-300), null, 2)}\n`, 'utf8')
+}
 
 function cors(request) {
   return { 'access-control-allow-origin': request.headers.origin || '*', vary: 'Origin' }
@@ -121,6 +173,7 @@ function finishBuddyTask(state, { status = 'done', summary = '' } = {}) {
     id: state.id,
     task: state.task,
     accountId: state.accountId,
+    conversationId: state.conversationId,
     model: state.model,
     status,
     createdAt: state.createdAt,
@@ -188,6 +241,7 @@ async function startBuddyTask({ request, response, task, model, token, accountId
     id,
     task,
     accountId,
+    conversationId: String(request.headers['x-zt-conversation-id'] || id),
     model: model === 'DEEPSEEK' ? 'DEEPSEEK' : 'MINIMAX',
     response,
     createdAt: new Date().toISOString(),
@@ -243,17 +297,34 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.method === 'GET' && url.pathname === '/api/state') {
       const account = requireAccountAuth ? await accountSession(accountToken(request)) : null
-      const accountId = account?.id || null
+      const accountId = account?.id || (requireAccountAuth ? null : 'local')
       return json(request, response, 200, {
         ok: true,
         workspaceRoot,
         history: accountId ? taskHistory.filter(item => item.accountId === accountId) : requireAccountAuth ? [] : taskHistory,
+        conversations: buildAccountConversations(accountId),
         runtime: buddy.snapshot({ accountId }),
         permissions: permissions.snapshot(),
         deviceAuthorization: deviceAuthorization.snapshot(),
         gatewayUrl,
         mode: 'execute',
       })
+    }
+    if (request.method === 'POST' && url.pathname === '/api/conversations') {
+      const account = requireAccountAuth ? await accountSession(accountToken(request)) : null
+      if (requireAccountAuth && !account) return json(request, response, 401, { error: '请先登录桌面 Agent 账户或重新登录' })
+      const accountId = account?.id || 'local'
+      const body = await readBody(request)
+      const incoming = Array.isArray(body.conversations) ? body.conversations : []
+      const records = incoming.slice(0, 50).flatMap(item => {
+        const id = String(item?.id || '').trim().slice(0, 160)
+        if (!id || id.includes(':')) return []
+        const messages = conversationMessages(item.messages)
+        return [{ accountId, id, title: String(item.title || '新对话').slice(0, 160), messages, createdAt: Number(item.createdAt) || Date.now(), updatedAt: Number(item.updatedAt) || Date.now() }]
+      })
+      conversationHistory = [...conversationHistory.filter(item => item.accountId !== accountId), ...records].slice(-300)
+      await saveConversationHistory()
+      return json(request, response, 200, { ok: true, conversations: buildAccountConversations(accountId) })
     }
     if (request.method === 'POST' && url.pathname === '/api/workspace') {
       const body = await readBody(request)

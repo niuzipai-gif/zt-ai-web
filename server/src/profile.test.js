@@ -19,6 +19,13 @@ test('desktop agent prompt is execution-first and permission-aware', () => {
   assert.match(AGENT_SYSTEM_PROMPT, /批准/)
 })
 
+test('desktop agent prompt explains ZT.buddy identity and capabilities', () => {
+  assert.match(AGENT_SYSTEM_PROMPT, /ZT\.buddy/)
+  assert.match(AGENT_SYSTEM_PROMPT, /本机协作/)
+  assert.match(AGENT_SYSTEM_PROMPT, /代码|文件|数据|资料/)
+  assert.match(AGENT_SYSTEM_PROMPT, /能做什么|是什么/)
+})
+
 test('desktop agent prompt requires concise user-facing execution summaries without hidden reasoning', () => {
   assert.match(AGENT_SYSTEM_PROMPT, /不展示思维链|推理过程/)
   assert.match(AGENT_SYSTEM_PROMPT, /最多 6 条/)

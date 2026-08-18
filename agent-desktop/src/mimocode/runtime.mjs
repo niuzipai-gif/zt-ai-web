@@ -139,7 +139,7 @@ export class MiMoBuddyRuntime {
     const prefix = accountId ? `${String(accountId)}:` : null
     return {
       workspaceRoot: this.workspaceRoot,
-      sessions: [...this.sessions.values()].filter(record => !prefix || record.conversationId.startsWith(prefix)).map(({ conversationId, sessionId, updatedAt }) => ({ conversationId, sessionId, updatedAt })),
+      sessions: [...this.sessions.values()].filter(record => !prefix || record.conversationId.startsWith(prefix)).map(({ conversationId, sessionId, title, updatedAt }) => ({ conversationId, sessionId, title: title || 'MiMoCode 对话', updatedAt })),
       tasks: [...this.tasks.values()].filter(task => !prefix || task.conversationId.startsWith(prefix)).map(task => ({ id: task.taskId, sessionId: task.sessionId, task: task.task, status: task.status })),
     }
   }
@@ -152,7 +152,7 @@ export class MiMoBuddyRuntime {
   }
 
   async persistSessions() {
-    const records = [...this.sessions.values()].map(({ conversationId, sessionId, workspaceRoot, updatedAt }) => ({ conversationId, sessionId, workspaceRoot, updatedAt }))
+    const records = [...this.sessions.values()].map(({ conversationId, sessionId, title, workspaceRoot, updatedAt }) => ({ conversationId, sessionId, title, workspaceRoot, updatedAt }))
     await fs.mkdir(path.dirname(this.statePath), { recursive: true })
     await fs.writeFile(this.statePath, `${JSON.stringify(records, null, 2)}\n`, 'utf8')
   }
@@ -293,7 +293,7 @@ export class MiMoBuddyRuntime {
       const response = await this.request('/session', { method: 'POST', body: { title: text.slice(0, 80) } })
       const created = await readJson(response)
       if (!created?.id) throw new Error('MiMoCode 未创建执行会话')
-      record = { conversationId, sessionId: created.id, workspaceRoot: this.workspaceRoot, updatedAt: new Date().toISOString() }
+      record = { conversationId, sessionId: created.id, title: text.slice(0, 80), workspaceRoot: this.workspaceRoot, updatedAt: new Date().toISOString() }
       this.sessions.set(conversationId, record)
       await this.persistSessions()
     }

@@ -26,6 +26,18 @@ test('visitor ids are scoped by product', () => {
   assert.notEqual(scopedVisitorId('web', 'same-id'), scopedVisitorId('desktop-agent', 'same-id'))
 })
 
+test('records a page visit without fabricating a model request', async () => {
+  const audit = await telemetry()
+  await audit.recordVisit({ product: 'web', visitorId: 'browser-visit', page: '/chat', language: 'zh', ip: '203.0.113.42', userAgent: 'test' })
+  const data = await audit.store.read()
+  assert.equal(data.pageViews.length, 1)
+  assert.equal(data.visitors[0].pageViewCount, 1)
+  assert.equal(data.visitors[0].requestCount, 0)
+  assert.equal((await audit.overview()).visitors, 1)
+  assert.equal((await audit.overview()).requests, 0)
+  assert.equal((await audit.visitorDetail('web:browser-visit')).pageViews.length, 1)
+})
+
 test('telemetry records a message, usage event, and aggregate visitor', async () => {
   const audit = await telemetry()
   await audit.recordRequest({

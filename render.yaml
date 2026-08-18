@@ -34,6 +34,12 @@ services:
         sync: false
       - key: ADMIN_PASSWORD_HASH
         sync: false
+      - key: REQUIRE_EMAIL_VERIFICATION
+        value: "true"
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
       - key: DATA_RETENTION_DAYS
         value: "90"
       - key: ZT_AI_DATA_PATH

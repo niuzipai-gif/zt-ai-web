@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addConversationMessage, conversationStorageKeys, createConversation, createEmptyConversation, normalizeConversations } from '../public/conversation-state.mjs'
+import { addConversationMessage, conversationStorageKeys, createConversation, createEmptyConversation, mergeServerConversations, normalizeConversations } from '../public/conversation-state.mjs'
 
 test('creates independent conversations with isolated messages', () => {
   const first = createConversation('chat-1', 100)
@@ -30,4 +30,15 @@ test('uses a separate persistent conversation namespace for every desktop accoun
   assert.notEqual(first.chats, second.chats)
   assert.notEqual(first.active, second.active)
   assert.match(first.chats, /user-a/)
+})
+
+test('merges durable MiMo conversations without leaking another account or replacing richer local messages', () => {
+  const local = [addConversationMessage(createConversation('chat-1', 100), { role: 'user', content: '本地问题' }, 200)]
+  const merged = mergeServerConversations(local, [
+    { id: 'chat-1', title: '本地问题', messages: [{ role: 'user', content: '本地问题' }, { role: 'assistant', content: '本地回答' }], updatedAt: 300 },
+    { id: 'chat-2', title: '另一个账号', messages: [{ role: 'user', content: '不应丢失' }], updatedAt: 400 },
+  ])
+  assert.equal(merged.length, 2)
+  assert.equal(merged.find(item => item.id === 'chat-1').messages.at(-1).content, '本地回答')
+  assert.equal(merged.find(item => item.id === 'chat-2').title, '另一个账号')
 })

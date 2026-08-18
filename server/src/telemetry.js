@@ -29,6 +29,50 @@ function costEstimate(model, inputTokens, outputTokens) {
 export function createTelemetry({ store = getDataStore(), now = () => Date.now(), retentionDays = Number(process.env.DATA_RETENTION_DAYS || 90) } = {}) {
   return {
     store,
+    async recordVisit({ product = 'web', visitorId, page = '/', ip, userAgent, language = '' }) {
+      const timestamp = now()
+      const scopedId = scopedVisitorId(product, visitorId)
+      await store.update(data => {
+        const visitor = data.visitors.find(item => item.id === scopedId)
+        if (visitor) {
+          visitor.lastSeenAt = timestamp
+          visitor.pageViewCount = Number(visitor.pageViewCount || 0) + 1
+          visitor.lastPage = String(page || '/').slice(0, 240)
+          visitor.lastLanguage = String(language || '').slice(0, 12)
+          visitor.lastIp = String(ip || 'unknown')
+          visitor.maskedIp = maskIp(ip)
+          visitor.userAgent = String(userAgent || visitor.userAgent || '').slice(0, 300)
+        } else {
+          data.visitors.push({
+            id: scopedId,
+            product,
+            visitorId: String(visitorId || 'anonymous'),
+            userId: null,
+            firstSeenAt: timestamp,
+            lastSeenAt: timestamp,
+            pageViewCount: 1,
+            requestCount: 0,
+            models: [],
+            lastPage: String(page || '/').slice(0, 240),
+            lastLanguage: String(language || '').slice(0, 12),
+            lastIp: String(ip || 'unknown'),
+            maskedIp: maskIp(ip),
+            userAgent: String(userAgent || '').slice(0, 300),
+          })
+        }
+        data.pageViews.push({
+          id: crypto.randomUUID(),
+          visitorId: scopedId,
+          product,
+          page: String(page || '/').slice(0, 240),
+          language: String(language || '').slice(0, 12),
+          ip: String(ip || 'unknown'),
+          maskedIp: maskIp(ip),
+          userAgent: String(userAgent || '').slice(0, 300),
+          createdAt: timestamp,
+        })
+      })
+    },
     async recordRequest({ product, visitorId, conversationId, userId = null, model, requestType, status, ip, userAgent, inputText = '', outputText = '', inputTokens, outputTokens, metadata = {} }) {
       const timestamp = now()
       const input = inputTokens ?? estimateTokens(inputText)
@@ -45,13 +89,14 @@ export function createTelemetry({ store = getDataStore(), now = () => Date.now()
         const visitor = data.visitors.find(item => item.id === scopedId)
         if (visitor) {
           visitor.lastSeenAt = timestamp
-          visitor.requestCount += 1
+          visitor.requestCount = Number(visitor.requestCount || 0) + 1
+          visitor.pageViewCount = Number(visitor.pageViewCount || 0)
           visitor.models = [...new Set([...(visitor.models || []), model])]
           visitor.lastIp = event.ip
           visitor.maskedIp = event.maskedIp
           visitor.userId = userId || visitor.userId || null
         } else {
-          data.visitors.push({ id: scopedId, product, visitorId: String(visitorId || 'anonymous'), userId, firstSeenAt: timestamp, lastSeenAt: timestamp, requestCount: 1, models: [model], lastIp: event.ip, maskedIp: event.maskedIp, userAgent: event.userAgent })
+          data.visitors.push({ id: scopedId, product, visitorId: String(visitorId || 'anonymous'), userId, firstSeenAt: timestamp, lastSeenAt: timestamp, pageViewCount: 0, requestCount: 1, models: [model], lastIp: event.ip, maskedIp: event.maskedIp, userAgent: event.userAgent })
         }
         if (conversationId) {
           let conversation = data.conversations.find(item => item.id === conversationId && item.visitorId === scopedId)
@@ -72,6 +117,7 @@ export function createTelemetry({ store = getDataStore(), now = () => Date.now()
         data.messages = data.messages.filter(item => item.createdAt >= cutoff)
         data.conversations = data.conversations.filter(item => item.updatedAt >= cutoff)
         data.visitors = data.visitors.filter(item => item.lastSeenAt >= cutoff)
+        data.pageViews = data.pageViews.filter(item => item.createdAt >= cutoff)
       })
     },
     async overview() {
@@ -79,6 +125,7 @@ export function createTelemetry({ store = getDataStore(), now = () => Date.now()
       const usage = data.usageEvents
       return {
         visitors: data.visitors.length,
+        pageViews: data.pageViews.length,
         conversations: data.conversations.length,
         requests: usage.length,
         estimatedTokens: usage.reduce((sum, item) => sum + item.estimatedTotalTokens, 0),
@@ -106,8 +153,9 @@ export function createTelemetry({ store = getDataStore(), now = () => Date.now()
       if (!visitor) return null
       const conversations = data.conversations.filter(item => item.visitorId === id)
       const messages = data.messages.filter(item => item.visitorId === id).sort((a, b) => a.createdAt - b.createdAt)
+      const pageViews = data.pageViews.filter(item => item.visitorId === id).sort((a, b) => a.createdAt - b.createdAt)
       const usage = data.usageEvents.filter(item => item.visitorId === id)
-      return { visitor, conversations, messages, usage }
+      return { visitor, conversations, pageViews, messages, usage }
     },
   }
 }
