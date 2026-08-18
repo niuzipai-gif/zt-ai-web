@@ -412,7 +412,19 @@ function App() {
   useEffect(() => { saveVisitorState(localStorage, visitorState) }, [visitorState])
   useEffect(() => { try { localStorage.setItem('zt-ai:language', language) } catch {} }, [language])
   useEffect(() => {
-    fetch(`${API_BASE}/api/visit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ visitorId: visitorState.visitorId, page, language }) }).catch(() => {})
+    let cancelled = false
+    const sendVisit = async () => {
+      for (const delay of [0, 5_000, 15_000, 30_000]) {
+        if (delay) await new Promise(resolve => setTimeout(resolve, delay))
+        if (cancelled) return
+        try {
+          const response = await fetch(`${API_BASE}/api/visit`, { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ visitorId: visitorState.visitorId, page, language }) })
+          if (response.ok || (response.status >= 400 && response.status < 500)) return
+        } catch {}
+      }
+    }
+    void sendVisit()
+    return () => { cancelled = true }
   }, [visitorState.visitorId, page, language])
   useEffect(() => { const onResize = () => setViewportWidth(window.innerWidth); window.addEventListener('resize', onResize); return () => window.removeEventListener('resize', onResize) }, [])
   useEffect(() => setProfileExpanded(false), [activeSession.id])
