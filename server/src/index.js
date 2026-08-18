@@ -357,7 +357,7 @@ export function createServer() {
     try {
       const route = request.url.split('?')[0]
       if ((route === '/admin' || route.startsWith('/admin/')) && !route.startsWith('/admin/api/')) return await serveControlRoom(request, response)
-      if (request.method === 'GET' && route === '/api/health') return sendJson(request, response, 200, { ok: true, service: 'zt-ai-gateway', profile: { name: ZT_PROFILE.name, identity: ZT_PROFILE.identity }, models: CHAT_MODELS, providers: { minimax: Boolean(process.env.MINIMAX_API_KEY), deepseek: Boolean(process.env.DEEPSEEK_API_KEY) } })
+      if (request.method === 'GET' && route === '/api/health') return sendJson(request, response, 200, { ok: true, service: 'zt-ai-gateway', profile: { name: ZT_PROFILE.name, identity: ZT_PROFILE.identity }, models: CHAT_MODELS, providers: { minimax: Boolean(process.env.MINIMAX_API_KEY), deepseek: Boolean(process.env.DEEPSEEK_API_KEY) }, storage: telemetry.storage })
       if (request.method === 'POST' && route === '/api/visit') {
         if (!rateLimit(request)) return sendJson(request, response, 429, { error: '访问过于频繁，请稍后再试' })
         const body = await readBody(request)
