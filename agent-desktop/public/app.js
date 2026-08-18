@@ -1,5 +1,5 @@
 import { contextMeter, nextMode, normalizeModel } from './chat-state.mjs'
-import { addConversationMessage, conversationStorageKeys, conversationTitle, createConversation, mergeServerConversations, normalizeConversations } from './conversation-state.mjs'
+import { addConversationMessage, conversationStorageKeys, conversationTitle, createConversation, mergeServerConversations, messageContentWithImages, normalizeConversations, prependConversation } from './conversation-state.mjs'
 import { createSmoothStream } from './streaming.mjs'
 import { renderMarkdown } from './markdown.mjs'
 import { classifyIntent } from './intent-router.mjs'
@@ -24,6 +24,7 @@ const state = {
   usedTokens: 12_400,
   chatSessions: [],
   activeChatId: '',
+  pendingAttachments: [],
   activeSkills: [],
   activeAgentMessage: null,
   activeAgentTask: '',
@@ -35,15 +36,18 @@ const state = {
 const els = {
   root: $('.app-shell'), modeChat: $('#mode-chat'), modeBuddy: $('#mode-buddy'), railTitle: $('#rail-title'), railStatus: $('#rail-status'),
   conversationEyebrow: $('#conversation-eyebrow'), conversationTitle: $('#conversation-title'), conversationSubtitle: $('#conversation-subtitle'),
-  messages: $('#messages'), taskInput: $('#task-input'), composer: $('#composer'), run: $('#run-task'), newTask: $('#new-task'), refresh: $('#refresh'), history: $('#history'),
+  messages: $('#messages'), taskInput: $('#task-input'), composer: $('#composer'), attachmentPreview: $('#attachment-preview'), fileInput: $('#file-input'), run: $('#run-task'), newTask: $('#new-task'), refresh: $('#refresh'), history: $('#history'),
   toolTrigger: $('#tool-trigger'), toolDrawer: $('#tool-drawer'), permissionDrawer: $('#permission-drawer'), permissionTrigger: $('#permission-trigger'), voice: $('#voice-button'), modelSelect: $('#model-select'),
   inspectorToggle: $('#inspector-toggle'), executionSummary: $('#execution-summary'),
   contextRing: $('#context-ring'), contextRingLarge: $('#context-ring-large'), contextPercent: $('#context-percent'), contextPercentLarge: $('#context-percent-large'), contextModel: $('#context-model'), contextUsed: $('#context-used'), contextUsedLarge: $('#context-used-large'), contextRemaining: $('#context-remaining'),
   plan: $('#plan'), log: $('#activity-log'), logCount: $('#log-count'), title: $('#execution-title'), status: $('#execution-status'),
   taskId: $('#current-task-id'), resultPanel: $('#result-panel'), resultText: $('#result-text'), approval: $('#approval-card'), approvalTitle: $('#approval-title'), approvalPreview: $('#approval-preview'), composerApproval: $('#composer-approval'), skillBrowser: $('#skill-browser'),
   gateway: $('#gateway-url'), workspace: $('#workspace-path'), workspaceShort: $('#workspace-short'), selectWorkspace: $('#select-workspace'), gatewayStatus: $('#gateway-status'), authorize: $('#authorize-device'), authorizationStatus: $('#authorization-status'), logout: $('#logout'), accountLabel: $('#account-label'),
-  authGate: $('#auth-gate'), authLoginView: $('#auth-login-view'), authRegisterView: $('#auth-register-view'), authForm: $('#auth-form'), authUsername: $('#auth-username'), authPassword: $('#auth-password'), authSubmit: $('#auth-submit'), authToggle: $('#auth-toggle'), authLoginToggle: $('#auth-login-toggle'), authError: $('#auth-error'), authStatus: $('#auth-status'), registerForm: $('#register-form'), registerUsername: $('#register-username'), registerPassword: $('#register-password'), authPhone: $('#auth-phone'), authEmail: $('#auth-email'), registerSubmit: $('#register-submit'), registerError: $('#register-error'), registerStatus: $('#register-status'),
+  authGate: $('#auth-gate'), authLoginView: $('#auth-login-view'), authRegisterView: $('#auth-register-view'), authForm: $('#auth-form'), authUsername: $('#auth-username'), authPassword: $('#auth-password'), rememberLogin: $('#remember-login'), authSubmit: $('#auth-submit'), authToggle: $('#auth-toggle'), authLoginToggle: $('#auth-login-toggle'), authError: $('#auth-error'), authStatus: $('#auth-status'), registerForm: $('#register-form'), registerUsername: $('#register-username'), registerPassword: $('#register-password'), authPhone: $('#auth-phone'), authEmail: $('#auth-email'), registerSubmit: $('#register-submit'), registerError: $('#register-error'), registerStatus: $('#register-status'),
 }
+
+const REMEMBERED_USERNAME_KEY = 'zt-ai:desktop-remembered-username'
+const REMEMBERED_PASSWORD_KEY = 'zt-ai:desktop-remembered-password'
 
 function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character])) }
 function displayText(value, fallback = '') { return String(value ?? fallback).replace(/mimo\s*code/ig, '执行引擎').replace(/mimo/ig, '执行引擎').trim() }
@@ -51,6 +55,53 @@ function formatTokens(value) { return value >= 1_000_000 ? `${(value / 1_000_000
 function newChatId() { return `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }
 function currentConversation() { return state.chatSessions.find(item => item.id === state.activeChatId) || null }
 function storageKeys() { return conversationStorageKeys(state.accountId) }
+function renderPendingAttachments() {
+  if (!els.attachmentPreview) return
+  els.attachmentPreview.innerHTML = state.pendingAttachments.map((attachment, index) => `<span class="attachment-chip"><img src="${escapeHtml(attachment.dataUrl)}" alt="${escapeHtml(attachment.name)}"><span>${escapeHtml(attachment.name)}</span><button type="button" data-remove-attachment="${index}" aria-label="移除 ${escapeHtml(attachment.name)}">×</button></span>`).join('')
+  els.attachmentPreview.querySelectorAll('[data-remove-attachment]').forEach(button => button.addEventListener('click', () => {
+    state.pendingAttachments.splice(Number(button.dataset.removeAttachment), 1)
+    renderPendingAttachments()
+  }))
+}
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(new Error('图片读取失败'))
+    reader.readAsDataURL(file)
+  })
+}
+async function addImageFiles(files) {
+  for (const file of Array.from(files || []).slice(0, 4 - state.pendingAttachments.length)) {
+    if (!file.type?.startsWith('image/')) continue
+    if (file.size > 5_000_000) { setNotice('图片超过 5MB，暂时不能直接粘贴，请压缩后再试。'); continue }
+    try {
+      const dataUrl = await fileToDataUrl(file)
+      state.pendingAttachments.push({ name: file.name || `剪贴板图片-${state.pendingAttachments.length + 1}.png`, type: file.type, dataUrl })
+    } catch (error) { setNotice(error.message) }
+  }
+  renderPendingAttachments()
+}
+function handleComposerPaste(event) {
+  const items = [...(event.clipboardData?.items || [])].filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+  if (!items.length) return
+  event.preventDefault()
+  void addImageFiles(items.map(item => item.getAsFile()).filter(Boolean))
+}
+function restoreLoginFields() {
+  if (!els.authUsername) return
+  els.authUsername.value = localStorage.getItem(REMEMBERED_USERNAME_KEY) || ''
+  const rememberedPassword = localStorage.getItem(REMEMBERED_PASSWORD_KEY) || ''
+  els.authPassword.value = rememberedPassword
+  if (els.rememberLogin) els.rememberLogin.checked = Boolean(rememberedPassword)
+}
+function saveLoginFields() {
+  const username = els.authUsername.value.trim()
+  if (username) localStorage.setItem(REMEMBERED_USERNAME_KEY, username)
+  else localStorage.removeItem(REMEMBERED_USERNAME_KEY)
+  if (els.rememberLogin?.checked && els.authPassword.value) localStorage.setItem(REMEMBERED_PASSWORD_KEY, els.authPassword.value)
+  else localStorage.removeItem(REMEMBERED_PASSWORD_KEY)
+}
 function persistChats() {
   if (!state.accountId) return
   const keys = storageKeys()
@@ -98,9 +149,11 @@ function startNewChat() {
   state.chatController = null
   state.agentStream?.cancel?.(); state.agentStream = null; state.activeAgentMessage = null
   const conversation = createConversation(newChatId())
-  state.chatSessions = [conversation, ...state.chatSessions.filter(item => item.id !== state.activeChatId)].slice(0, 30)
+  state.chatSessions = prependConversation(state.chatSessions, conversation)
   state.activeChatId = conversation.id
   state.activeSkills = []
+  state.pendingAttachments = []
+  renderPendingAttachments()
   els.taskInput.value = ''
   els.taskInput.disabled = false
   els.run.disabled = false
@@ -296,11 +349,12 @@ function setAuthPending(pending) {
   els.authSubmit.innerHTML = `${view.busy ? '<span class="auth-spinner" aria-hidden="true"></span>' : ''}<span>${view.button}</span>`
   els.authUsername.disabled = view.busy
   els.authPassword.disabled = view.busy
+  if (els.rememberLogin) els.rememberLogin.disabled = view.busy
   els.authToggle.disabled = view.busy
   setAuthStatus(view.status)
 }
 function showWorkspace() { els.authGate.classList.add('hidden'); els.taskInput.disabled = false; els.accountLabel.textContent = 'ACCOUNT ACTIVE'; setAuthPending(false) }
-function showLogin() { els.authGate.classList.remove('hidden'); els.authLoginView.classList.remove('hidden'); els.authRegisterView.classList.add('hidden'); els.taskInput.disabled = true; showAuthError(''); if (els.registerError) els.registerError.textContent = ''; setAuthPending(false) }
+function showLogin() { els.authGate.classList.remove('hidden'); els.authLoginView.classList.remove('hidden'); els.authRegisterView.classList.add('hidden'); els.taskInput.disabled = true; showAuthError(''); if (els.registerError) els.registerError.textContent = ''; restoreLoginFields(); setAuthPending(false) }
 function showRegister() { els.authGate.classList.remove('hidden'); els.authLoginView.classList.add('hidden'); els.authRegisterView.classList.remove('hidden'); els.registerError.textContent = ''; els.registerStatus.textContent = ''; els.registerUsername.focus() }
 function setAccount(user) {
   state.accountId = String(user?.id || '')
@@ -313,7 +367,7 @@ function setAccount(user) {
 function describeNetworkError(error, action = '连接 ZT.AI 网关') { const message = String(error?.message || error || ''); return /failed to fetch|networkerror|load failed/i.test(message) ? `${action}失败：当前无法访问 ${state.gatewayUrl || 'ZT.AI 网关'}，请确认网络正常或稍后重试。` : message || `${action}失败` }
 
 async function submitAuth(event) {
-  event.preventDefault(); showAuthError(''); setAuthPending(true)
+  event.preventDefault(); showAuthError(''); saveLoginFields(); setAuthPending(true)
   try {
     const response = await fetch(`${state.gatewayUrl}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: els.authUsername.value.trim(), password: els.authPassword.value }) })
     const body = await readJson(response)
@@ -335,6 +389,9 @@ async function submitRegistration(event) {
     const response = await fetch(`${state.gatewayUrl}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: els.registerUsername.value.trim(), phone: els.authPhone.value.trim(), email: els.authEmail.value.trim(), password: els.registerPassword.value }) })
     const body = await readJson(response)
     if (!response.ok) throw new Error(body.error || '注册失败')
+    localStorage.setItem(REMEMBERED_USERNAME_KEY, els.registerUsername.value.trim())
+    localStorage.removeItem(REMEMBERED_PASSWORD_KEY)
+    if (els.rememberLogin) els.rememberLogin.checked = false
     els.authUsername.value = els.registerUsername.value.trim()
     els.registerPassword.value = ''; els.authPhone.value = ''; els.authEmail.value = ''; els.authPassword.value = ''
     showLogin(); setAuthStatus('注册申请已提交，请等待管理员审核通过后再登录。')
@@ -362,8 +419,10 @@ function buddyCapabilityAnswer(input) {
 
 async function runChat({ agent = false, localAnswer = '' } = {}) {
   const task = els.taskInput.value.trim(); if (!task || els.run.disabled) return
+  const attachments = state.pendingAttachments.slice()
   const chatId = state.activeChatId
-  recordChatMessage('user', task, chatId); renderMessages(); els.taskInput.value = ''; els.taskInput.disabled = true; els.run.disabled = true
+  const attachmentNote = attachments.length ? `\n\n[已附加图片：${attachments.map(item => item.name).join('、')}]` : ''
+  recordChatMessage('user', `${task}${attachmentNote}`, chatId); state.pendingAttachments = []; renderPendingAttachments(); renderMessages(); els.taskInput.value = ''; els.taskInput.disabled = true; els.run.disabled = true
   const body = appendMessage('assistant', '', true)
   const smooth = createSmoothStream({ onUpdate: output => { body.innerHTML = renderMarkdown(output); els.messages.scrollTop = els.messages.scrollHeight; state.usedTokens += 1; renderContext() } })
   state.agentStream = smooth
@@ -373,7 +432,13 @@ async function runChat({ agent = false, localAnswer = '' } = {}) {
   state.chatController = controller
   try {
     const conversation = state.chatSessions.find(item => item.id === chatId) || null
-    const messages = conversation?.messages || [{ role: 'user', content: task }]
+    const messages = (conversation?.messages || [{ role: 'user', content: task }]).map(message => ({ ...message }))
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index].role === 'user') {
+        messages[index].content = messageContentWithImages(task, attachments)
+        break
+      }
+    }
     if (localAnswer) {
       smooth.push(localAnswer)
     } else {
@@ -567,7 +632,7 @@ async function showSkillBrowser() {
   els.skillBrowser.innerHTML = '<div class="skill-empty">正在扫描本机 Skills…</div>'
   try { const response = await apiFetch('/api/skills'); const body = await response.json(); if (!response.ok) throw new Error(body.error || 'Skill 扫描失败'); renderSkillBrowser(body.skills || []) } catch (error) { els.skillBrowser.innerHTML = `<div class="skill-empty">${escapeHtml(error.message)}</div>` }
 }
-function toolAction(tool) { if (tool === 'file') { setNotice('文件入口已打开；选择文件后会作为当前对话附件引用。'); return } setNotice(`${tool} 已加入当前对话工具范围`) }
+function toolAction(tool) { if (tool === 'file') { els.fileInput?.click(); return } setNotice(`${tool} 已加入当前对话工具范围`) }
 function setNotice(text) { const body = appendMessage('assistant', text); body.closest('.message')?.classList.add('system-message'); setTimeout(() => body.closest('.message')?.remove(), 3500) }
 async function selectWorkspace() {
   const selected = await window.ztaiDesktop?.selectWorkspace?.()
@@ -583,6 +648,8 @@ els.modelSelect.addEventListener('change', () => { state.model = normalizeModel(
 els.toolTrigger.addEventListener('click', toggleDrawer); $('#drawer-close')?.addEventListener('click', () => closeDrawer(els.toolDrawer)); $('#permission-drawer-close')?.addEventListener('click', () => closeDrawer(els.permissionDrawer)); els.permissionTrigger.addEventListener('click', () => { els.permissionDrawer.classList.contains('hidden') ? openPermissionDrawer() : closeDrawer(els.permissionDrawer) }); document.addEventListener('keydown', event => { if (event.key === 'Escape' && (!els.toolDrawer.classList.contains('hidden') || !els.permissionDrawer.classList.contains('hidden'))) closeDrawer() }); document.addEventListener('click', event => { const inDrawer = els.toolDrawer.contains(event.target) || els.permissionDrawer.contains(event.target); const onTrigger = els.toolTrigger.contains(event.target) || els.permissionTrigger.contains(event.target); if (!inDrawer && !onTrigger && (!els.toolDrawer.classList.contains('hidden') || !els.permissionDrawer.classList.contains('hidden'))) closeDrawer() }); els.inspectorToggle?.addEventListener('click', () => setInspectorOpen(!state.inspectorOpen)); els.voice.addEventListener('click', () => { setNotice('语音入口已准备；接入声音模型后可开始语音输入。') })
 document.querySelectorAll('.drawer-option').forEach(button => button.addEventListener('click', async () => { if (button.dataset.tool === 'skills') { await showSkillBrowser(); return } toolAction(button.dataset.tool); toggleDrawer() }))
 document.querySelectorAll('[data-capability]').forEach(input => input.addEventListener('change', () => updatePermission(input.dataset.capability, input.checked)))
+els.taskInput.addEventListener('paste', handleComposerPaste)
+els.fileInput?.addEventListener('change', event => { void addImageFiles(event.target.files); event.target.value = '' })
 els.composer.addEventListener('submit', event => { event.preventDefault(); state.mode === 'BUDDY' ? runAgentTask() : runChat() }); els.taskInput.addEventListener('keydown', event => { if (shouldSubmitComposer({ key: event.key, shiftKey: event.shiftKey, isComposing: event.isComposing || event.keyCode === 229, disabled: els.run.disabled })) { event.preventDefault(); state.mode === 'BUDDY' ? runAgentTask() : runChat() } }); els.newTask.addEventListener('click', startNewChat); els.refresh.addEventListener('click', refreshState); els.authorize.addEventListener('click', updateAuthorization); $('#approve-once').addEventListener('click', () => approve(false)); $('#approve-always').addEventListener('click', () => approve(true)); $('#reject').addEventListener('click', reject); els.authForm.addEventListener('submit', submitAuth); els.registerForm.addEventListener('submit', submitRegistration); els.authToggle.addEventListener('click', showRegister); els.authLoginToggle.addEventListener('click', showLogin); els.logout.addEventListener('click', logout)
 els.run.onclick = event => { event.preventDefault(); if (els.run.disabled) return; state.mode === 'BUDDY' ? runAgentTask() : runChat() };
 els.selectWorkspace?.addEventListener('click', selectWorkspace)

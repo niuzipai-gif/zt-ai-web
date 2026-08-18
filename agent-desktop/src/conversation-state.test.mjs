@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addConversationMessage, conversationStorageKeys, createConversation, createEmptyConversation, mergeServerConversations, normalizeConversations } from '../public/conversation-state.mjs'
+import { addConversationMessage, conversationStorageKeys, createConversation, createEmptyConversation, mergeServerConversations, messageContentWithImages, normalizeConversations, prependConversation } from '../public/conversation-state.mjs'
 
 test('creates independent conversations with isolated messages', () => {
   const first = createConversation('chat-1', 100)
@@ -30,6 +30,23 @@ test('uses a separate persistent conversation namespace for every desktop accoun
   assert.notEqual(first.chats, second.chats)
   assert.notEqual(first.active, second.active)
   assert.match(first.chats, /user-a/)
+})
+
+test('prepends a new conversation without deleting the previous one', () => {
+  const previous = createConversation('chat-old', 100)
+  const next = createConversation('chat-new', 200)
+  const conversations = prependConversation([previous], next)
+
+  assert.deepEqual(conversations.map(item => item.id), ['chat-new', 'chat-old'])
+})
+
+test('builds a multimodal user message from pasted image attachments', () => {
+  const content = messageContentWithImages('请分析这张图', [{ dataUrl: 'data:image/png;base64,abc' }])
+
+  assert.deepEqual(content, [
+    { type: 'text', text: '请分析这张图' },
+    { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } },
+  ])
 })
 
 test('merges durable MiMo conversations without leaking another account or replacing richer local messages', () => {

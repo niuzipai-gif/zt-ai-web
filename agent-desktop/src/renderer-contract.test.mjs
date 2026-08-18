@@ -151,3 +151,27 @@ test('desktop login exposes a live loading status and the composer uses IME-safe
   assert.match(app, /shouldSubmitComposer/)
   assert.match(app, /event\.isComposing \|\| event\.keyCode === 229/)
 })
+
+test('desktop remembers the login fields and accepts pasted image attachments', async () => {
+  const html = await fs.readFile(path.join(root, 'index.html'), 'utf8')
+  const app = await fs.readFile(path.join(root, 'app.js'), 'utf8')
+  assert.match(html, /id="remember-login"/)
+  assert.match(html, /id="attachment-preview"/)
+  assert.match(html, /id="file-input"/)
+  assert.match(app, /restoreLoginFields\(\)/)
+  assert.match(app, /saveLoginFields\(\)/)
+  assert.match(app, /addEventListener\('paste', handleComposerPaste\)/)
+  assert.match(app, /messageContentWithImages\(task, attachments\)/)
+  assert.match(app, /prependConversation\(/)
+})
+
+test('control room exposes account identity on review and visitor detail surfaces', async () => {
+  const controlApp = await fs.readFile(path.join(root, '..', '..', 'server', 'public', 'control-room', 'app.js'), 'utf8')
+  const detailApp = await fs.readFile(path.join(root, '..', '..', 'server', 'public', 'control-room', 'detail-enhancements.js'), 'utf8')
+  assert.match(controlApp, /user-email/)
+  assert.match(controlApp, /visitor-user/)
+  assert.match(detailApp, /访问账号/)
+  assert.match(detailApp, /邮箱/)
+  assert.match(detailApp, /手机号/)
+  assert.match(detailApp, /会话记录/)
+})

@@ -64,6 +64,22 @@ test('admin can review, approve, and revoke registered users', async () => {
   assert.equal(revoked.status, 'revoked')
 })
 
+test('admin visitor records include the associated account details', async () => {
+  const { admin, auth, telemetry } = await setup()
+  const created = await auth.register({ username: 'visitor-owner', phone: '13800000020', email: 'visitor-owner@example.com', password: 'strong-pass-123' })
+  await telemetry.recordRequest({ product: 'desktop-agent', visitorId: `desktop-${created.user.id}`, conversationId: 'chat-user', userId: created.user.id, model: 'MiniMax-M3', requestType: 'agent-chat', status: 'success', ip: '203.0.113.55', inputText: 'hello', outputText: 'world' })
+  const { token } = await admin.login('admin-test-password')
+  const visitors = await admin.visitors(token, { product: 'desktop-agent' })
+  assert.equal(visitors.length, 1)
+  assert.equal(visitors[0].user.username, 'visitor-owner')
+  assert.equal(visitors[0].user.email, 'visitor-owner@example.com')
+  assert.equal(visitors[0].user.phone, '13800000020')
+  const detail = await admin.detail(token, visitors[0].id)
+  assert.equal(detail.user.username, 'visitor-owner')
+  assert.equal(detail.user.email, 'visitor-owner@example.com')
+  assert.equal(detail.conversations[0].id, 'chat-user')
+})
+
 test('admin can change an approved account duration or make it permanent', async () => {
   let now = Date.now()
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'zt-ai-admin-access-'))

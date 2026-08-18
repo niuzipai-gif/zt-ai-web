@@ -29,6 +29,20 @@ export function createEmptyConversation(id, now = Date.now()) {
   return { id: String(id), title: '新对话', messages: [], createdAt: now, updatedAt: now }
 }
 
+export function prependConversation(conversations, conversation, limit = 30) {
+  const existing = normalizeConversations(conversations).filter(item => item.id !== conversation.id)
+  return [conversation, ...existing].slice(0, Math.max(1, limit))
+}
+
+export function messageContentWithImages(text, attachments = []) {
+  const content = [{ type: 'text', text: String(text || '') }]
+  for (const attachment of Array.isArray(attachments) ? attachments.slice(0, 4) : []) {
+    const url = String(attachment?.dataUrl || '')
+    if (/^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(url)) content.push({ type: 'image_url', image_url: { url } })
+  }
+  return content.length === 1 ? String(text || '') : content
+}
+
 export function addConversationMessage(conversation, message, now = Date.now()) {
   const clean = cleanMessage(message)
   if (!clean) return conversation
