@@ -19,28 +19,82 @@ function inlineMarkdown(value) {
   return html.replace(/\u0000(\d+)\u0000/g, (_, index) => code[Number(index)])
 }
 
+function stripHiddenReasoning(value) {
+  return String(value || '').replace(/<\s*(?:think|analysis|reasoning)\b[^>]*>[\s\S]*?<\s*\/\s*(?:think|analysis|reasoning)\s*>/giu, '')
+}
+
+function tableCells(line) {
+  const value = String(line || '').trim().replace(/^\|/, '').replace(/\|$/, '')
+  const cells = value.split('|').map(cell => cell.trim())
+  return cells.length > 1 && cells.some(Boolean) ? cells : null
+}
+
+function isTableSeparator(line) {
+  const cells = tableCells(line)
+  return Boolean(cells?.length && cells.every(cell => /^:?-{3,}:?$/.test(cell)))
+}
+
+function renderTable(header, rows) {
+  const head = `<thead><tr>${header.map(cell => `<th>${inlineMarkdown(cell)}</th>`).join('')}</tr></thead>`
+  const body = rows.map(row => `<tr>${header.map((_, index) => `<td>${inlineMarkdown(row[index] || '')}</td>`).join('')}</tr>`).join('')
+  return `<table>${head}<tbody>${body}</tbody></table>`
+}
+
 export function renderMarkdown(markdown = '') {
-  const lines = String(markdown).replace(/\r\n?/g, '\n').split('\n')
+  const lines = stripHiddenReasoning(markdown).replace(/\r\n?/g, '\n').split('\n')
   const output = []
   let paragraph = []
   let list = []
+  let listType = null
   let code = null
   const flushParagraph = () => { if (paragraph.length) { output.push(`<p>${inlineMarkdown(paragraph.join('\n')).replaceAll('\n', '<br />')}</p>`); paragraph = [] } }
-  const flushList = () => { if (list.length) { output.push(`<ul>${list.map(item => `<li>${inlineMarkdown(item)}</li>`).join('')}</ul>`); list = [] } }
-  for (const line of lines) {
+  const flushList = () => {
+    if (list.length) {
+      const tag = listType === 'ol' ? 'ol' : 'ul'
+      output.push(`<${tag}>${list.map(item => `<li>${inlineMarkdown(item)}</li>`).join('')}</${tag}>`)
+      list = []
+      listType = null
+    }
+  }
+  const flushBlocks = () => { flushParagraph(); flushList() }
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
     if (line.startsWith('```')) {
-      if (code === null) { flushParagraph(); flushList(); code = [] } else { output.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`); code = null }
+      if (code === null) { flushBlocks(); code = [] } else { output.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`); code = null }
       continue
     }
     if (code !== null) { code.push(line); continue }
+
+    const header = tableCells(line)
+    if (header && isTableSeparator(lines[index + 1] || '')) {
+      flushBlocks()
+      const rows = []
+      index += 2
+      while (index < lines.length) {
+        const row = tableCells(lines[index])
+        if (!row || isTableSeparator(lines[index])) { index -= 1; break }
+        rows.push(row)
+        index += 1
+      }
+      output.push(renderTable(header, rows))
+      continue
+    }
     const heading = line.match(/^(#{1,6})\s+(.+)$/)
-    const item = line.match(/^\s*[-*+]\s+(.+)$/)
-    if (heading) { flushParagraph(); flushList(); const level = heading[1].length; output.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`); continue }
-    if (item) { flushParagraph(); list.push(item[1]); continue }
-    if (!line.trim()) { flushParagraph(); flushList(); continue }
+    const unordered = line.match(/^\s*[-*+]\s+(.+)$/)
+    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/)
+    const quote = line.match(/^\s*>\s?(.*)$/)
+    if (heading) { flushBlocks(); const level = heading[1].length; output.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`); continue }
+    if (unordered || ordered) {
+      const nextType = ordered ? 'ol' : 'ul'
+      if (listType && listType !== nextType) flushList()
+      flushParagraph(); listType = nextType; list.push((ordered || unordered)[1]); continue
+    }
+    if (quote) { flushBlocks(); output.push(`<blockquote>${inlineMarkdown(quote[1])}</blockquote>`); continue }
+    if (/^\s*(?:---+|\*\*\*+)\s*$/.test(line)) { flushBlocks(); output.push('<hr />'); continue }
+    if (!line.trim()) { flushBlocks(); continue }
     flushList(); paragraph.push(line)
   }
   if (code !== null) output.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`)
-  flushParagraph(); flushList()
+  flushBlocks()
   return output.join('')
 }

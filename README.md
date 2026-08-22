@@ -29,13 +29,13 @@ API 密钥只放在项目根目录的 `aikey.env`，该文件已被 `.gitignore`
 
 ## 桌面 Agent
 
-`agent-desktop/` 是独立的本机执行型工作台。它使用官方 MiMoCode 0.1.12 作为执行内核，支持任务拆解、工作区读取、工作区写入、命令执行、权限审批、工具日志、MiniMax M3 / DeepSeek V4 Flash 切换和本机任务记录。执行权限只作用于启动 Agent 的那台电脑，不会控制蔡宙廷的设备；普通聊天不会调用本地工具。
+`agent-desktop/` 是独立的本机执行型工作台。它使用官方开源 Codex CLI app-server 0.148.0 作为执行内核，支持任务拆解、工作区读取、工作区写入、命令执行、权限审批、工具日志、MiniMax M3 / DeepSeek V4 Flash 切换和本机任务记录。执行权限只作用于启动 Agent 的那台电脑，不会控制蔡宙廷的设备；简短问题会在同一个 ZT.buddy 工作区直接回答，不会误触本机工具。
 
 双击 `agent-desktop/start-agent-silent.vbs` 可静默启动；更完整的迁移说明见 `agent-desktop/README.md` 与 `PORTABLE-SETUP.md`。桌面执行运行时通过 Gateway 的内部 OpenAI 兼容路由调用模型；模型密钥只保留在网关环境变量，桌面端只持有登录账号的临时凭证。
 
 ### Electron 桌面版
 
-`npm run desktop:dev` 会打开真正的 Windows Electron 桌面应用：登录/注册后进入执行优先的本机工作台。应用会为每个启动实例生成本地 worker 密钥，worker 只监听 `127.0.0.1`；任务请求带账号 token，经 Gateway 调用模型。安装包内携带官方 MiMoCode 0.1.12 Windows x64 二进制，启动时会核验其版本；不依赖用户另行安装 MiMoCode 或 Node.js。发布安装包使用 `npm run desktop:dist`，输出在 `release/`。桌面端默认连接 `https://zt-ai-gateway.onrender.com`，本地测试前可设置 `$env:ZT_AI_GATEWAY_URL='http://localhost:8790'`。
+`npm run desktop:dev` 会打开真正的 Windows Electron 桌面应用：登录/注册后进入执行优先的 ZT.buddy 本机工作台。应用会为每个启动实例生成本地 worker 密钥，worker 只监听 `127.0.0.1`；任务请求带账号 token，经 Gateway 调用模型。安装包内携带官方 Codex CLI app-server 0.148.0 Windows x64 二进制，启动时会核验其版本；不依赖用户另行安装 Codex 或 Node.js。发布安装包使用 `npm run desktop:dist`，输出在 `release/`。桌面端默认连接 `https://zt-ai-gateway.onrender.com`，本地测试前可设置 `$env:ZT_AI_GATEWAY_URL='http://localhost:8790'`。
 
 ## Control Room 管理网站
 

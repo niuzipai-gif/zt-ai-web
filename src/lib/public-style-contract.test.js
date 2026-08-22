@@ -9,3 +9,11 @@ test('public chat protects touch targets, focus, compact profile and reduced mot
   }
   assert.match(css, /min-height:\s*44px/)
 })
+
+test('public composer keeps drag and paste affordances visible', async () => {
+  const source = await fs.readFile('src/main.jsx', 'utf8')
+  assert.match(source, /filesFromDataTransfer\(event\.clipboardData\)/)
+  assert.match(source, /filesFromDataTransfer\(event\.dataTransfer\)/)
+  assert.match(source, /event\.stopPropagation\(\)/)
+  assert.match(source, /hasFilePayload\(event\.dataTransfer\)/)
+})

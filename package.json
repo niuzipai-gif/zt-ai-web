@@ -1,7 +1,7 @@
 {
   "name": "zt-ai-web",
   "private": true,
-  "version": "0.2.15",
+  "version": "0.2.26",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,7 @@
     "agent:test": "node --test \"agent-desktop/src/**/*.test.mjs\" \"agent-desktop/src/*.test.mjs\"",
     "desktop:dev": "electron desktop-app",
     "desktop:test": "node --test desktop-app/renderer/*.test.mjs",
-    "desktop:dist": "electron-builder --config desktop-app/electron-builder.yml",
+    "desktop:dist": "node tools/prepare-officecli-runtime.mjs && electron-builder --config desktop-app/electron-builder.yml",
     "desktop:verify": "node tools/verify-desktop-package.mjs",
     "integration:test": "node tools/integration-smoke.mjs",
     "publish:pages": "powershell -ExecutionPolicy Bypass -File .\\tools\\publish-pages.ps1",
@@ -20,15 +20,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@mimo-ai/cli": "0.1.12",
+    "@openai/codex": "0.148.0",
     "@vitejs/plugin-react": "latest",
     "cloakbrowser": "0.5.7",
     "lucide-react": "latest",
     "mammoth": "^1.12.1",
+    "pdfjs-dist": "^4.10.38",
     "playwright-core": "1.62.1",
     "react": "latest",
     "react-dom": "latest",
-    "vite": "latest"
+    "vite": "latest",
+    "xlsx": "0.18.5"
   },
   "devDependencies": {
     "electron": "^37.0.0",

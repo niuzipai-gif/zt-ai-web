@@ -20,5 +20,6 @@ test('permission store defaults to read-only and persists explicit grants', asyn
 
 test('full access is explicit, disabled by default, and device-bound', () => {
   assert.equal(DEFAULT_PERMISSIONS[CAPABILITIES.fullAccess], false)
+  assert.equal(DEFAULT_PERMISSIONS[CAPABILITIES.webResearch], true)
   assert.equal(requiresDeviceAuthorization(CAPABILITIES.fullAccess), true)
 })

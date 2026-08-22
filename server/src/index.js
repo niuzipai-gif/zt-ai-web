@@ -306,7 +306,7 @@ async function handleMiMoOpenAI(request, response, route) {
         status = 'error'
         sendPrivateJson(response, 502, { error: { code: 'server_error', message: '所选模型暂时无法完成本次请求。' } })
       }
-      await recordTelemetry({ product: 'desktop-agent', ...context, userId: session.user.id, model: modelLabel, requestType: 'mimocode-responses', status, inputText: String(body.input || '').slice(0, 8_000), outputText })
+      await recordTelemetry({ product: 'desktop-agent', ...context, userId: session.user.id, model: modelLabel, requestType: 'codex-responses', status, inputText: String(body.input || '').slice(0, 8_000), outputText })
       return
     }
     privateSseStart(response)
@@ -320,7 +320,7 @@ async function handleMiMoOpenAI(request, response, route) {
       sse(response, 'response.failed', { response: { id: responseId, object: 'response', status: 'failed', error: { code: 'server_error', message: '所选模型暂时无法完成本次请求。' } } })
     }
     response.end()
-    await recordTelemetry({ product: 'desktop-agent', ...context, userId: session.user.id, model: modelLabel, requestType: 'mimocode-responses', status, inputText: String(body.input || '').slice(0, 8_000), outputText })
+    await recordTelemetry({ product: 'desktop-agent', ...context, userId: session.user.id, model: modelLabel, requestType: 'codex-responses', status, inputText: String(body.input || '').slice(0, 8_000), outputText })
     return
   }
 
@@ -341,7 +341,7 @@ async function handleMiMoOpenAI(request, response, route) {
       response.write('data: [DONE]\n\n')
     }
     response.end()
-    await recordTelemetry({ product: 'desktop-agent', ...context, userId: session.user.id, model: modelLabel, requestType: 'mimocode-chat-completions', status, inputText: String(body.messages?.at?.(-1)?.content || '').slice(0, 8_000), outputText })
+    await recordTelemetry({ product: 'desktop-agent', ...context, userId: session.user.id, model: modelLabel, requestType: 'codex-chat-completions', status, inputText: String(body.messages?.at?.(-1)?.content || '').slice(0, 8_000), outputText })
     return
   }
   sendPrivateJson(response, 404, { error: 'Not found' })

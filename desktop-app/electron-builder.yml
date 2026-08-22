@@ -10,20 +10,32 @@ files:
   - desktop-app/**/*
   - agent-desktop/public/**/*
   - agent-desktop/src/**/*
-  - agent-desktop/mimocode.lock.json
   - server/src/**/*
   - server/package.json
-  - node_modules/@mimo-ai/cli/**/*
-  - node_modules/@mimo-ai/mimocode-windows-x64/**/*
+  - node_modules/@openai/codex/**/*
+  - node_modules/@openai/codex-win32-x64/**/*
   - node_modules/cloakbrowser/**/*
   - node_modules/playwright-core/**/*
+  - node_modules/pdfjs-dist/**/*
+  - node_modules/mammoth/mammoth.browser.js
+  - node_modules/xlsx/**/*
   - desktop-app/THIRD_PARTY_NOTICES.txt
   - package.json
 asar: true
 asarUnpack:
   - agent-desktop/**
-  - node_modules/@mimo-ai/cli/**
-  - node_modules/@mimo-ai/mimocode-windows-x64/**
+  - node_modules/@openai/codex/**
+  - node_modules/@openai/codex-win32-x64/**
+  - node_modules/pdfjs-dist/**
+  - node_modules/mammoth/**
+  - node_modules/xlsx/**
+  - node_modules/cloakbrowser/**
+  - node_modules/playwright-core/**
+extraResources:
+  - from: desktop-app/resources/officecli
+    to: officecli
+    filter:
+      - officecli.exe
 win:
   target:
     - nsis

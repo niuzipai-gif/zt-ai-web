@@ -21,7 +21,7 @@ export const DEFAULT_PERMISSIONS = Object.freeze({
   [CAPABILITIES.read]: true,
   [CAPABILITIES.workspaceWrite]: false,
   [CAPABILITIES.commandExec]: false,
-  [CAPABILITIES.webResearch]: false,
+  [CAPABILITIES.webResearch]: true,
   [CAPABILITIES.fullAccess]: false,
 })
 
@@ -30,7 +30,7 @@ export function normalizePermissions(value = {}) {
     [CAPABILITIES.read]: value[CAPABILITIES.read] !== false,
     [CAPABILITIES.workspaceWrite]: value[CAPABILITIES.workspaceWrite] === true,
     [CAPABILITIES.commandExec]: value[CAPABILITIES.commandExec] === true,
-    [CAPABILITIES.webResearch]: value[CAPABILITIES.webResearch] === true,
+    [CAPABILITIES.webResearch]: value[CAPABILITIES.webResearch] !== false,
     [CAPABILITIES.fullAccess]: value[CAPABILITIES.fullAccess] === true,
   }
 }

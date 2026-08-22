@@ -1,12 +1,45 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
 const MAX_READ_BYTES = 1_000_000
 const MAX_SEARCH_RESULTS = 6
 const DEFAULT_WEB_TIMEOUT_MS = 25_000
-const FIRECRAWL_BASE_URL = String(process.env.ZT_AI_FIRECRAWL_BASE_URL || process.env.FIRECRAWL_BASE_URL || 'https://api.firecrawl.dev/v2').replace(/\/$/, '')
-const FIRECRAWL_API_KEY = process.env.ZT_AI_FIRECRAWL_API_KEY || process.env.FIRECRAWL_API_KEY || ''
+const DUCKDUCKGO_HTML_URL = 'https://html.duckduckgo.com/html/'
+const MODULE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+
+function parseEnvFile(text) {
+  const values = {}
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const match = line.match(/^\s*(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$/)
+    if (!match) continue
+    values[match[1]] = match[2].replace(/^['"]|['"]$/g, '')
+  }
+  return values
+}
+
+async function readOptionalEnvFile(filePath) {
+  if (!filePath) return {}
+  try { return parseEnvFile(await fs.readFile(filePath, 'utf8')) } catch { return {} }
+}
+
+export async function resolveWebSearchConfig({ env = process.env, envFile = '' } = {}) {
+  const explicitFile = String(env.ZT_AI_ENV_FILE || env.ZT_AI_ENV_PATH || envFile || '').trim()
+  const candidates = explicitFile
+    ? [explicitFile]
+    : [path.join(process.cwd(), 'aikey.env'), path.join(MODULE_ROOT, 'aikey.env')]
+  let fileValues = {}
+  for (const candidate of candidates) {
+    fileValues = await readOptionalEnvFile(candidate)
+    if (Object.keys(fileValues).length) break
+  }
+  const merged = { ...fileValues, ...env }
+  return {
+    baseUrl: String(merged.ZT_AI_FIRECRAWL_BASE_URL || merged.FIRECRAWL_BASE_URL || 'https://api.firecrawl.dev/v2').replace(/\/$/, ''),
+    apiKey: String(merged.ZT_AI_FIRECRAWL_API_KEY || merged.FIRECRAWL_API_KEY || ''),
+  }
+}
 
 export function resolveWorkspacePath(workspaceRoot, inputPath = '.') {
   const root = path.resolve(workspaceRoot)
@@ -110,9 +143,10 @@ export function normalizeFirecrawlSearch(body, limit = MAX_SEARCH_RESULTS) {
   })).filter(item => item.url && /^https?:\/\//i.test(item.url))
 }
 
-async function firecrawlRequest(pathname, body, { fetchImpl = fetch, timeoutMs = DEFAULT_WEB_TIMEOUT_MS } = {}) {
-  const authorization = FIRECRAWL_API_KEY ? { authorization: `Bearer ${FIRECRAWL_API_KEY}` } : {}
-  const response = await fetchImpl(`${FIRECRAWL_BASE_URL}${pathname}`, {
+async function firecrawlRequest(pathname, body, { fetchImpl = fetch, timeoutMs = DEFAULT_WEB_TIMEOUT_MS, config } = {}) {
+  const resolvedConfig = config || await resolveWebSearchConfig()
+  const authorization = resolvedConfig.apiKey ? { authorization: `Bearer ${resolvedConfig.apiKey}` } : {}
+  const response = await fetchImpl(`${resolvedConfig.baseUrl}${pathname}`, {
     method: 'POST',
     headers: { ...authorization, 'content-type': 'application/json', 'user-agent': 'ZT.AI Desktop Research/0.3' },
     body: JSON.stringify(body),
@@ -122,7 +156,7 @@ async function firecrawlRequest(pathname, body, { fetchImpl = fetch, timeoutMs =
   let parsed = {}
   try { parsed = raw ? JSON.parse(raw) : {} } catch { parsed = {} }
   if (!response.ok || parsed.success === false) {
-    const fallback = !FIRECRAWL_API_KEY && [401, 403].includes(response.status)
+    const fallback = !resolvedConfig.apiKey && [401, 403].includes(response.status)
       ? 'Firecrawl Keyless 当前不可用，请稍后重试或配置 FIRECRAWL_API_KEY。'
       : `Firecrawl 检索服务返回 ${response.status}`
     throw new Error(parsed.error || fallback)
@@ -130,19 +164,47 @@ async function firecrawlRequest(pathname, body, { fetchImpl = fetch, timeoutMs =
   return parsed
 }
 
-export async function searchWeb({ query, limit = MAX_SEARCH_RESULTS, fetchImpl = fetch, onProgress } = {}) {
+async function searchPublicIndex(query, { limit = MAX_SEARCH_RESULTS, fetchImpl = fetch, timeoutMs = DEFAULT_WEB_TIMEOUT_MS } = {}) {
+  const url = `${DUCKDUCKGO_HTML_URL}?q=${encodeURIComponent(query)}`
+  const response = await fetchImpl(url, {
+    headers: {
+      accept: 'text/html,application/xhtml+xml',
+      'user-agent': 'Mozilla/5.0 (compatible; ZT.AI-Research/0.3)',
+    },
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+  if (!response.ok) throw new Error(`备用公开索引返回 ${response.status}`)
+  const results = parseSearchResults(await response.text(), limit)
+  if (!results.length) throw new Error('未找到可核验的公开来源；无法据此确认结论。')
+  return results.map(result => ({ ...result, fingerprint: cleanMarkdownFingerprint(result.snippet) }))
+}
+
+export async function searchWeb({ query, limit = MAX_SEARCH_RESULTS, fetchImpl = fetch, onProgress, config } = {}) {
   const cleanQuery = String(query || '').trim().slice(0, 240)
   if (!cleanQuery) throw new Error('资料检索缺少 query')
+  const resolvedConfig = config || await resolveWebSearchConfig()
   onProgress?.('正在连接公开资料检索…')
-  const body = await firecrawlRequest('/search', {
-    query: cleanQuery,
-    limit: Math.min(MAX_SEARCH_RESULTS, Math.max(1, Number(limit) || MAX_SEARCH_RESULTS)),
-    sources: ['web'],
-    scrapeOptions: { formats: [{ type: 'markdown' }] },
-  }, { fetchImpl })
-  const results = normalizeFirecrawlSearch(body, limit)
-  onProgress?.(`已获得 ${results.length} 条公开来源，正在整理页面指纹…`)
-  return { tool: 'web_search', provider: 'firecrawl', query: cleanQuery, results }
+  try {
+    const body = await firecrawlRequest('/search', {
+      query: cleanQuery,
+      limit: Math.min(MAX_SEARCH_RESULTS, Math.max(1, Number(limit) || MAX_SEARCH_RESULTS)),
+      sources: ['web'],
+      scrapeOptions: { formats: [{ type: 'markdown' }] },
+    }, { fetchImpl, config: resolvedConfig })
+    const results = normalizeFirecrawlSearch(body, limit)
+    if (!results.length) throw new Error('Firecrawl 未返回可核验来源')
+    onProgress?.(`已获得 ${results.length} 条公开来源，正在整理页面指纹…`)
+    return { tool: 'web_search', provider: 'firecrawl', query: cleanQuery, results }
+  } catch (primaryError) {
+    onProgress?.('首选资料源暂时不可用，正在切换备用公开索引…')
+    try {
+      const results = await searchPublicIndex(cleanQuery, { limit, fetchImpl })
+      onProgress?.(`已获得 ${results.length} 条备用公开来源，正在整理来源链接…`)
+      return { tool: 'web_search', provider: 'duckduckgo', query: cleanQuery, results }
+    } catch (fallbackError) {
+      throw new Error(`未找到可核验的公开来源；无法据此确认结论。首选检索：${primaryError.message}；备用检索：${fallbackError.message}`)
+    }
+  }
 }
 
 export async function browseWeb({ url, timeoutMs = DEFAULT_WEB_TIMEOUT_MS } = {}) {

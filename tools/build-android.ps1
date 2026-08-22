@@ -82,7 +82,7 @@ Ensure-Directory $releaseDir
 Push-Location $appRoot
 try {
   Invoke-Checked $aapt2 @('compile', '--dir', 'app\src\main\res', '-o', $resZip)
-  Invoke-Checked $aapt2 @('link', '-o', $unsignedApk, '-I', $androidJar, '--manifest', 'app\src\main\AndroidManifest.xml', '--java', $genRoot, '--min-sdk-version', '24', '--target-sdk-version', '35', '--version-code', '21', '--version-name', '0.2.1', $resZip)
+  Invoke-Checked $aapt2 @('link', '-o', $unsignedApk, '-I', $androidJar, '--manifest', 'app\src\main\AndroidManifest.xml', '--java', $genRoot, '--min-sdk-version', '24', '--target-sdk-version', '35', '--version-code', '22', '--version-name', '0.2.2', $resZip)
 
   $javaFiles = @((Get-ChildItem -LiteralPath (Join-Path $sourceRoot 'java') -Filter '*.java' -Recurse).FullName) + @((Get-ChildItem -LiteralPath $genRoot -Filter 'R.java' -Recurse).FullName)
   $javacArgs = @('-source', '8', '-target', '8', '-encoding', 'UTF-8', '-classpath', $androidJar, '-d', $classesRoot) + $javaFiles

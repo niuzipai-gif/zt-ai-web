@@ -11,3 +11,12 @@ test('renders headings, lists, emphasis, code and links as safe markdown HTML', 
   assert.match(html, /href="https:\/\/github\.com"/)
   assert.doesNotMatch(renderMarkdown('<script>alert(1)<\/script>'), /<script>/i)
 })
+
+test('renders tables, ordered lists, quotes and removes hidden reasoning blocks', () => {
+  const html = renderMarkdown('<think>internal plan</think>\n\n| 项目 | 状态 |\n| --- | --- |\n| 接口 | 已完成 |\n\n1. 第一步\n2. 第二步\n\n> 给用户的结论\n\n---')
+  assert.doesNotMatch(html, /internal plan/)
+  assert.match(html, /<table>[\s\S]*<th>项目<\/th>[\s\S]*<td>已完成<\/td>[\s\S]*<\/table>/)
+  assert.match(html, /<ol>[\s\S]*<li>第一步<\/li>[\s\S]*<\/ol>/)
+  assert.match(html, /<blockquote>给用户的结论<\/blockquote>/)
+  assert.match(html, /<hr \/>/)
+})

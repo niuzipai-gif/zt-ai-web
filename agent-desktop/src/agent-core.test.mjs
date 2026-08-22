@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { AgentTaskManager, buildPlan, ensureResearchPlan, extractFilePath, isStepAllowed, parseAgentPlan } from './agent-core.mjs'
+import { AgentTaskManager, buildPlan, ensureResearchPlan, extractFilePath, extractWebUrl, isStepAllowed, parseAgentPlan } from './agent-core.mjs'
 
 test('execution-first planning identifies read, write and test work', () => {
   assert.equal(extractFilePath('请读取 README.md'), 'README.md')
@@ -51,6 +51,14 @@ test('research tasks replace legacy shell scraping plans with the web search too
   const plan = ensureResearchPlan('检索 MiniMax 官方 API 文档并给出来源', legacyPlan)
   assert.deepEqual(plan.map(step => step.tool), ['list_workspace', 'web_search'])
   assert.match(plan[1].query, /MiniMax 官方 API 文档/)
+})
+
+test('a pasted product URL automatically gets a CloakBrowser inspection step', () => {
+  const url = 'https://www.amazon.co.uk/dp/B0EXAMPLE?tag=demo'
+  assert.equal(extractWebUrl(`分析这个链接 ${url}`), url)
+  const plan = ensureResearchPlan(`分析这个链接 ${url}`, [{ id: 'context-list', tool: 'list_workspace', label: '检查工作区上下文' }])
+  assert.deepEqual(plan.map(step => step.tool), ['list_workspace', 'browse_url'])
+  assert.equal(plan[1].url, url)
 })
 
 test('one-time approval is scoped to the exact execution step', () => {

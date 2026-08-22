@@ -1,10 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { verifyBundledMiMo } from './mimocode-runtime.mjs'
+import { verifyBundledCodex } from './codex-runtime.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let worker
@@ -31,7 +31,10 @@ async function startWorker() {
   workerPort = await findFreePort()
   const unpackedRoot = path.join(process.resourcesPath, 'app.asar.unpacked')
   const appPath = await fs.access(unpackedRoot).then(() => unpackedRoot).catch(() => path.resolve(__dirname, '..'))
-  const mimocode = verifyBundledMiMo({ appRoot: appPath })
+  const codex = verifyBundledCodex({ appRoot: appPath })
+  const officeCli = app.isPackaged
+    ? path.join(process.resourcesPath, 'officecli', 'officecli.exe')
+    : path.join(appPath, 'desktop-app', 'resources', 'officecli', 'officecli.exe')
   const agentServer = path.join(appPath, 'agent-desktop', 'src', 'server.mjs')
   const dataPath = path.join(app.getPath('userData'), 'agent-data')
   const workspaceRoot = process.env.ZT_AI_WORKSPACE || path.join(app.getPath('documents'), 'ZT.AI Workspace')
@@ -48,8 +51,8 @@ async function startWorker() {
       ZT_AI_AGENT_DATA: dataPath,
       ZT_AI_WORKSPACE: workspaceRoot,
       ZT_AI_GATEWAY_URL: process.env.ZT_AI_GATEWAY_URL || 'https://zt-ai-gateway.onrender.com',
-      ZT_AI_MIMOCODE_BIN: mimocode.binary,
-      ZT_AI_MIMOCODE_URL: '',
+      ZT_AI_CODEX_BIN: codex.binary,
+      ZT_AI_OFFICECLI_PATH: officeCli,
       ZT_AI_TEST_MODE: '',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -69,24 +72,25 @@ function createWindow(config) {
     height: 920,
     minWidth: 980,
     minHeight: 680,
-    backgroundColor: '#eef0ee',
+    backgroundColor: '#e9eef2',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#e9eef2', symbolColor: '#65737c', height: 34 },
+    autoHideMenuBar: true,
+    menuBarVisible: false,
     title: 'ZT.buddy',
     icon: path.join(__dirname, 'icon.ico'),
     webPreferences: { preload: path.join(__dirname, 'preload.mjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   })
+  window.setMenuBarVisibility(false)
   window.webContents.setWindowOpenHandler(({ url }) => { if (/^https:\/\//i.test(url)) void shell.openExternal(url); return { action: 'deny' } })
   window.webContents.on('will-navigate', event => event.preventDefault())
   window.loadURL(`http://127.0.0.1:${config.port}/`)
 }
 
-ipcMain.handle('ztai:select-workspace', async () => {
-  const result = await dialog.showOpenDialog(window, { title: '选择 Agent 工作区', properties: ['openDirectory', 'createDirectory'] })
-  return result.canceled ? null : result.filePaths[0]
-})
 ipcMain.handle('ztai:open-external', (_event, url) => { if (/^https:\/\//i.test(String(url))) return shell.openExternal(String(url)); return false })
 
 app.whenReady().then(async () => {
-  try { const config = await startWorker(); createWindow(config) }
+  try { Menu.setApplicationMenu(null); const config = await startWorker(); createWindow(config) }
   catch (error) { dialog.showErrorBox('ZT.AI 启动失败', error.message); app.quit() }
 })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })

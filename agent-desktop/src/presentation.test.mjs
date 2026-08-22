@@ -1,11 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { conversationFailurePresentation, executionDrawerPresentation, executionPresentation } from './presentation.mjs'
+import { conversationFailurePresentation, executionDrawerPresentation, executionPresentation, sanitizeAssistantPresentation } from './presentation.mjs'
 
-test('ordinary chat does not promise local execution', () => {
+test('direct answers do not promise local execution', () => {
   assert.deepEqual(executionPresentation({ route: 'chat', kind: 'chat' }), {
-    title: '普通聊天',
-    summary: '我会直接回答，不会读取文件或调用本机工具。',
+    title: '直接回答',
+    summary: '这个问题不需要读取文件或调用本机工具，我会在当前 ZT.buddy 会话中直接回答。',
     approval: false,
   })
 })
@@ -28,4 +28,17 @@ test('Buddy execution details stay collapsed by default while retaining a concis
   })
   assert.equal(executionDrawerPresentation({ status: 'running', elapsedMs: 0, stepCount: 1 }).open, false)
   assert.match(executionDrawerPresentation({ status: 'blocked', elapsedMs: 60_000, stepCount: 2 }).label, /等待确认/)
+})
+
+test('assistant presentation removes vendor tool protocol and hidden reasoning', () => {
+  const value = sanitizeAssistantPresentation('<think>private</think><minimax><toolcall>{"name":"websearch"}</toolcall></minimax>已完成检索')
+  assert.equal(value, '已完成检索')
+})
+
+test('assistant presentation returns empty text for protocol-only output', () => {
+  assert.equal(sanitizeAssistantPresentation('<toolcall>{"name":"read"}</toolcall>'), '')
+})
+
+test('assistant presentation removes malformed vendor wrappers from streamed output', () => {
+  assert.equal(sanitizeAssistantPresentation('|<minimax>[<toolcall>{\"name\":\"websearch\"}</toolcall>]</minimax>结果'), '结果')
 })

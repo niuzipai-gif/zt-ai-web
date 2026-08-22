@@ -11,6 +11,8 @@ import mammoth from 'mammoth/mammoth.browser'
 import { createChatSession, createSessionTitle, loadVisitorState, saveVisitorState } from './lib/chat-session.js'
 import { getInitialLanguage, LANGUAGE_OPTIONS, resumeDocumentByLanguage, siteCopy } from './lib/i18n.js'
 import { buildStarterPrompts, formatRelativeSessionTime, shouldUseCompactProfile } from './lib/chat-ux.js'
+import { filesFromDataTransfer, hasFilePayload } from './lib/attachments.js'
+import { attachmentMime, attachmentName, extractPdfText, isPdfAttachment, isTextAttachment } from './lib/attachment-reader.js'
 import { renderMarkdown } from './lib/markdown.js'
 import { getStreamBatchSize } from './lib/streaming.js'
 import './styles.css'
@@ -191,10 +193,15 @@ function prepareImage(file) {
 }
 
 async function prepareAttachment(file) {
-  const attachment = { id: `${file.name}-${file.lastModified}-${Math.random()}`, name: file.name, type: file.type || 'application/octet-stream', size: file.size }
-  if (file.type.startsWith('image/')) attachment.preview = await prepareImage(file)
-  else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || /\.docx$/i.test(file.name)) attachment.text = (await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value.slice(0, 16000)
-  else if (file.type.startsWith('text/') || /\.(md|markdown|txt|json|csv|js|jsx|ts|tsx|py|html|css)$/i.test(file.name)) attachment.text = (await file.text()).slice(0, 16000)
+  const type = attachmentMime(file)
+  const name = attachmentName(file)
+  const attachment = { id: `${name}-${file.lastModified}-${Math.random()}`, name, type: type || 'application/octet-stream', size: file.size }
+  if (type.startsWith('image/')) attachment.preview = await prepareImage(file)
+  else if (isPdfAttachment(file)) attachment.text = await extractPdfText(file)
+  else if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || /\.docx$/i.test(name)) attachment.text = (await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value.slice(0, 16000)
+  else if (isTextAttachment(file)) attachment.text = (await file.text()).slice(0, 16000)
+  if (!attachment.preview && !attachment.text) attachment.readError = '当前只读取了文件名和类型，暂不支持解析该文件内容。'
+  if (isPdfAttachment(file) && !attachment.text) attachment.readError = '这个 PDF 没有可提取的文字，可能是扫描图片；请改传截图或图片。'
   return attachment
 }
 
@@ -202,9 +209,9 @@ function MarkdownMessage({ text }) {
   return <div className="markdown-message" dangerouslySetInnerHTML={{ __html: renderMarkdown(text || '') }} />
 }
 
-function AttachmentList({ attachments = [], compact = false }) {
+function AttachmentList({ attachments = [], compact = false, onPreview }) {
   if (!attachments.length) return null
-  return <div className={`attachment-list ${compact ? 'is-compact' : ''}`}>{attachments.map(file => <div className="attachment-chip" key={file.id}>{file.preview ? <img src={file.preview} alt={file.name} /> : <FileText size={14} />}<span title={file.name}>{file.name}</span><small>{formatBytes(file.size)}</small></div>)}</div>
+  return <div className={`attachment-list ${compact ? 'is-compact' : ''}`}>{attachments.map(file => <div className="attachment-chip" key={file.id}>{file.preview ? <button type="button" className="attachment-preview-button" onClick={() => onPreview?.(file)} aria-label={`预览 ${file.name}`}><img src={file.preview} alt={file.name} /></button> : <FileText size={14} />}<span title={file.name}>{file.name}</span><small>{file.readError ? '未解析' : file.text ? '已读取' : formatBytes(file.size)}</small></div>)}</div>
 }
 
 function visitorShortId(visitorId) {
@@ -230,6 +237,8 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
   const [attachments, setAttachments] = useState([])
   const [activeMessageId, setActiveMessageId] = useState(null)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [previewAttachment, setPreviewAttachment] = useState(null)
+  const [dragOver, setDragOver] = useState(false)
   const [retryPayload, setRetryPayload] = useState(null)
   const inputRef = useRef(null)
   const messagesRef = useRef(null)
@@ -248,6 +257,8 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     setAttachments([])
     setActiveMessageId(null)
     setRetryPayload(null)
+    setPreviewAttachment(null)
+    setDragOver(false)
     streamQueueRef.current = []
     streamFinishedRef.current = false
   }, [session.id])
@@ -275,14 +286,56 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     })
   }, [messages, activeMessageId])
 
-  const handleFiles = async event => {
-    const files = Array.from(event.target.files || []).slice(0, 4)
+  const addFiles = async fileList => {
+    const files = Array.from(fileList || []).slice(0, Math.max(0, 4 - attachments.length))
     if (files.length) {
-      const prepared = await Promise.all(files.map(prepareAttachment))
+      const prepared = await Promise.all(files.map(async file => {
+        try { return await prepareAttachment(file) } catch (error) { return { id: `${file.name}-${file.lastModified}-${Math.random()}`, name: file.name, type: file.type || 'application/octet-stream', size: file.size, readError: error.message || '文件内容读取失败。' } }
+      }))
       setAttachments(current => [...current, ...prepared].slice(0, 4))
     }
+  }
+
+  const handleFiles = async event => {
+    await addFiles(event.target.files)
     event.target.value = ''
   }
+
+  const handlePaste = event => {
+    const files = filesFromDataTransfer(event.clipboardData)
+    if (!files.length) return
+    event.preventDefault()
+    event.stopPropagation()
+    void addFiles(files)
+  }
+
+  const handleDragOver = event => {
+    if (!hasFilePayload(event.dataTransfer)) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = 'copy'
+    setDragOver(true)
+  }
+
+  const handleDragLeave = event => {
+    if (event.currentTarget === event.target || !event.currentTarget.contains(event.relatedTarget)) setDragOver(false)
+  }
+
+  const handleDrop = event => {
+    const files = filesFromDataTransfer(event.dataTransfer)
+    if (!files.length) return
+    event.preventDefault()
+    event.stopPropagation()
+    setDragOver(false)
+    void addFiles(files)
+  }
+
+  useEffect(() => {
+    if (!previewAttachment) return undefined
+    const close = event => { if (event.key === 'Escape') setPreviewAttachment(null) }
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [previewAttachment])
 
   const removeAttachment = id => setAttachments(current => current.filter(file => file.id !== id))
 
@@ -291,7 +344,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     const value = (draft?.value ?? input).trim()
     if ((!value && !nextAttachments.length) || activeMessageId) return
     const now = Date.now()
-    const attachmentText = nextAttachments.map(file => `[附件：${file.name}，类型：${file.type}，大小：${formatBytes(file.size)}]${file.text ? `\n${file.text}` : ''}`).join('\n')
+    const attachmentText = nextAttachments.map(file => `[附件：${file.name}，类型：${file.type}，大小：${formatBytes(file.size)}]${file.text ? `\n${file.text}` : ''}${file.readError ? `\n[读取说明：${file.readError}]` : ''}`).join('\n')
     const contentText = [value || copy.sendFallback, attachmentText].filter(Boolean).join('\n\n')
     const imageParts = nextAttachments.filter(file => file.preview).map(file => ({ type: 'image_url', image_url: { url: file.preview } }))
     const content = imageParts.length ? [{ type: 'text', text: contentText }, ...imageParts] : contentText
@@ -335,7 +388,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
   }
   const renderMessage = message => message.status === 'thinking'
     ? <span className="typing-indicator" aria-label="ZT.AI 正在思考"><i /><i /><i /></span>
-    : <><MarkdownMessage text={message.text} /><AttachmentList attachments={message.attachments} /></>
+    : <><MarkdownMessage text={message.text} /><AttachmentList attachments={message.attachments} onPreview={setPreviewAttachment} /></>
   const restoreRetry = () => {
     if (!retryPayload) return
     setInput(retryPayload.value)
@@ -348,10 +401,11 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     <div className="chat-topline"><div><span className="eyebrow">{copy.eyebrow} · {visitorShortId(visitorId)}</span><h2>{copy.title}</h2></div><div className="chat-top-actions"><button className="chat-history-button" onClick={() => setHistoryOpen(true)}><History size={14} />{copy.history}</button><button className="chat-new-button" onClick={onNewChat}><Plus size={14} />{copy.newChat}</button><a className="resume-inline-download" href={resumeDocument.url} download={resumeDocument.name}><FileText size={13} />{copy.resume}</a><span className="free-pill"><span />{copy.free}</span></div></div>
     {messages.length ? <div className="messages" ref={messagesRef}>{messages.map((message, index) => <div key={message.id ?? `${message.role}-${index}`} className={`message-row ${message.role === 'user' ? 'from-user' : ''}`}><div className={`message-bubble ${message.status === 'thinking' ? 'is-thinking' : ''}`}><span className="message-label">{message.role === 'zt' ? 'ZT.AI' : copy.visitor}</span>{renderMessage(message)}{renderMedia(message.media)}</div></div>)}</div> : <div className="empty-chat" ref={messagesRef}><span className="empty-chat-mark"><MessageCircle size={20} /></span><span className="eyebrow">{copy.emptyEyebrow}</span><h3>{copy.emptyTitle}</h3><p>{copy.emptyBody}</p><div className="starter-prompts starter-prompt-group"><span>{copy.starterLabel}</span><div>{starterPrompts.map(prompt => <button key={prompt} onClick={() => { setInput(prompt); window.setTimeout(() => inputRef.current?.focus(), 0) }}>{prompt}<ArrowUpRight size={13} /></button>)}</div></div><button className="empty-chat-action" onClick={() => { setInput(copy.startPrompt); window.setTimeout(() => inputRef.current?.focus(), 0) }}>{copy.emptyAction} <ArrowUpRight size={14} /></button></div>}
     {retryPayload && <div className="chat-retry" role="status"><span>{copy.retryHint}</span><button onClick={restoreRetry}>{copy.retry}</button></div>}
-    {attachments.length > 0 && <div className="pending-attachments"><AttachmentList attachments={attachments} compact />{attachments.map(file => <button key={file.id} onClick={() => removeAttachment(file.id)} aria-label={`移除 ${file.name}`}><X size={13} /></button>)}</div>}
-    <div className="chat-compose"><label className="attach-button" title={copy.upload}><Paperclip size={16} /><input type="file" multiple accept="image/*,.txt,.md,.markdown,.json,.csv,.js,.jsx,.ts,.tsx,.py,.html,.css,.pdf,.doc,.docx" onChange={handleFiles} disabled={Boolean(activeMessageId)} /></label><input ref={inputRef} value={input} disabled={Boolean(activeMessageId)} onChange={event => setInput(event.target.value)} onKeyDown={event => event.key === 'Enter' && send()} placeholder={activeMessageId ? copy.generating : copy.placeholder} /><button onClick={send} disabled={Boolean(activeMessageId) || (!input.trim() && !attachments.length)} aria-label={copy.send}><Send size={16} /></button></div>
+    {attachments.length > 0 && <div className="pending-attachments"><AttachmentList attachments={attachments} compact onPreview={setPreviewAttachment} />{attachments.map(file => <button key={file.id} onClick={() => removeAttachment(file.id)} aria-label={`移除 ${file.name}`}><X size={13} /></button>)}</div>}
+    <div className={`chat-compose ${dragOver ? 'is-dragging' : ''}`} onPaste={handlePaste} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}><label className="attach-button" title={copy.upload}><Paperclip size={16} /><input type="file" multiple onChange={handleFiles} disabled={Boolean(activeMessageId)} /></label><input ref={inputRef} value={input} disabled={Boolean(activeMessageId)} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); send() } }} placeholder={activeMessageId ? copy.generating : copy.placeholder} /><button onClick={send} disabled={Boolean(activeMessageId) || (!input.trim() && !attachments.length)} aria-label={copy.send}><Send size={16} /></button></div>
     <div className="chat-footer"><ModelSwitch model={model} setModel={setModel} /><span className="chat-note"><MessageCircle size={14} /> {copy.publicNote}</span></div>
     {historyOpen && <ChatHistoryDrawer visitorId={visitorId} sessions={sessions} activeSessionId={session.id} copy={copy} language={language} onSelectSession={id => { onSelectSession(id); setHistoryOpen(false) }} onNewChat={() => { onNewChat(); setHistoryOpen(false) }} onClose={() => setHistoryOpen(false)} />}
+    {previewAttachment && <div className="attachment-lightbox" role="dialog" aria-modal="true" aria-label={`预览 ${previewAttachment.name}`} onClick={() => setPreviewAttachment(null)}><button type="button" onClick={() => setPreviewAttachment(null)} aria-label="关闭预览"><X size={18} /></button><img src={previewAttachment.preview} alt={previewAttachment.name} onClick={event => event.stopPropagation()} /></div>}
   </section>
 }
 

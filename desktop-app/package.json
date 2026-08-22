@@ -1,6 +1,6 @@
 {
   "name": "zt-ai-desktop-agent-shell",
   "private": true,
-  "version": "0.2.15",
+  "version": "0.2.26",
   "main": "main.mjs"
 }

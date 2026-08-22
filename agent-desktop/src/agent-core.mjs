@@ -35,6 +35,10 @@ export function extractFilePath(text) {
   return candidates[0] || null
 }
 
+export function extractWebUrl(text) {
+  return String(text || '').match(/https?:\/\/[^\s<>"'）)]+/iu)?.[0] || null
+}
+
 function parseJsonText(raw) {
   const source = String(raw || '').trim().replace(/^```(?:json)?\s*/iu, '').replace(/\s*```$/u, '')
   try { return JSON.parse(source) } catch {
@@ -127,8 +131,18 @@ function buildSafeFallbackPlan(task, taskId) {
 
 export function ensureResearchPlan(task, plan = []) {
   const text = String(task || '').trim()
-  if (!/(检索|搜索|查资料|查找资料|research|search|look up|documentation|文档)/iu.test(text)) return plan
   const listSteps = plan.filter(step => step.tool === 'list_workspace').slice(0, 1)
+  const url = extractWebUrl(text)
+  if (url) {
+    const browseStep = { ...(plan.find(step => step.tool === 'browse_url') || {
+      id: 'web-browse',
+      tool: 'browse_url',
+      label: '打开链接并读取页面指纹',
+    }), url }
+    const rest = plan.filter(step => step.tool !== 'list_workspace' && step.tool !== 'browse_url')
+    return [...listSteps, browseStep, ...rest]
+  }
+  if (!/(检索|搜索|查资料|查找资料|research|search|look up|documentation|文档)/iu.test(text)) return plan
   const searchStep = plan.find(step => step.tool === 'web_search') || {
     id: 'web-research',
     tool: 'web_search',

@@ -1,5 +1,5 @@
 const MAP = {
-  chat: ['普通聊天', '我会直接回答，不会读取文件或调用本机工具。', false],
+  chat: ['直接回答', '这个问题不需要读取文件或调用本机工具，我会在当前 ZT.buddy 会话中直接回答。', false],
   read: ['准备读取', '准备查看当前工作区内容，只读取，不修改文件。', false],
   research: ['准备检索', '准备检索公开资料并在结果中附上来源链接。', false],
   write: ['准备修改', '准备在当前工作区写入或整理文件，执行前会请求写入确认。', true],
@@ -14,6 +14,17 @@ export function executionPresentation(intent = {}) {
 
 export function conversationFailurePresentation() {
   return '暂时无法获取模型回复。你的消息和当前对话已保留，请稍后重试或切换模型。'
+}
+
+export function sanitizeAssistantPresentation(value) {
+  return String(value || '')
+    .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '')
+    .replace(/<toolcall\b[^>]*>[\s\S]*?<\/toolcall>/gi, '')
+    .replace(/<minimax\b[^>]*>[\s\S]*?<\/minimax>/gi, '')
+    .replace(/\|?\s*<\/?(?:minimax|toolcall)\b[^>]*>/gi, '')
+    .replace(/^\s*[|｜]+\s*/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 export function executionDrawerPresentation({ status = 'running', elapsedMs = 0, stepCount = 0 } = {}) {

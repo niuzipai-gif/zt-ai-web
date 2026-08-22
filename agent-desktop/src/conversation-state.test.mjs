@@ -15,11 +15,12 @@ test('creates independent conversations with isolated messages', () => {
 })
 
 test('normalizes invalid stored conversations without sharing references', () => {
-  const stored = normalizeConversations([{ id: 'chat-1', title: '旧对话', messages: [{ role: 'user', content: '你好' }] }])
+  const stored = normalizeConversations([{ id: 'chat-1', title: '旧对话', agentContext: true, messages: [{ role: 'user', content: '你好' }] }])
   stored[0].messages.push({ role: 'assistant', content: '回复' })
 
   assert.equal(stored.length, 1)
   assert.equal(stored[0].messages.length, 2)
+  assert.equal(stored[0].agentContext, true)
   assert.deepEqual(normalizeConversations(null), [])
 })
 
@@ -49,13 +50,32 @@ test('builds a multimodal user message from pasted image attachments', () => {
   ])
 })
 
-test('merges durable MiMo conversations without leaking another account or replacing richer local messages', () => {
+test('merges durable Codex conversations without leaking another account or replacing richer local messages', () => {
   const local = [addConversationMessage(createConversation('chat-1', 100), { role: 'user', content: '本地问题' }, 200)]
   const merged = mergeServerConversations(local, [
-    { id: 'chat-1', title: '本地问题', messages: [{ role: 'user', content: '本地问题' }, { role: 'assistant', content: '本地回答' }], updatedAt: 300 },
+    { id: 'chat-1', title: '本地问题', agentContext: true, messages: [{ role: 'user', content: '本地问题' }, { role: 'assistant', content: '本地回答' }], updatedAt: 300 },
     { id: 'chat-2', title: '另一个账号', messages: [{ role: 'user', content: '不应丢失' }], updatedAt: 400 },
   ])
   assert.equal(merged.length, 2)
   assert.equal(merged.find(item => item.id === 'chat-1').messages.at(-1).content, '本地回答')
+  assert.equal(merged.find(item => item.id === 'chat-1').agentContext, true)
   assert.equal(merged.find(item => item.id === 'chat-2').title, '另一个账号')
+})
+
+test('keeps server agent context even when the local conversation has more messages', () => {
+  const local = [{
+    id: 'chat-1',
+    title: '调查',
+    messages: [
+      { role: 'user', content: '调查牛来' },
+      { role: 'assistant', content: '本地临时回复' },
+      { role: 'user', content: '调查好了没' },
+    ],
+    updatedAt: 400,
+  }]
+  const remote = [{ id: 'chat-1', title: '调查', agentContext: true, messages: [{ role: 'user', content: '调查牛来' }], updatedAt: 300 }]
+
+  const [merged] = mergeServerConversations(local, remote)
+  assert.equal(merged.messages.length, 3)
+  assert.equal(merged.agentContext, true)
 })

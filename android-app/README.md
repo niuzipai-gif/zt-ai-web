@@ -22,6 +22,6 @@ powershell -ExecutionPolicy Bypass -File .\tools\build-android.ps1
 
 构建并发布后，下载中心使用 GitHub Release 的稳定地址：
 
-`https://github.com/niuzipai-gif/zt-ai-web/releases/latest/download/ZT.AI-Android-0.2.1.apk`
+`https://github.com/niuzipai-gif/zt-ai-web/releases/latest/download/ZT.AI-Android-0.2.2.apk`
 
-当前构建校验：41,438 bytes · SHA-256 `A7AD753ABF1D4C5E4F01851C3E1241323687D65719AB0527B24479422059D01E`
+当前构建校验：41,438 bytes · SHA-256 `F8A767EE8846B3F8012F69E41712450D9FCE29033CBA06CE3E3E13120F267DE9`

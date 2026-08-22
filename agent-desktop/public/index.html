@@ -9,30 +9,36 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="app-shell" data-mode="CHAT" data-inspector-open="false">
-      <header class="topbar">
+    <div class="app-shell" data-mode="BUDDY" data-inspector-open="false">
+      <header class="topbar app-toolbar">
+        <div class="app-navigation" aria-label="应用导航">
+          <button id="sidebar-toggle" class="toolbar-icon" type="button" aria-label="收起聊天列表" aria-controls="chat-rail" aria-expanded="true" title="收起聊天列表">☰</button>
+          <span class="toolbar-divider" aria-hidden="true"></span>
+          <button id="app-back" class="toolbar-icon" type="button" aria-label="返回上一状态" title="返回" disabled>←</button>
+          <button id="app-forward" class="toolbar-icon" type="button" aria-label="前进下一状态" title="前进" disabled>→</button>
+        </div>
         <div class="brand"><img src="/zt-logo.png" alt="ZT.AI" /><div><strong>ZT.AI</strong><span>DESKTOP WORKSPACE</span></div></div>
         <div class="workspace-name"><b>个人工作区</b><span>/ zt-ai-web</span></div>
-        <div class="mode-switch" role="tablist" aria-label="工作模式"><button id="mode-chat" class="active" data-mode="CHAT" role="tab" aria-selected="true">普通聊天</button><button id="mode-buddy" data-mode="BUDDY" role="tab" aria-selected="false">ZT.buddy</button></div>
-        <div class="topbar-status"><span class="live-dot"></span><span id="gateway-status">本机已连接</span><span id="account-label" class="mono"></span><button id="logout" class="text-button">退出账户</button><span class="mono" id="clock"></span></div>
+        <div class="workspace-mode-label" aria-label="当前工作模式"><span class="live-dot"></span><strong>ZT.buddy</strong><small>本机 Agent 工作区</small></div>
+        <div class="topbar-status"><button id="app-refresh" class="toolbar-icon" type="button" aria-label="刷新当前工作区" title="刷新">↻</button><span class="live-dot"></span><span id="gateway-status">本机已连接</span><span id="account-label" class="mono"></span><button id="logout" class="text-button">退出账户</button><span class="mono" id="clock"></span></div>
       </header>
 
       <div class="desktop-grid">
-        <aside class="chat-rail glass-card">
-          <div class="rail-heading"><div><span class="eyebrow">WORKSPACE</span><h2 id="rail-title">普通聊天</h2></div><button id="refresh" class="icon-button" title="刷新状态">↻</button></div>
+        <aside id="chat-rail" class="chat-rail glass-card">
+          <div class="rail-heading"><div><span class="eyebrow">WORKSPACE</span><h2 id="rail-title">ZT.buddy</h2></div></div>
           <button id="new-task" class="new-chat-button"><span>＋</span>新建对话</button>
           <div class="rail-section"><span class="section-label">RECENT CHATS</span><div id="history" class="history-list"><div class="empty-history">还没有对话记录</div></div></div>
-          <div class="rail-footer"><span class="status-ring"></span><div><strong id="rail-status">本机工作区</strong><small id="workspace-short">加载中…</small></div><button id="select-workspace" class="workspace-button" type="button">选择</button></div>
+          <div class="rail-footer"><span class="status-ring"></span><div><strong id="rail-status">本机工作区</strong><small id="workspace-short">加载中…</small></div></div>
         </aside>
 
         <main class="conversation glass-card">
-          <div class="conversation-head"><div><span class="eyebrow" id="conversation-eyebrow">CONVERSATION</span><h1 id="conversation-title">ZT.AI 对话</h1><small id="conversation-subtitle">普通聊天 · 继续上次上下文</small></div><div class="head-actions"><div class="context-meter buddy-only"><div id="context-ring" class="context-ring"><b id="context-percent">1%</b></div><div><strong id="context-model">MiniMax M3</strong><small id="context-used">1M · 12.4k used</small></div></div><span id="execution-summary" class="sr-only" aria-live="polite"></span></div></div>
-          <div id="messages" class="messages" aria-live="polite"><div class="message user-message"><div class="bubble">你好，帮我看看当前项目的接口和桌面端体验。</div></div><div class="message assistant-message"><div class="bubble"><div class="message-label">ZT.AI</div><p>你好，我是 ZT.AI。普通聊天模式下，我可以围绕你的项目、简历和产品想法进行交流。</p><p class="buddy-only inline-note">切换到 ZT.buddy 后，我会先拆解任务，再在你授权的本机工作区执行。</p></div></div></div>
+          <div class="conversation-head"><div><span class="eyebrow" id="conversation-eyebrow">SMART EXECUTION CHAT</span><h1 id="conversation-title">ZT.buddy 工作区</h1><small id="conversation-subtitle">自动判断 · 执行优先 · 继续上次上下文</small></div><div class="head-actions"><div class="context-meter buddy-only"><div id="context-ring" class="context-ring"><b id="context-percent">1%</b></div><div><strong id="context-model">MiniMax M3</strong><small id="context-used">1M · 12.4k used</small></div></div><button id="inspector-toggle" class="head-button buddy-only" type="button" aria-expanded="false" aria-controls="buddy-panel">执行上下文</button><span id="execution-summary" class="sr-only" aria-live="polite"></span></div></div>
+          <div id="messages" class="messages" aria-live="polite"><div class="message assistant-message"><div class="bubble"><div class="message-label">ZT.AI</div><p>你好，我是 ZT.AI。这里是 ZT.buddy 工作区：你可以直接交给我一个目标，我会先判断是回答、联网核验，还是在你授权的本机工作区执行。</p></div></div></div>
 
           <form id="composer" class="composer">
-            <textarea id="task-input" rows="2" placeholder="给 ZT.AI 发消息……"></textarea>
+            <textarea id="task-input" rows="2" placeholder="给 ZT.buddy 一个任务，或直接开始聊天……"></textarea>
             <div id="attachment-preview" class="attachment-preview" aria-live="polite"></div>
-            <input id="file-input" type="file" accept="image/*" multiple hidden />
+            <input id="file-input" type="file" multiple hidden />
             <div id="composer-approval" class="composer-approval hidden" aria-live="polite"></div>
             <div class="composer-row"><button id="tool-trigger" class="round-button" type="button" title="添加 Skill、插件或文件">＋</button><button id="permission-trigger" class="permission-button buddy-only" type="button">⚠ 权限</button><span class="composer-spacer"></span><select id="model-select" class="model-select" aria-label="选择模型"><option value="MINIMAX">MiniMax M3 · 1M</option><option value="DEEPSEEK">DeepSeek V4 Flash · 1M</option></select><button id="voice-button" class="round-button microphone" type="button" aria-label="语音输入" title="语音输入"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="3" width="8" height="12" rx="4"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"></path></svg></button><button id="run-task" class="send-button" type="submit" title="发送">↗</button></div>
             <div id="tool-drawer" class="tool-drawer hidden" aria-label="添加内容与工具抽屉" aria-hidden="true">
@@ -44,7 +50,7 @@
             <div id="permission-drawer" class="tool-drawer permission-drawer hidden" aria-label="权限与执行抽屉" aria-hidden="true">
               <div class="drawer-header"><strong>权限与执行</strong><button id="permission-drawer-close" class="drawer-close" type="button" aria-label="关闭权限与执行抽屉" title="关闭">×</button></div>
               <div class="drawer-section buddy-only" data-drawer-section="context"><div class="drawer-label">上下文</div><div class="drawer-context-card"><div id="context-ring-large" class="context-ring-large"><b id="context-percent-large">1%</b></div><div class="context-stats"><strong id="context-used-large">12.4k / 1M</strong><small id="context-limit-label">当前模型上下文上限</small><em id="context-remaining">剩余约 987.6k tokens</em></div></div><p class="muted-copy">模型和上下文状态会随当前会话实时更新。</p></div>
-              <div class="drawer-section buddy-only" data-drawer-section="permissions"><div class="drawer-label">本机权限</div><div class="drawer-permission-summary"><div><strong>本机执行确认</strong><small id="authorization-status">尚未确认本机执行</small></div><button id="authorize-device" class="secondary-button" type="button">确认这台设备</button></div><label class="permission-row"><span><strong>读取工作区</strong><small>查看目录与文本文件</small></span><input type="checkbox" data-capability="read" checked disabled /><i></i></label><label class="permission-row"><span><strong>工作区写入</strong><small>新建、移动或修改工作区文件</small></span><input type="checkbox" data-capability="workspace_write" disabled /><i></i></label><label class="permission-row"><span><strong>命令执行</strong><small>运行测试、构建和脚本</small></span><input type="checkbox" data-capability="command_exec" disabled /><i></i></label><label class="permission-row"><span><strong>联网资料检索</strong><small>搜索公开网页并返回来源</small></span><input type="checkbox" data-capability="web_research" /><i></i></label><label class="permission-row danger-permission"><span><strong>完全访问</strong><small>当前任务不再逐步询问，仅限这台设备</small></span><input type="checkbox" data-capability="full_access" disabled /><i></i></label><div class="permission-note">默认每一步单独请求确认；“完全访问”是显式开启的本机模式，关闭后恢复逐步确认。</div></div>
+              <div class="drawer-section buddy-only" data-drawer-section="permissions"><div class="drawer-label">本机权限</div><div class="drawer-permission-summary"><div><strong>本机执行确认</strong><small id="authorization-status">尚未确认本机执行</small></div><button id="authorize-device" class="secondary-button" type="button">确认这台设备</button></div><label class="permission-row"><span><strong>读取工作区</strong><small>查看目录与文本文件</small></span><input type="checkbox" data-capability="read" checked disabled /><i></i></label><label class="permission-row"><span><strong>工作区写入</strong><small>新建、移动或修改工作区文件</small></span><input type="checkbox" data-capability="workspace_write" disabled /><i></i></label><label class="permission-row"><span><strong>命令执行</strong><small>运行测试、构建和脚本</small></span><input type="checkbox" data-capability="command_exec" disabled /><i></i></label><label class="permission-row"><span><strong>联网资料检索</strong><small>搜索公开网页并返回来源</small></span><input type="checkbox" data-capability="web_research" checked /><i></i></label><label class="permission-row danger-permission"><span><strong>完全访问</strong><small>当前任务不再逐步询问，仅限这台设备</small></span><input type="checkbox" data-capability="full_access" disabled /><i></i></label><div class="permission-note">联网资料检索默认开启；写入、命令和完全访问仍需你明确授权，关闭联网开关后会恢复单步确认。</div></div>
               <div class="drawer-section buddy-only drawer-execution" aria-hidden="true"><div class="drawer-label">执行状态</div><section class="execution-card"><div class="card-heading"><div><span class="eyebrow">LIVE EXECUTION</span><h2 id="execution-title">等待新的任务</h2></div><span id="execution-status" class="status-badge">IDLE</span></div><div id="plan" class="plan-list"><div class="empty-state"><span class="empty-mark">◎</span><p>任务开始后，执行计划会出现在这里。</p></div></div><div class="log-heading"><span>ACTIVITY LOG</span><span id="log-count">0 events</span></div><div id="activity-log" class="activity-log"><div class="empty-log">等待工具调用…</div></div><div id="result-panel" class="result-panel hidden"><div class="result-heading"><span class="eyebrow">AGENT RESULT</span><span class="result-live">LIVE</span></div><pre id="result-text"></pre></div></section><section id="approval-card" class="approval-card hidden"><div class="approval-mark">!</div><div><span class="eyebrow">APPROVAL REQUIRED</span><h3 id="approval-title">需要你的确认</h3><p id="approval-preview"></p><div class="approval-actions"><button id="approve-once" class="primary-button small" type="button">允许一次</button><button id="approve-always" class="secondary-button small" type="button">记住权限</button><button id="reject" class="text-button" type="button">拒绝</button></div></div></section></div>
             </div>
           </form>
@@ -64,6 +70,8 @@
         <button id="auth-login-toggle" class="text-button auth-toggle" type="button">已有账户？返回登录</button><div id="register-status" class="auth-status" aria-live="polite"></div><div id="register-error" class="auth-error" role="alert"></div>
       </section>
     </div>
+    <script src="/vendor/mammoth.browser.js"></script>
+    <script src="/vendor/xlsx.full.min.js"></script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

@@ -1,5 +1,5 @@
 export const CHAT_WELCOME = Object.freeze([
-  Object.freeze({ role: 'assistant', content: '你好，我是 ZT.AI。普通聊天模式下，我可以围绕你的项目、简历和产品想法进行交流。' }),
+  Object.freeze({ role: 'assistant', content: '你好，我是 ZT.AI。这里是 ZT.buddy 工作区：你可以直接交给我一个目标，我会先判断是回答、联网核验，还是在你授权的本机工作区执行。' }),
 ])
 
 export function conversationStorageKeys(accountId) {
@@ -13,7 +13,15 @@ export function conversationStorageKeys(accountId) {
 function cleanMessage(message) {
   const role = message?.role === 'user' ? 'user' : 'assistant'
   const content = String(message?.content || '').trim()
-  return content ? { role, content } : null
+  const attachments = Array.isArray(message?.attachments) ? message.attachments.slice(0, 4).map(item => ({
+    name: String(item?.name || '附件').slice(0, 160),
+    type: String(item?.type || 'application/octet-stream').slice(0, 100),
+    size: Number(item?.size) || 0,
+    ...(item?.dataUrl ? { dataUrl: String(item.dataUrl).slice(0, 8_000_000) } : {}),
+    ...(item?.text ? { text: String(item.text).slice(0, 20_000) } : {}),
+    ...(item?.readError ? { readError: String(item.readError).slice(0, 300) } : {}),
+  })) : []
+  return content ? { role, content, ...(attachments.length ? { attachments } : {}) } : null
 }
 
 function titleFromMessages(messages, fallback = '新对话') {
@@ -59,6 +67,7 @@ export function normalizeConversations(value) {
       id: String(item.id),
       title: String(item.title || titleFromMessages(messages)),
       messages,
+      agentContext: item.agentContext === true,
       createdAt: Number(item.createdAt) || Date.now(),
       updatedAt: Number(item.updatedAt) || Number(item.createdAt) || Date.now(),
     }]
@@ -84,9 +93,13 @@ export function mergeServerConversations(localValue, serverValue) {
       continue
     }
     const keepLocal = hasRealAssistantMessage(existing) && existing.messages.length >= incoming.messages.length
-    merged.set(incoming.id, keepLocal ? existing : {
+    merged.set(incoming.id, keepLocal ? {
+      ...existing,
+      agentContext: existing.agentContext === true || incoming.agentContext === true,
+    } : {
       ...existing,
       ...incoming,
+      agentContext: existing.agentContext === true || incoming.agentContext === true,
       messages: incoming.messages.length >= existing.messages.length ? incoming.messages : existing.messages,
       title: incoming.title || existing.title,
       createdAt: Math.min(existing.createdAt, incoming.createdAt),

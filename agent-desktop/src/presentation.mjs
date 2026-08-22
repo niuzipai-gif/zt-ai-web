@@ -1,1 +1,1 @@
-export { conversationFailurePresentation, executionDrawerPresentation, executionPresentation } from '../public/presentation.mjs'
+export { conversationFailurePresentation, executionDrawerPresentation, executionPresentation, sanitizeAssistantPresentation } from '../public/presentation.mjs'
