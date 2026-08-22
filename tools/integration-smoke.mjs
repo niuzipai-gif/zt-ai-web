@@ -299,6 +299,7 @@ try {
     accountScopedHistory: foreignState.response.ok && foreignState.body.history.length === 0 && foreignState.body.runtime.sessions.length === 0,
     providerKeysIsolated: health.body.providers?.minimax === false && health.body.providers?.deepseek === false,
     autoWebVerification: fixture.record.searches === 1 && researchEvents.some(frame => frame.event === 'tool.result' && /可核验来源/.test(frame.data.result)) && fixture.record.promptTexts.some(text => text.includes('[前置联网核验：已完成]') && text.includes('https://example.com/verified-source')),
+    sourceDrawerEvent: researchEvents.some(frame => frame.event === 'research.sources' && frame.data?.sources?.some(source => source.url === 'https://example.com/verified-source')),
   }
   console.log(JSON.stringify(checks))
   const failures = Object.entries(checks).filter(([, passed]) => !passed).map(([name]) => name)

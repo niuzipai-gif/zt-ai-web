@@ -21,7 +21,18 @@ function cleanMessage(message) {
     ...(item?.text ? { text: String(item.text).slice(0, 20_000) } : {}),
     ...(item?.readError ? { readError: String(item.readError).slice(0, 300) } : {}),
   })) : []
-  return content ? { role, content, ...(attachments.length ? { attachments } : {}) } : null
+  const sources = Array.isArray(message?.sources) ? message.sources.slice(0, 6).flatMap((item, index) => {
+    const url = String(item?.url || '').trim()
+    if (!/^https?:\/\//i.test(url)) return []
+    return [{
+      rank: Number(item?.rank) || index + 1,
+      title: String(item?.title || '未命名来源').slice(0, 240),
+      url: url.slice(0, 2_000),
+      ...(item?.snippet ? { snippet: String(item.snippet).slice(0, 1_000) } : {}),
+      ...(item?.fingerprint ? { fingerprint: String(item.fingerprint).slice(0, 1_000) } : {}),
+    }]
+  }) : []
+  return content ? { role, content, ...(attachments.length ? { attachments } : {}), ...(sources.length ? { sources } : {}) } : null
 }
 
 function titleFromMessages(messages, fallback = '新对话') {

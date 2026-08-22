@@ -247,11 +247,27 @@ function appendAttachmentPreview(container, attachments = []) {
     : `<span class="attachment-chip"><span class="attachment-file-icon" aria-hidden="true">▧</span><span>${escapeHtml(attachment.name)}</span></span>`).join('')
   container.appendChild(list)
 }
+function renderSourceDrawer(container, sources = [], meta = {}) {
+  if (!container) return
+  container.querySelector('.source-drawer')?.remove()
+  const normalized = (Array.isArray(sources) ? sources : []).filter(item => /^https?:\/\//i.test(String(item?.url || ''))).slice(0, 6)
+  if (!normalized.length) return
+  const provider = String(meta.provider || '公开检索').trim()
+  const details = document.createElement('details')
+  details.className = 'source-drawer'
+  details.innerHTML = `<summary><span>联网来源</span><small>${normalized.length} 条 · ${escapeHtml(provider)}</small></summary><div class="source-list">${normalized.map((source, index) => {
+    const title = escapeHtml(String(source.title || '未命名来源').replace(/\s+/g, ' ').trim())
+    const url = String(source.url || '').trim()
+    const snippet = escapeHtml(String(source.snippet || source.fingerprint || '暂无摘要').replace(/\s+/g, ' ').trim().slice(0, 280))
+    return `<a class="source-item" href="${escapeHtml(url)}" target="_blank" rel="noreferrer"><span class="source-rank">${String(Number(source.rank) || index + 1).padStart(2, '0')}</span><span class="source-copy"><strong>${title}</strong><small>${escapeHtml(url)}</small><em>${snippet}</em></span><span class="source-arrow" aria-hidden="true">↗</span></a>`
+  }).join('')}</div>`
+  container.appendChild(details)
+}
 function renderMessages() {
   const conversation = currentConversation()
   els.messages.innerHTML = ''
   if (!conversation) return
-  for (const message of conversation.messages) appendMessage(message.role, message.content, false, message.attachments)
+  for (const message of conversation.messages) appendMessage(message.role, message.content, false, message.attachments, message.sources)
 }
 function recordChatMessage(role, content, chatId = state.activeChatId, extras = {}) {
   const conversation = state.chatSessions.find(item => item.id === chatId) || null
@@ -297,8 +313,8 @@ function startNewChat() {
   persistChats()
   renderMessages()
   renderChatHistory()
-  resetExecution()
-  state.taskId = null; state.reader = null; state.chatController = null; state.agentStream = null; state.activeAgentMessage = null; state.activeAgentTask = ''; state.pendingApproval = null
+  resetExecutionUi()
+  state.taskId = null; state.activeAgentMessage = null; state.activeAgentTask = ''; state.pendingApproval = null
   syncComposerWithActiveRun()
   rememberNavigation()
   els.taskInput.focus()
@@ -335,14 +351,14 @@ function setMode(_mode = 'BUDDY', { recordNavigation = true } = {}) {
   renderContext()
   if (recordNavigation) rememberNavigation()
 }
-function appendMessage(role, content, streaming = false, attachments = []) {
+function appendMessage(role, content, streaming = false, attachments = [], sources = []) {
   const row = document.createElement('div'); row.className = `message ${role === 'user' ? 'user-message' : 'assistant-message'}`
   const bubble = document.createElement('div'); bubble.className = 'bubble'
   if (role === 'assistant') { const label = document.createElement('div'); label.className = 'message-label'; label.textContent = 'ZT.AI'; bubble.appendChild(label) }
   const body = document.createElement('div'); body.className = 'message-body markdown-message'
   if (streaming) body.innerHTML = '<span class="typing-indicator" aria-label="ZT.AI 正在思考"><i></i><i></i><i></i></span>'
   else body.innerHTML = renderMarkdown(role === 'assistant' ? assistantText(content) : content || '')
-  bubble.appendChild(body); appendAttachmentPreview(bubble, attachments); row.appendChild(bubble); els.messages.appendChild(row); els.messages.scrollTop = els.messages.scrollHeight
+  bubble.appendChild(body); appendAttachmentPreview(bubble, attachments); renderSourceDrawer(bubble, sources); row.appendChild(bubble); els.messages.appendChild(row); els.messages.scrollTop = els.messages.scrollHeight
   return body
 }
 
@@ -362,7 +378,7 @@ function appendAgentMessage(task, presentation, attachments = [], chatId = state
   const result = document.createElement('div'); result.className = 'agent-result-inline markdown-message'
   bubble.append(label, status, taskLine); appendAttachmentPreview(bubble, attachments); bubble.append(progress, details, result)
   row.appendChild(bubble); els.messages.appendChild(row); els.messages.scrollTop = els.messages.scrollHeight
-  const live = { row, status, progress, details, detailsSummary, plan, activity, result, output: '', persisted: false, chatId, stepIds: new Set(), startedAt: Date.now() }
+  const live = { row, bubble, status, progress, details, detailsSummary, plan, activity, result, output: '', sources: [], persisted: false, chatId, stepIds: new Set(), startedAt: Date.now() }
   state.activeAgentMessage = live
   return live
 }
@@ -430,7 +446,7 @@ function hideInlineApproval() {
 function persistAgentMessage(live, summary) {
   if (!live || live.persisted) return
   live.output = assistantText(summary || live.output || '本机执行已完成。') || '本机执行已完成。'
-  recordChatMessage('assistant', live.output, live.chatId)
+  recordChatMessage('assistant', live.output, live.chatId, { sources: live.sources })
   live.persisted = true
   renderChatHistory()
 }
@@ -458,7 +474,7 @@ function offerTaskRetry(live, task) {
   live.result.after(retry)
   live.retry = retry
 }
-function resetExecution() {
+function resetExecutionUi() {
   state.taskId = null; state.eventCount = 0; if (els.taskId) els.taskId.textContent = 'READY'; if (els.title) els.title.textContent = '等待新的任务'; if (els.status) setStatus('IDLE')
   if (els.plan) els.plan.innerHTML = '<div class="empty-state"><span class="empty-mark">◎</span><p>任务开始后，执行计划会出现在这里。</p></div>'
   if (els.log) els.log.innerHTML = '<div class="empty-log">等待工具调用…</div>'
@@ -571,7 +587,7 @@ async function runChat({ agent = false, localAnswer = '' } = {}) {
   recordChatMessage('user', task, chatId, { attachments }); state.pendingAttachments = []; renderPendingAttachments(); renderMessages(); els.taskInput.value = ''; els.taskInput.disabled = true; els.run.disabled = true
   const body = appendMessage('assistant', '', true)
   const controller = new AbortController()
-  const run = state.taskRuns.create(chatId, { kind: 'chat', task, controller, agentStream: null })
+  const run = state.taskRuns.create(chatId, { kind: 'chat', task, controller, agentStream: null, sources: [] })
   run.activeAgentMessage = { row: body.parentElement?.parentElement || null, output: '', chatId }
   const smooth = createSmoothStream({ onUpdate: output => { run.output = output; if (state.activeChatId !== chatId) return; body.innerHTML = renderMarkdown(assistantText(output)); els.messages.scrollTop = els.messages.scrollHeight; state.usedTokens += 1; renderContext() } })
   run.agentStream = smooth
@@ -602,33 +618,49 @@ async function runChat({ agent = false, localAnswer = '' } = {}) {
         const endpoint = agent ? '/api/agent/chat' : '/api/chat'
         response = await fetch(`${state.gatewayUrl}${endpoint}`, { method: 'POST', headers, body: JSON.stringify(payload), signal: controller.signal })
       }
-      await consumeSse(response, (event, data) => { if (event === 'message.delta') smooth.push(data.text || ''); if (event === 'message.error') smooth.push(conversationFailurePresentation(data.message)) }, { signal: controller.signal, run })
+      await consumeSse(response, (event, data) => {
+        if (event === 'research.sources') {
+          run.sources = Array.isArray(data.sources || data.results) ? (data.sources || data.results) : []
+          if (state.activeChatId === chatId) renderSourceDrawer(body.closest('.bubble'), run.sources, data)
+        }
+        if (event === 'message.delta') smooth.push(data.text || '')
+        if (event === 'message.error') smooth.push(conversationFailurePresentation(data.message))
+      }, { signal: controller.signal, run })
       if (controller.signal.aborted) throw new DOMException('聊天请求超时', 'AbortError')
     }
     smooth.finish()
     const output = assistantText(await smooth.done)
-    recordChatMessage('assistant', output, chatId)
+    recordChatMessage('assistant', output, chatId, { sources: run.sources })
   } catch (error) {
     const message = error?.name === 'AbortError' ? '这次回答等待超时了，网关没有及时返回结果。消息已保留，你可以直接重试。' : describeNetworkError(error, '发送消息')
-    smooth.push(message); smooth.finish(); const output = assistantText(await smooth.done); recordChatMessage('assistant', output, chatId)
+    smooth.push(message); smooth.finish(); const output = assistantText(await smooth.done); recordChatMessage('assistant', output, chatId, { sources: run.sources })
   } finally {
     window.clearTimeout(timeout); window.clearTimeout(slowNotice)
     if (state.chatController === controller) state.chatController = null
     run.finished = true; state.taskRuns.delete(chatId)
-    if (state.activeChatId === chatId) { state.reader = null; state.agentStream = null; els.taskInput.disabled = false; els.run.disabled = false; renderChatHistory(); els.taskInput.focus() }
+    if (state.activeChatId === chatId) { state.agentStream = null; els.taskInput.disabled = false; els.run.disabled = false; renderChatHistory(); els.taskInput.focus() }
   }
 }
 function handleAgentEvent(run, event, data) {
   if (!isVisibleTaskRun(run)) {
     if (event === 'task.start') run.taskId = data.id
+    if (event === 'research.sources') run.sources = Array.isArray(data.sources || data.results) ? (data.sources || data.results) : []
     if (event === 'agent.delta') run.output += String(data.text || '')
     if (event === 'approval.required') run.pendingApproval = data
     if (event === 'task.error') run.output = displayText(data.message, '任务暂时没有完成，请检查设备授权或网关连接后重试。')
     if (event === 'task.done') {
       run.finished = true
-      recordChatMessage('assistant', data.summary || run.output || '本机执行已完成。', run.chatId)
+      recordChatMessage('assistant', data.summary || run.output || '本机执行已完成。', run.chatId, { sources: run.sources })
       renderChatHistory()
       if (state.activeChatId === run.chatId) renderMessages()
+    }
+    return
+  }
+  if (event === 'research.sources') {
+    run.sources = Array.isArray(data.sources || data.results) ? (data.sources || data.results) : []
+    if (run.activeAgentMessage) {
+      run.activeAgentMessage.sources = run.sources
+      renderSourceDrawer(run.activeAgentMessage.bubble, run.sources, data)
     }
     return
   }
@@ -700,7 +732,7 @@ async function runAgentTask() {
   const chatId = state.activeChatId
   const run = state.taskRuns.create(chatId, { kind: 'agent', task, activeAgentMessage: live, activeAgentTask: task })
   state.activeAgentTask = task
-  resetExecution()
+  resetExecutionUi()
   state.activeAgentMessage = live
   els.taskInput.disabled = true; els.run.disabled = true
   try {
@@ -719,7 +751,7 @@ async function runAgentTask() {
     }
   } finally {
     run.finished = true; state.taskRuns.delete(chatId)
-    if (state.activeChatId === chatId) { state.reader = null; els.taskInput.disabled = false; els.run.disabled = false; els.taskInput.focus() }
+    if (state.activeChatId === chatId) { els.taskInput.disabled = false; els.run.disabled = false; els.taskInput.focus() }
   }
 }
 async function approve(remember) {

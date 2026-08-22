@@ -4,6 +4,8 @@ import { buildWebVerificationContext, requiresWebVerification } from './web-veri
 
 test('time-sensitive and unknown-object questions require automatic web verification', () => {
   assert.equal(requiresWebVerification('最近车来很火你知道是什么吗'), true)
+  assert.equal(requiresWebVerification('总结一下最近一周日本有什么关于外国人的大新闻'), true)
+  assert.equal(requiresWebVerification('what were the biggest news stories in Japan about foreigners this week'), true)
   assert.equal(requiresWebVerification('帮我核实这个品牌是真的假的'), true)
   assert.equal(requiresWebVerification('搜索一下 MiniMax 的官方文档'), true)
   assert.equal(requiresWebVerification('你好'), false)

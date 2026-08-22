@@ -227,6 +227,20 @@ function sendTaskEvent(state, event, data = {}) {
   state.response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
 }
 
+function researchSourcePayload(research) {
+  return {
+    provider: String(research?.provider || '公开检索'),
+    query: String(research?.query || '').slice(0, 240),
+    sources: (Array.isArray(research?.results) ? research.results : []).filter(item => /^https?:\/\//i.test(String(item?.url || ''))).slice(0, 6).map((item, index) => ({
+      rank: Number(item?.rank) || index + 1,
+      title: publicText(item?.title, '未命名来源'),
+      url: String(item?.url || ''),
+      ...(item?.snippet ? { snippet: publicText(item.snippet).slice(0, 1_000) } : {}),
+      ...(item?.fingerprint ? { fingerprint: publicText(item.fingerprint).slice(0, 1_000) } : {}),
+    })),
+  }
+}
+
 function desktopCapability(capability) {
   if (capability === 'workspace_read') return CAPABILITIES.read
   if (capability === 'workspace_write') return CAPABILITIES.workspaceWrite
@@ -375,6 +389,7 @@ async function startBuddyTask({ request, response, task, model, token, accountId
           onProgress: message => sendTaskEvent(state, 'tool.progress', { id: toolId, message: publicText(message, '正在联网核验…') }),
         })
         preparedTask = buildWebVerificationContext(task, research)
+        sendTaskEvent(state, 'research.sources', researchSourcePayload(research))
         sendTaskEvent(state, 'tool.result', { id: toolId, result: `${research.provider}：已获得 ${research.results.length} 条可核验来源` })
       } catch (error) {
         const detail = publicTaskFailure(error, '联网核验没有取得可用来源，请稍后重试。')
@@ -442,9 +457,10 @@ async function handleResearchChat(request, response) {
     })
     response.writeHead(upstream.status, {
       ...cors(request),
-      'content-type': upstream.headers.get('content-type') || 'text/event-stream; charset=utf-8',
+      'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache, no-transform',
     })
+    response.write(`event: research.sources\ndata: ${JSON.stringify(researchSourcePayload(research))}\n\n`)
     if (!upstream.body) { response.end(); return }
     const reader = upstream.body.getReader()
     while (true) {

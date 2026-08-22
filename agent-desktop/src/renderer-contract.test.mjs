@@ -123,9 +123,32 @@ test('starting a new chat does not cancel another chat transport', async () => {
   const app = await fs.readFile(path.join(root, 'app.js'), 'utf8')
 
   assert.match(app, /state\.taskRuns/)
+  const start = app.slice(app.indexOf('function startNewChat()'), app.indexOf('function setStatus', app.indexOf('function startNewChat()')))
+  assert.doesNotMatch(start, /resetExecution\(\)/)
+  assert.doesNotMatch(start, /state\.(reader|chatController|agentStream)\s*=\s*null/)
   assert.doesNotMatch(app, /state\.reader\)\s*\{\s*state\.reader\.cancel/)
   assert.doesNotMatch(app, /state\.chatController\?\.abort\(\)/)
   assert.doesNotMatch(app, /state\.agentStream\?\.cancel\(\)/)
+})
+
+test('research responses expose a collapsible source drawer without mixing source text into the answer', async () => {
+  const app = await fs.readFile(path.join(root, 'app.js'), 'utf8')
+  const server = await fs.readFile(path.join(root, '..', 'src', 'server.mjs'), 'utf8')
+  const html = await fs.readFile(path.join(root, 'index.html'), 'utf8')
+  assert.match(app, /renderSourceDrawer\(/)
+  assert.match(app, /research\.sources|sources.*results/)
+  assert.match(app, /details\.className\s*=\s*['"]source-drawer['"]|<details class="source-drawer"/)
+  assert.match(server, /research\.results/)
+  assert.match(server, /research\.sources|event: research\.sources/)
+  assert.match(html, /来源|source/i)
+})
+
+test('assistant markdown has a bounded reading measure and polished block rhythm', async () => {
+  const styles = await fs.readFile(path.join(root, 'styles.css'), 'utf8')
+  assert.match(styles, /\.markdown-message\s*\{[^}]*max-width\s*:/s)
+  assert.match(styles, /\.markdown-message\s+p\s*\{[^}]*line-height\s*:/s)
+  assert.match(styles, /\.markdown-message\s+li\s*\{[^}]*line-height\s*:/s)
+  assert.match(styles, /\.source-drawer/)
 })
 
 test('a completed agent stream stays bound to its own message and conversation', async () => {
@@ -133,7 +156,7 @@ test('a completed agent stream stays bound to its own message and conversation',
 
   assert.match(app, /const completedMessage = run\.activeAgentMessage \|\| state\.activeAgentMessage/)
   assert.match(app, /completeAgentMessage\(summary, data\.status, completedMessage\)/)
-  assert.match(app, /recordChatMessage\('assistant', live\.output, live\.chatId\)/)
+  assert.match(app, /recordChatMessage\('assistant', live\.output, live\.chatId(?:, \{ sources: live\.sources \})?\)/)
 })
 
 test('desktop chat cannot remain stuck on an unfinished stream', async () => {

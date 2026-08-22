@@ -1,5 +1,6 @@
 const EXPLICIT_RESEARCH = /(?:搜索|搜一下|上网搜|查资料|查找|查一下|检索|联网|核实|确认一下|官网|官方文档|来源|资料链接|research|search|look\s*up|documentation|official\s+docs?)/iu
-const TIME_SENSITIVE = /(?:最近|最新|现在|目前|今天|今年|这两天|刚刚|近期|当下|很火|爆火|火了|流行|热门|趋势)/u
+const TIME_SENSITIVE = /(?:最近|最新|现在|目前|今天|今年|这两天|刚刚|近期|当下|很火|爆火|火了|流行|热门|趋势|本周|上周|过去\s*\d+\s*天|最近\s*(?:一周|一星期|七天|几天)|this\s+week|last\s+week|recent)/iu
+const NEWS_REQUEST = /(?:新闻|资讯|头条|报道|事件|动态|消息|大新闻|headline|news|current\s+events?|recent\s+events?)/iu
 const UNKNOWN_FACT = /(?:是什么|什么是|谁是|谁的|哪家|哪里|哪个|多少|怎么样|怎么回事|知道吗|有没有|是真是假|真的?吗|靠谱吗|能不能)/u
 const UNKNOWN_ENTITY = /(?:不知道|不确定|没见过|没听过|不认识|不清楚|确认未知)/u
 
@@ -7,6 +8,7 @@ export function requiresWebVerification(task) {
   const text = String(task || '').trim()
   if (!text) return false
   if (EXPLICIT_RESEARCH.test(text) || UNKNOWN_ENTITY.test(text)) return true
+  if (TIME_SENSITIVE.test(text) && NEWS_REQUEST.test(text)) return true
   return TIME_SENSITIVE.test(text) && UNKNOWN_FACT.test(text)
 }
 
