@@ -32,6 +32,36 @@ test('normalizes MiMo Responses input into an upstream tool-capable chat request
   }])
 })
 
+test('keeps assistant tool calls adjacent to their tool results', () => {
+  const normalized = normalizeMiMoResponseRequest({
+    model: 'zt-minimax-m3',
+    input: [
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: '读取 README.md' }] },
+      { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'exec_command', arguments: '{"cmd":"Get-Content README.md -TotalCount 1"}' },
+      { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '\n\n' }] },
+      { type: 'function_call_output', call_id: 'call_1', output: '# ZT.buddy live check' },
+    ],
+    tools: [{ type: 'function', name: 'exec_command', parameters: { type: 'object' } }],
+  })
+
+  assert.deepEqual(normalized.messages, [
+    {
+      role: 'user',
+      content: '读取 README.md',
+    },
+    {
+      role: 'assistant',
+      content: '\n\n',
+      tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'exec_command', arguments: '{"cmd":"Get-Content README.md -TotalCount 1"}' } }],
+    },
+    {
+      role: 'tool',
+      tool_call_id: 'call_1',
+      content: '# ZT.buddy live check',
+    },
+  ])
+})
+
 test('rejects models outside the two desktop gateway aliases', () => {
   assert.throws(() => normalizeMiMoResponseRequest({ model: 'gpt-anything', input: 'hi' }), /不支持/)
   assert.deepEqual(Object.keys(MODEL_CATALOG), ['zt-minimax-m3', 'zt-deepseek-v4-flash'])

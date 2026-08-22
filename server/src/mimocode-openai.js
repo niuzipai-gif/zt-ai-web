@@ -47,12 +47,13 @@ function normalizeInput(input) {
   if (typeof input === 'string') return [{ role: 'user', content: input }]
   if (!Array.isArray(input)) return []
   const messages = []
+  const pendingToolCalls = []
   for (const item of input.slice(-80)) {
     if (!item || typeof item !== 'object') continue
-    if (item.type === 'message') {
-      const content = textFromContent(item.content)
-      const role = item.role === 'assistant' ? 'assistant' : item.role === 'system' ? 'system' : 'user'
-      if (content) messages.push({ role, content })
+    if (item.type === 'function_call') {
+      const callId = String(item.call_id || item.callId || crypto.randomUUID())
+      const name = String(item.name || '')
+      if (name) pendingToolCalls.push({ id: callId, type: 'function', function: { name, arguments: String(item.arguments || '{}') } })
       continue
     }
     if (item.type === 'function_call_output') {
@@ -60,11 +61,19 @@ function normalizeInput(input) {
       if (callId) messages.push({ role: 'tool', tool_call_id: callId, content: textFromContent(item.output) || String(item.output || '') })
       continue
     }
-    if (item.type === 'function_call') {
-      const callId = String(item.call_id || item.callId || crypto.randomUUID())
-      const name = String(item.name || '')
-      if (name) messages.push({ role: 'assistant', content: '', tool_calls: [{ id: callId, type: 'function', function: { name, arguments: String(item.arguments || '{}') } }] })
+    if (item.type === 'message') {
+      const content = textFromContent(item.content)
+      const role = item.role === 'assistant' ? 'assistant' : item.role === 'system' ? 'system' : 'user'
+      if (!content && role !== 'assistant') continue
+      if (role === 'assistant' && pendingToolCalls.length) {
+        messages.push({ role, content, tool_calls: pendingToolCalls.splice(0) })
+      } else if (content || role === 'assistant') messages.push({ role, content })
     }
+  }
+  if (pendingToolCalls.length) {
+    const last = messages.at(-1)
+    if (last?.role === 'assistant' && !last.tool_calls) last.tool_calls = pendingToolCalls.splice(0)
+    else messages.push({ role: 'assistant', content: '', tool_calls: pendingToolCalls.splice(0) })
   }
   return messages
 }
@@ -76,7 +85,7 @@ function systemMessage(systemPrompt, instructions) {
 export function normalizeMiMoResponseRequest(request = {}, { systemPrompt = '' } = {}) {
   const model = modelRecord(request.model)
   const messages = normalizeInput(request.input)
-  if (!messages.some(message => message.role === 'user') && !messages.some(message => message.role === 'tool')) throw new Error('MiMoCode 请求缺少输入内容')
+  if (!messages.some(message => message.role === 'user') && !messages.some(message => message.role === 'tool')) throw new Error('Agent 请求缺少输入内容')
   const system = systemMessage(systemPrompt, request.instructions)
   return {
     model: model.provider,
@@ -97,7 +106,7 @@ function normalizeLegacyRequest(request = {}, { systemPrompt = '' } = {}) {
       ...(message.tool_call_id ? { tool_call_id: String(message.tool_call_id) } : {}),
       ...(Array.isArray(message.tool_calls) ? { tool_calls: message.tool_calls } : {}),
     }))
-  if (!messages.some(message => message.role === 'user') && !messages.some(message => message.role === 'tool')) throw new Error('MiMoCode 请求缺少输入内容')
+  if (!messages.some(message => message.role === 'user') && !messages.some(message => message.role === 'tool')) throw new Error('Agent 请求缺少输入内容')
   const system = systemMessage(systemPrompt, '')
   return { model: model.provider, modelId: model.id, messages: system ? [{ role: 'system', content: system }, ...messages] : messages, tools: normalizeTools(request.tools) }
 }
