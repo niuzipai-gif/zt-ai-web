@@ -8,6 +8,7 @@ const MAX_SEARCH_RESULTS = 6
 const DEFAULT_WEB_TIMEOUT_MS = 25_000
 const DUCKDUCKGO_HTML_URL = 'https://html.duckduckgo.com/html/'
 const MODULE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+const EXECUTABLE_ROOT = path.dirname(process.execPath || '')
 
 function parseEnvFile(text) {
   const values = {}
@@ -28,7 +29,12 @@ export async function resolveWebSearchConfig({ env = process.env, envFile = '' }
   const explicitFile = String(env.ZT_AI_ENV_FILE || env.ZT_AI_ENV_PATH || envFile || '').trim()
   const candidates = explicitFile
     ? [explicitFile]
-    : [path.join(process.cwd(), 'aikey.env'), path.join(MODULE_ROOT, 'aikey.env')]
+    : [...new Set([
+        path.join(process.cwd(), 'aikey.env'),
+        path.join(MODULE_ROOT, 'aikey.env'),
+        path.join(EXECUTABLE_ROOT, 'aikey.env'),
+        path.join(path.dirname(EXECUTABLE_ROOT), 'aikey.env'),
+      ])]
   let fileValues = {}
   for (const candidate of candidates) {
     fileValues = await readOptionalEnvFile(candidate)

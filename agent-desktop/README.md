@@ -24,6 +24,8 @@ $env:ZT_AI_GATEWAY_URL = 'http://localhost:8790'
 npm run agent:start
 ```
 
+联网核验默认优先使用 Firecrawl，未配置 key 时会自动尝试公开无 key 路径并回退到公开索引。便携部署时，把本地的 `aikey.env` 放在项目根目录、portable/安装版 exe 同目录，或通过 `ZT_AI_ENV_FILE` 指向它；真实密钥只保留在本机，不要放进前端或提交到 GitHub。
+
 Agent 只把任务日志、已恢复的会话索引和权限配置写入本机数据目录，不把 API key 写进前端。Codex app-server 只由桌面端本地进程启动，模型调用经 Gateway 的 `/api/agent/openai/v1` 内部兼容路由完成；桌面进程仅使用已登录账号的 token，模型 API key 始终留在 Gateway。
 
 ## Windows 安装包与升级
