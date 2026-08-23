@@ -13,6 +13,8 @@ import { createTelemetry } from './telemetry.js'
 import { createAdminApi } from './admin.js'
 import { isAllowedOrigin } from './cors.js'
 import { MODEL_CATALOG, completeMiMoResponse, isPrivateDesktopRuntimeRequest, streamChatCompletionEvents, streamGatewayChat, streamResponseEvents } from './mimocode-openai.js'
+import { buildWebVerificationContext, buildWebVerificationQuery, requiresWebVerification, sourcePayload } from './web-verification.js'
+import { searchWeb } from './web-search.js'
 
 function loadEnvFile(filePath) {
   try {
@@ -193,6 +195,26 @@ async function handleChat(request, response) {
   const media = isMediaIntent(inputText)
   sseStart(request, response)
   sse(response, 'message.start', { model: CHAT_MODELS[model], media })
+  const shouldResearch = !media && requiresWebVerification(inputText)
+  let research = null
+  if (shouldResearch) {
+    const query = buildWebVerificationQuery(inputText)
+    sse(response, 'research.started', { query })
+    try {
+      research = await searchWeb({ query, onProgress: message => sse(response, 'research.progress', { message }) })
+      providerMessages.splice(1, 0, { role: 'system', content: buildWebVerificationContext(inputText, research) })
+      sse(response, 'research.sources', sourcePayload(research))
+    } catch (error) {
+      status = 'error'
+      outputText = '我暂时没有拿到可核验的公开来源，所以不根据旧知识直接猜测。请稍后重试，或换一个更具体的关键词。'
+      sse(response, 'research.error', { message: error.message })
+      sse(response, 'message.delta', { text: outputText })
+      sse(response, 'message.done', {})
+      response.end()
+      await recordTelemetry({ product: 'web', ...context, model: CHAT_MODELS[model], requestType: 'chat-research', status, inputText, outputText, metadata: { attachments: attachmentMetadata(incomingAttachments), webResearch: true, query, provider: null, sourceCount: 0, researchError: error.message } })
+      return
+    }
+  }
   if (media) {
     try {
       const result = await runHiddenMediaRequest({ text: inputText })
@@ -204,7 +226,7 @@ async function handleChat(request, response) {
     } catch (error) { status = 'error'; sse(response, 'message.error', { message: error.message }) }
     sse(response, 'message.done', {})
     response.end()
-    await recordTelemetry({ product: 'web', ...context, model: CHAT_MODELS[model], requestType: 'media', status, inputText, outputText, metadata: { attachments: attachmentMetadata(incomingAttachments) } })
+    await recordTelemetry({ product: 'web', ...context, model: CHAT_MODELS[model], requestType: 'media', status, inputText, outputText, metadata: { attachments: attachmentMetadata(incomingAttachments), webResearch: false } })
     return
   }
   try {
@@ -213,7 +235,7 @@ async function handleChat(request, response) {
   } catch (error) { status = 'error'; sse(response, 'message.error', { message: error.message }) }
   sse(response, 'message.done', {})
   response.end()
-  await recordTelemetry({ product: 'web', ...context, model: CHAT_MODELS[model], requestType: 'chat', status, inputText, outputText, metadata: { attachments: attachmentMetadata(incomingAttachments) } })
+  await recordTelemetry({ product: 'web', ...context, model: CHAT_MODELS[model], requestType: shouldResearch ? 'chat-research' : 'chat', status, inputText, outputText, metadata: { attachments: attachmentMetadata(incomingAttachments), webResearch: shouldResearch, query: research?.query || null, provider: research?.provider || null, sourceCount: research?.results?.length || 0 } })
 }
 
 async function handleAgentChat(request, response) {

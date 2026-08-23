@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
-  ArrowUpRight, BriefcaseBusiness, Check, Download, FileText, GitBranch, History, Home,
+  ArrowUpRight, BriefcaseBusiness, Check, ChevronDown, Download, FileText, GitBranch, History, Home,
   LockKeyhole, Menu, MessageCircle, MoreHorizontal, MoveUpRight, Orbit,
   Paperclip, Plus, Send, ShieldCheck, Sparkles, UserRound, X
 } from 'lucide-react'
@@ -209,6 +209,15 @@ function MarkdownMessage({ text }) {
   return <div className="markdown-message" dangerouslySetInnerHTML={{ __html: renderMarkdown(text || '') }} />
 }
 
+function ResearchSources({ research, copy }) {
+  const sources = Array.isArray(research?.sources) ? research.sources : []
+  if (!sources.length) return null
+  return <details className="research-sources">
+    <summary><span className="research-sources-dot" /><strong>{copy.sourcesTitle || '联网来源'}</strong><span>{sources.length} {copy.sourcesCount || '个来源'}</span><ChevronDown size={14} /></summary>
+    <div className="research-sources-panel"><div className="research-sources-meta">{copy.sourcesProvider || '来源提供方'} · {research.provider || '公开检索'}{research.query ? ` · ${research.query}` : ''}</div>{sources.map(source => <a key={`${source.rank}-${source.url}`} className="research-source" href={source.url} target="_blank" rel="noreferrer"><span className="research-source-rank">{source.rank}</span><span className="research-source-body"><strong>{source.title}</strong>{source.snippet && <small>{source.snippet}</small>}<em>{copy.sourceOpen || '打开来源'} ↗</em></span></a>)}</div>
+  </details>
+}
+
 function AttachmentList({ attachments = [], compact = false, onPreview }) {
   if (!attachments.length) return null
   return <div className={`attachment-list ${compact ? 'is-compact' : ''}`}>{attachments.map(file => <div className="attachment-chip" key={file.id}>{file.preview ? <button type="button" className="attachment-preview-button" onClick={() => onPreview?.(file)} aria-label={`预览 ${file.name}`}><img src={file.preview} alt={file.name} /></button> : <FileText size={14} />}<span title={file.name}>{file.name}</span><small>{file.readError ? '未解析' : file.text ? '已读取' : formatBytes(file.size)}</small></div>)}</div>
@@ -362,6 +371,10 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
       try {
         const response = await fetch(`${API_BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, language, visitorId, conversationId: session.id, messages: history, attachments: userMessage.attachments.map(({ name, type, size }) => ({ name, type, size })) }) })
         await consumeSse(response, (event, data) => {
+          if (event === 'research.started') updateMessages(items => items.map(message => message.id === responseId ? { ...message, researching: true, researchStatus: copy.researching || '正在核验公开资料' } : message))
+          if (event === 'research.progress') updateMessages(items => items.map(message => message.id === responseId ? { ...message, researching: true, researchStatus: String(data.message || copy.researching || '正在核验公开资料') } : message))
+          if (event === 'research.sources') updateMessages(items => items.map(message => message.id === responseId ? { ...message, researching: false, research: data } : message))
+          if (event === 'research.error') updateMessages(items => items.map(message => message.id === responseId ? { ...message, researching: false, researchStatus: copy.researchUnavailable || '联网核验暂时不可用' } : message))
           if (event === 'message.delta' && data.text) streamQueueRef.current.push(...String(data.text))
           if (event === 'media.started') streamQueueRef.current.push(...copy.mediaPreparing)
           if (event === 'media.completed' && data.url) {
@@ -371,7 +384,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
             streamQueueRef.current.push(...copy.mediaCompleted)
           }
           if (event === 'message.error') streamQueueRef.current.push(...`${copy.responseError}${data.message ? `: ${data.message}` : ''}`)
-          if (event === 'message.done') streamFinishedRef.current = true
+          if (event === 'message.done') { streamFinishedRef.current = true; updateMessages(items => items.map(message => message.id === responseId ? { ...message, researching: false } : message)) }
         })
         streamFinishedRef.current = true
       } catch (error) {
@@ -386,9 +399,13 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     if (media.kind === 'video') return <div className="media-output"><video controls preload="metadata" src={media.url} /><a href={media.url} target="_blank" rel="noreferrer">打开视频</a></div>
     return <div className="media-output"><a href={media.url} target="_blank" rel="noreferrer"><img src={media.url} alt="ZT.AI 创作结果" /></a><a href={media.url} target="_blank" rel="noreferrer">打开原图</a></div>
   }
-  const renderMessage = message => message.status === 'thinking'
-    ? <span className="typing-indicator" aria-label="ZT.AI 正在思考"><i /><i /><i /></span>
-    : <><MarkdownMessage text={message.text} /><AttachmentList attachments={message.attachments} onPreview={setPreviewAttachment} /></>
+  const renderMessage = message => <>
+    {message.status === 'thinking' && <span className="typing-indicator" aria-label="ZT.AI 正在思考"><i /><i /><i /></span>}
+    {message.researching && <div className="research-live-status"><span className="research-live-dot" />{message.researchStatus || copy.researching || '正在核验公开资料'}<span className="research-live-pulse">···</span></div>}
+    {message.text && <MarkdownMessage text={message.text} />}
+    <AttachmentList attachments={message.attachments} onPreview={setPreviewAttachment} />
+    <ResearchSources research={message.research} copy={copy} />
+  </>
   const restoreRetry = () => {
     if (!retryPayload) return
     setInput(retryPayload.value)
