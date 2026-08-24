@@ -1,7 +1,8 @@
-const EXPLICIT_RESEARCH = /(?:搜索|搜一下|上网搜|查资料|查找|查一下|调查|检索|联网|核实|确认一下|官网|官方文档|来源|资料链接|research|search|look\s*up|documentation|official\s+docs?)/iu
-const TIME_SENSITIVE = /(?:最近|最新|现在|目前|今天|今年|这两天|刚刚|近期|当下|很火|爆火|火了|流行|热门|趋势|本周|上周|过去\s*\d+\s*天|最近\s*(?:一周|一星期|七天|几天)|this\s+week|last\s+week|recent|latest|current|today)/iu
-const NEWS_REQUEST = /(?:新闻|资讯|头条|报道|事件|动态|消息|大新闻|headline|news|current\s+events?|recent\s+events?)/iu
-const UNKNOWN_FACT = /(?:是什么|什么是|谁是|哪家|哪里|哪个|多少|怎么样|怎么回事|知道吗|有没有|是真是假|真的?吗|靠谱吗|能不能|what\s+is|who\s+is|which|how\s+much|is\s+it\s+true)/iu
+const EXPLICIT_RESEARCH = /(?:搜索|搜一下|上网\s*(?:搜|查|找|核实)|查资料|查找|查一下|查下|查证|调查|检索|联网|核实|核验|验证|求证|事实核查|确认一下|官网|官方文档|来源|出处|资料链接|给出处|给来源|证据|research|search|look\s*up|documentation|official\s+docs?|verify|fact[-\s]?check|cite|sources?)/iu
+const TIME_SENSITIVE = /(?:最近|最新|现在|目前|当前|当下|今天|今日|今晚|今夜|昨天|昨日|昨晚|昨夜|前天|前日|前晚|明天|明日|后天|本周|本星期|上周|上星期|下周|下星期|本月|这个月|上个月|下个月|本季度|上季度|下季度|今年|去年|明年|这两天|这几天|刚刚|刚才|近期|实时|截至|过去\s*\d+\s*(?:分钟|小时|天|周|星期|月|季度|年)|最近\s*(?:一周|一星期|七天|几天|一个月|半年|一年)|this\s+(?:week|month|quarter|year)|last\s+(?:night|week|month|quarter|year)|next\s+(?:week|month|quarter|year)|yesterday|today|tonight|tomorrow|currently|current|latest|recent(?:ly)?|just\s+now|as\s+of|real[-\s]?time|in\s+the\s+(?:last|past)\s+\d+\s+(?:hours?|days?|weeks?|months?|years?))/iu
+const NEWS_REQUEST = /(?:新闻|资讯|头条|报道|事件|动态|消息|要闻|快讯|大新闻|热点|舆情|headline|news|current\s+events?|recent\s+events?)/iu
+const VOLATILE_FACT = /(?:天气|气温|降雨|空气质量|汇率|兑换率|股价|股票价格|股票|股市|指数|市值|加密货币|比特币|以太坊|币价|金价|油价|房价|价格|售价|定价|库存|有货|发售时间|上市时间|航班|列车|高铁|班次|赛程|比分|比赛结果|排名|积分榜|战绩|营业时间|开放时间|签证政策|截止日期|deadline|weather|temperature|air\s+quality|exchange\s+rate|stock\s+price|share\s+price|stock|bitcoin|crypto(?:currency)?|gold\s+price|oil\s+price|home\s+price|price|pricing|availability|in\s+stock|flight|train|schedule|score|ranking|opening\s+hours|visa|policy|regulation)/iu
+const UNKNOWN_FACT = /(?:是什么|什么是|什么叫|什么意思|含义|定义|谁是|哪家|哪里|哪个|哪些|有哪些|多少|怎么样|怎么回事|知道吗|有没有|是否|是真是假|真的?吗|靠谱吗|能不能|what\s+is|what\s+does\s+.+?\s+mean|meaning\s+of|definition\s+of|who\s+is|which|where\s+is|when\s+is|how\s+much|how\s+does|is\s+it\s+true)/iu
 const UNKNOWN_ENTITY = /(?:不知道|不确定|没见过|没听过|不认识|不清楚|第一次听说|陌生|核实一下)/u
 const PRIVATE_PROFILE = /(?:蔡宙廷|小蔡|ZT\.?AI|ZT\.?buddy|坤信|我的简历|我的经历|他的简历|他的经历|my resume|my experience|cai zhouting)/iu
 
@@ -10,7 +11,7 @@ export function requiresWebVerification(task) {
   if (!text) return false
   if (!EXPLICIT_RESEARCH.test(text) && PRIVATE_PROFILE.test(text)) return false
   if (EXPLICIT_RESEARCH.test(text) || UNKNOWN_ENTITY.test(text)) return true
-  if (TIME_SENSITIVE.test(text)) return true
+  if (TIME_SENSITIVE.test(text) || NEWS_REQUEST.test(text) || VOLATILE_FACT.test(text)) return true
   // Public chat should not answer an unfamiliar factual question from stale
   // model memory. Keep first-party profile questions local to ZT.AI.
   return UNKNOWN_FACT.test(text) && !PRIVATE_PROFILE.test(text)
