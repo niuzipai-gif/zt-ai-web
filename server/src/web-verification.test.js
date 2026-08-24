@@ -37,6 +37,17 @@ test('keeps first-party profile questions local while researching public unknown
   assert.equal(requiresWebVerification('What does MCP mean?'), true)
 })
 
+test('routes concrete entities and contextual references before relying on model memory', () => {
+  assert.equal(requiresWebVerification('OpenClaw'), true)
+  assert.equal(requiresWebVerification('我想聊聊 ChatGPT'), true)
+  assert.equal(requiresWebVerification('请介绍“牛来”这个词'), true)
+  assert.equal(requiresWebVerification('这个产品'), true)
+  assert.equal(requiresWebVerification('它值得买吗'), true)
+  assert.equal(requiresWebVerification('https://example.com/article'), true)
+  assert.equal(requiresWebVerification('我今天心情不错'), false)
+  assert.equal(requiresWebVerification('我喜欢猫'), false)
+})
+
 test('builds a prompt-safe research context and a UI source payload', () => {
   const research = { provider: 'duckduckgo', query: '牛来是什么', results: [{ rank: 1, title: 'Example', url: 'https://example.com/a', snippet: '摘要' }] }
   assert.equal(buildWebVerificationQuery('请帮我查一下：牛来是什么？'), '牛来是什么')

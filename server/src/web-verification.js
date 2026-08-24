@@ -5,13 +5,18 @@ const VOLATILE_FACT = /(?:天气|气温|降雨|空气质量|汇率|兑换率|股
 const UNKNOWN_FACT = /(?:是什么|什么是|什么叫|什么意思|含义|定义|谁是|哪家|哪里|哪个|哪些|有哪些|多少|怎么样|怎么回事|知道吗|有没有|是否|是真是假|真的?吗|靠谱吗|能不能|what\s+is|what\s+does\s+.+?\s+mean|meaning\s+of|definition\s+of|who\s+is|which|where\s+is|when\s+is|how\s+much|how\s+does|is\s+it\s+true)/iu
 const UNKNOWN_ENTITY = /(?:不知道|不确定|没见过|没听过|不认识|不清楚|第一次听说|陌生|核实一下)/u
 const PRIVATE_PROFILE = /(?:蔡宙廷|小蔡|ZT\.?AI|ZT\.?buddy|坤信|我的简历|我的经历|他的简历|他的经历|my resume|my experience|cai zhouting)/iu
+const CONCRETE_ENTITY = /(?:https?:\/\/\S+|www\.\S+|[“「『《【][^”」』》】]{1,80}[”」』》】]|\b(?:OpenAI|Amazon|ChatGPT|Claude|Gemini|DeepSeek|Qwen|Firecrawl|OpenClaw|SellerSprite|Render|GitHub|Reddit|arXiv|iPhone|Android|Windows)\b|[A-Z][a-z]+[A-Z][A-Za-z0-9]*|[A-Za-z]+\d[\w.-]*|\b[A-Z]{2,}(?:[-_]\w+)?\b|[\u4e00-\u9fff]{2,16}(?:公司|品牌|产品|软件|应用|平台|网站|项目|政策|事件|电影|书籍|游戏|型号|版本|服务|工具))/u
+const CONTEXTUAL_REFERENCE = /(?:这个|那个|这款|那款|这家|那家|该|上述|前面提到的|它)(?:产品|软件|应用|平台|网站|项目|公司|品牌|型号|版本|事件|政策|东西|问题|人)?/u
+const FACTUAL_QUERY = /(?:[？?]|什么|谁|哪个|哪些|多少|是否|有没有|怎么样|怎么回事|发生|变化|情况|进展|趋势|结果|影响|表现|如何|为何|为什么|what|who|which|where|when|why|how|latest|current|recent)/iu
 
 export function requiresWebVerification(task) {
   const text = String(task || '').trim()
   if (!text) return false
   if (!EXPLICIT_RESEARCH.test(text) && PRIVATE_PROFILE.test(text)) return false
   if (EXPLICIT_RESEARCH.test(text) || UNKNOWN_ENTITY.test(text)) return true
-  if (TIME_SENSITIVE.test(text) || NEWS_REQUEST.test(text) || VOLATILE_FACT.test(text)) return true
+  if (CONCRETE_ENTITY.test(text) || CONTEXTUAL_REFERENCE.test(text)) return true
+  if (NEWS_REQUEST.test(text) || VOLATILE_FACT.test(text)) return true
+  if (TIME_SENSITIVE.test(text) && FACTUAL_QUERY.test(text)) return true
   // Public chat should not answer an unfamiliar factual question from stale
   // model memory. Keep first-party profile questions local to ZT.AI.
   return UNKNOWN_FACT.test(text) && !PRIVATE_PROFILE.test(text)
