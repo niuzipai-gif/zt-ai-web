@@ -30,6 +30,10 @@ services:
         sync: false
       - key: FIRECRAWL_BASE_URL
         value: https://api.firecrawl.dev/v2
+      - key: GOOGLE_CLOUD_VISION_API_KEY
+        sync: false
+      - key: TINEYE_API_KEY
+        sync: false
       - key: ADMIN_PASSWORD
         sync: false
       - key: ADMIN_USERNAME

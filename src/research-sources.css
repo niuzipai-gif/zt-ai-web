@@ -1,0 +1,26 @@
+.research-sources-expanded {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #e3eee8;
+  color: #4f8d69 !important;
+  font: 8px 'DM Mono', ui-monospace, monospace;
+  font-style: normal;
+}
+
+.research-source-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.research-source-type {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: #edf1f0;
+  color: #78878b;
+  font-size: 8px !important;
+  line-height: 1.2 !important;
+  white-space: nowrap;
+}

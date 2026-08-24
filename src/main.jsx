@@ -15,7 +15,9 @@ import { filesFromDataTransfer, hasFilePayload } from './lib/attachments.js'
 import { attachmentMime, attachmentName, extractPdfText, isPdfAttachment, isTextAttachment } from './lib/attachment-reader.js'
 import { renderMarkdown } from './lib/markdown.js'
 import { getStreamBatchSize } from './lib/streaming.js'
+import { evidenceLabel, researchSummary } from './lib/research-sources.js'
 import './styles.css'
+import './research-sources.css'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 const projects = [
@@ -209,12 +211,15 @@ function MarkdownMessage({ text }) {
   return <div className="markdown-message" dangerouslySetInnerHTML={{ __html: renderMarkdown(text || '') }} />
 }
 
-function ResearchSources({ research, copy }) {
+function ResearchSources({ research, copy, language }) {
   const sources = Array.isArray(research?.sources) ? research.sources : []
   if (!sources.length) return null
+  const summary = researchSummary(research)
+  const expandedLabel = copy.sourcesExpanded || (language === 'en' ? 'expanded' : language === 'ja' ? '拡張検索' : '已扩展检索')
+  const queryLabel = copy.sourcesQueries || (language === 'en' ? 'queries' : language === 'ja' ? '検索方向' : '个检索方向')
   return <details className="research-sources">
-    <summary><span className="research-sources-dot" /><strong>{copy.sourcesTitle || '联网来源'}</strong><span>{sources.length} {copy.sourcesCount || '个来源'}</span><ChevronDown size={14} /></summary>
-    <div className="research-sources-panel"><div className="research-sources-meta">{copy.sourcesProvider || '来源提供方'} · {research.provider || '公开检索'}{research.query ? ` · ${research.query}` : ''}</div>{sources.map(source => <a key={`${source.rank}-${source.url}`} className="research-source" href={source.url} target="_blank" rel="noreferrer"><span className="research-source-rank">{source.rank}</span><span className="research-source-body"><strong>{source.title}</strong>{source.snippet && <small>{source.snippet}</small>}<em>{copy.sourceOpen || '打开来源'} ↗</em></span></a>)}</div>
+    <summary><span className="research-sources-dot" /><strong>{copy.sourcesTitle || '联网来源'}</strong><span>{summary.count} {copy.sourcesCount || '个来源'}</span>{summary.expanded && <em className="research-sources-expanded">{expandedLabel}</em>}<ChevronDown size={14} /></summary>
+    <div className="research-sources-panel"><div className="research-sources-meta">{copy.sourcesProvider || '来源提供方'} · {research.provider || '公开检索'}{summary.queryCount ? ` · ${summary.queryCount} ${queryLabel}` : ''}{research.query ? ` · ${research.query}` : ''}</div>{sources.map(source => <a key={`${source.rank}-${source.url}`} className="research-source" href={source.url} target="_blank" rel="noreferrer"><span className="research-source-rank">{source.rank}</span><span className="research-source-body"><span className="research-source-top"><strong>{source.title}</strong>{source.evidenceType && <small className="research-source-type">{evidenceLabel(source.evidenceType, language)}</small>}</span>{source.snippet && <small>{source.snippet}</small>}<em>{copy.sourceOpen || '打开来源'} ↗</em></span></a>)}</div>
   </details>
 }
 
@@ -404,7 +409,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     {message.researching && <div className="research-live-status"><span className="research-live-dot" />{message.researchStatus || copy.researching || '正在核验公开资料'}<span className="research-live-pulse">···</span></div>}
     {message.text && <MarkdownMessage text={message.text} />}
     <AttachmentList attachments={message.attachments} onPreview={setPreviewAttachment} />
-    <ResearchSources research={message.research} copy={copy} />
+    <ResearchSources research={message.research} copy={copy} language={language} />
   </>
   const restoreRetry = () => {
     if (!retryPayload) return
