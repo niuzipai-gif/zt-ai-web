@@ -141,6 +141,10 @@ export const siteCopy = {
   },
 }
 
+Object.assign(siteCopy.zh.chat, { attachmentFallback: '请分析我上传的附件。', attachmentReady: '已读取', attachmentTruncated: '已截断', attachmentError: '未解析', attachmentPreviewOnly: '图片预览' })
+Object.assign(siteCopy.en.chat, { attachmentFallback: 'Please analyze the attachment I uploaded.', attachmentReady: 'Read', attachmentTruncated: 'Truncated', attachmentError: 'Unread', attachmentPreviewOnly: 'Image preview' })
+Object.assign(siteCopy.ja.chat, { attachmentFallback: 'アップロードした添付ファイルを分析してください。', attachmentReady: '読み取り済み', attachmentTruncated: '一部表示', attachmentError: '未解析', attachmentPreviewOnly: '画像プレビュー' })
+
 export const resumeDocumentByLanguage = {
   zh: { path: '中文简历.docx', name: '蔡宙廷_FDE个人简历.docx' },
   en: { path: 'English 简历.docx', name: 'Cai_Zhouting_FDE_Resume_EN.docx' },

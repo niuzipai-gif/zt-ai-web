@@ -36,14 +36,16 @@ function fileContext(file, language) {
 
 export function attachmentStatusLabel(status, input = 'zh') {
   const language = languageFrom(input)
-  return STATUS_LABELS[language][status] || STATUS_LABELS[language].error
+  const copyLabels = input && typeof input === 'object' && input.attachmentReady
+    ? { ready: input.attachmentReady, truncated: input.attachmentTruncated, error: input.attachmentError, 'preview-only': input.attachmentPreviewOnly }
+    : STATUS_LABELS[language]
+  return copyLabels[status] || copyLabels.error || STATUS_LABELS[language].error
 }
 
 export function buildAttachmentContext(attachments = [], input = 'zh') {
   const files = Array.isArray(attachments) ? attachments : []
   if (!files.length) return ''
-  const language = languageFrom(input)
-  const full = `[附件解析摘要]\n${files.map(file => fileContext(file, language)).join('\n\n')}\n[/附件解析摘要]`
+  const full = `[附件解析摘要]\n${files.map(file => fileContext(file, input)).join('\n\n')}\n[/附件解析摘要]`
   if (full.length <= MAX_ATTACHMENT_CONTEXT) return full
   const suffix = `\n\n${TRUNCATION_HINT}\n[/附件解析摘要]`
   const available = Math.max(0, MAX_ATTACHMENT_CONTEXT - suffix.length)
