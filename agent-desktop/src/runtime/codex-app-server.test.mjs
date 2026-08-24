@@ -70,3 +70,28 @@ test('Codex runtime serializes concurrent startup so a second chat cannot close 
   const source = await fs.readFile(path.join(path.dirname(fileURLToPath(import.meta.url)), 'codex-app-server.mjs'), 'utf8')
   assert.match(source, /runtimeInitPromise/)
 })
+
+test('Codex runtime keeps retryable errors alive and exposes the final nested failure', async () => {
+  const runtime = Object.create(CodexBuddyRuntime.prototype)
+  const events = []
+  const state = { taskId: 'task-3', threadId: 'thread-3', output: '', closed: false, onEvent: event => events.push(event), pending: new Map() }
+  runtime.tasks = new Map([['task-3', state]])
+  runtime.sessions = new Map()
+
+  await runtime.routeNotification('error', {
+    threadId: 'thread-3',
+    willRetry: true,
+    error: { message: 'Reconnecting... 1/5', additionalDetails: '网关流在响应完成前断开' },
+  })
+  assert.equal(events.at(-1).type, 'tool.progress')
+  assert.match(events.at(-1).message, /网关流在响应完成前断开/)
+  assert.equal(state.closed, false)
+
+  await runtime.routeNotification('error', {
+    threadId: 'thread-3',
+    willRetry: false,
+    error: { message: '网关流在响应完成前断开', additionalDetails: null },
+  })
+  assert.equal(events.at(-1).type, 'session.failed')
+  assert.equal(events.at(-1).message, '网关流在响应完成前断开')
+})

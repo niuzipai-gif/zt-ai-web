@@ -21,6 +21,7 @@ import './styles.css'
 import './research-sources.css'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+const isAndroidShell = new URLSearchParams(globalThis.location?.search || '').get('zt-shell') === 'android'
 const projects = [
   { title: 'AI 选品与开品工作流', tag: 'AI 产品开发', desc: '结合飞书多维表格与多个选品逻辑，搭建从筛选、评估到开品的完整流程。月均精铺 8 个以上，开品速度约为其他同事的 2 倍。', metric: '8+ / 月', icon: Orbit },
   { title: '半小时套图生产方案', tag: 'AI × 内容生产', desc: '结合 LinkFox 等工具研究快速做图流程，半小时完成一套精美图片，为团队释放 3 个设计师的产能。', metric: '30 min / 套', icon: Sparkles },
@@ -131,7 +132,12 @@ function Brand({ compact = false, copy }) {
 function LanguageSwitch({ language, setLanguage, copy }) {
   return <div className="language-switch" aria-label={copy.languageAria}>
     <span>{copy.languageLabel}</span>
-    {LANGUAGE_OPTIONS.map(([code, label]) => <button key={code} className={language === code ? 'active' : ''} onClick={() => setLanguage(code)}>{label}</button>)}
+    <div className="language-options">
+      {LANGUAGE_OPTIONS.map(([code, label]) => <button key={code} className={language === code ? 'active' : ''} onClick={() => setLanguage(code)}>{label}</button>)}
+    </div>
+    <select className="language-select-mobile" aria-label={copy.languageAria} value={language} onChange={event => setLanguage(event.target.value)}>
+      {LANGUAGE_OPTIONS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+    </select>
   </div>
 }
 
@@ -534,7 +540,7 @@ function App() {
   useEffect(() => { const handler = event => setPage(event.detail); document.getElementById('root').addEventListener('navigate', handler); return () => document.getElementById('root').removeEventListener('navigate', handler) }, [])
   const navigate = value => { setPage(value); setMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   return <div className={`app-shell page-${page}`}>
-    <header className="topbar"><button className="mobile-menu" onClick={() => setMenuOpen(value => !value)} aria-label={language === 'zh' ? '打开菜单' : 'Open menu'}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><Brand compact copy={copy} /><nav className={menuOpen ? 'open' : ''}>{Object.entries(pages).map(([key, label]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => navigate(key)}>{label}</button>)}</nav><div className="topbar-right"><button className={`desktop-download ${page === 'downloads' ? 'active' : ''}`} onClick={() => navigate('downloads')} aria-label={copy.desktopDownload}><Download size={14} /><span>{copy.desktopDownload}</span></button><LanguageSwitch language={language} setLanguage={setLanguage} copy={copy} /><span className="availability"><span /> {copy.availability}</span><button className="more-button" aria-label="More"><MoreHorizontal size={20} /></button></div></header>
+    <header className="topbar"><button className="mobile-menu" onClick={() => setMenuOpen(value => !value)} aria-label={language === 'zh' ? '打开菜单' : 'Open menu'}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><Brand compact copy={copy} /><nav className={menuOpen ? 'open' : ''}>{Object.entries(pages).map(([key, label]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => navigate(key)}>{label}</button>)}</nav><div className="topbar-right">{!isAndroidShell && <button className={`desktop-download ${page === 'downloads' ? 'active' : ''}`} onClick={() => navigate('downloads')} aria-label={copy.desktopDownload}><Download size={14} /><span>{copy.desktopDownload}</span></button>}<LanguageSwitch language={language} setLanguage={setLanguage} copy={copy} /><span className="availability"><span /> {copy.availability}</span><button className="more-button" aria-label="More"><MoreHorizontal size={20} /></button></div></header>
     <main className="main-content">
       {page === 'home' && <HomePage copy={copy.home} onChat={() => navigate('chat')} />}
       {page === 'chat' && <div className="chat-layout"><PublicProfile copy={{ ...copy.profile, compactProfile: copy.chat.compactProfile }} compact={shouldUseCompactProfile({ viewportWidth, messageCount: activeSession.messages.length }) && !profileExpanded} onExpand={() => setProfileExpanded(true)} /><ChatBox copy={copy.chat} language={language} resumeDocument={resumeDocument} session={activeSession} visitorId={visitorState.visitorId} sessions={visitorState.sessions} onSessionChange={updateSession} onSelectSession={selectSession} onNewChat={newChat} /></div>}

@@ -20,6 +20,17 @@ function safeError(error, fallback = '桌面执行暂时没有完成，请稍后
   return String(error?.message || error || '').trim() || fallback
 }
 
+export function runtimeErrorMessage(params, fallback = '执行内核返回了错误。') {
+  const candidates = [
+    params?.error?.additionalDetails,
+    params?.error?.message,
+    params?.additionalDetails,
+    params?.message,
+    params?.turn?.error?.message,
+  ]
+  return candidates.map(value => String(value || '').trim()).find(Boolean) || fallback
+}
+
 function asText(value) {
   if (value == null) return ''
   if (typeof value === 'string') return value
@@ -161,7 +172,10 @@ export class CodexAppServerConnection {
     })
     this.child.on('error', error => this.failPending(error))
     this.child.on('exit', (code, signal) => {
-      if (!this.closed) this.failPending(new Error(`执行内核已退出（${code ?? signal ?? '未知原因'}）`))
+      if (!this.closed) {
+        const detail = this.stderr.trim().split(/\r?\n/).filter(Boolean).at(-1)?.slice(-1_000)
+        this.failPending(new Error(`执行内核已退出（${code ?? signal ?? '未知原因'}）${detail ? `：${detail}` : ''}`))
+      }
     })
   }
 
@@ -392,11 +406,15 @@ export class CodexBuddyRuntime {
     if (method === 'turn/completed') {
       const turn = params.turn || {}
       if (turn.status === 'interrupted') this.emit(state, { type: 'session.failed', message: '任务已停止。' })
-      else if (turn.status === 'failed') this.emit(state, { type: 'session.failed', message: turn.error?.message || '任务执行失败，请检查权限或网络后重试。' })
+      else if (turn.status === 'failed') this.emit(state, { type: 'session.failed', message: runtimeErrorMessage({ turn }, '任务执行失败，请检查权限或网络后重试。') })
       else this.emit(state, { type: 'session.completed', usage: state.usage })
       return
     }
-    if (method === 'error') this.emit(state, { type: 'session.failed', message: params.message || '执行内核返回了错误。' })
+    if (method === 'error') {
+      const message = runtimeErrorMessage(params)
+      if (params.willRetry === true) this.emit(state, { type: 'tool.progress', message: `执行内核正在重试：${message}` })
+      else this.emit(state, { type: 'session.failed', message })
+    }
   }
 
   async routeRequest(request) {

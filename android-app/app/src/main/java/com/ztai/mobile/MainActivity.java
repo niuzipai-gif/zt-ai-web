@@ -7,6 +7,8 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.webkit.DownloadListener;
 import android.webkit.ValueCallback;
@@ -21,18 +23,23 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 
 public class MainActivity extends Activity {
-    private static final String START_URL = "https://niuzipai-gif.github.io/zt-ai-web/";
+    private static final String START_URL = "https://niuzipai-gif.github.io/zt-ai-web/?zt-shell=android";
+    private static final long LOAD_TIMEOUT_MS = 20_000L;
     private static final int FILE_CHOOSER_REQUEST = 4101;
 
     private WebView webView;
+    private ProgressBar progressBar;
     private TextView errorView;
     private ValueCallback<Uri[]> filePathCallback;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Runnable loadTimeout = () -> showLoadError();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(createContentView());
         configureWebView();
+        beginLoading();
         webView.loadUrl(START_URL);
     }
 
@@ -46,7 +53,7 @@ public class MainActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
 
-        ProgressBar progressBar = new ProgressBar(this);
+        progressBar = new ProgressBar(this);
         progressBar.setIndeterminate(true);
         FrameLayout.LayoutParams progressParams = new FrameLayout.LayoutParams(64, 64);
         progressParams.gravity = android.view.Gravity.CENTER;
@@ -63,11 +70,27 @@ public class MainActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
         errorView.setOnClickListener(v -> {
-            errorView.setVisibility(View.GONE);
-            progressBar.setVisibility(View.VISIBLE);
+            beginLoading();
             webView.reload();
         });
         return root;
+    }
+
+    private void beginLoading() {
+        errorView.setVisibility(View.GONE);
+        progressBar.setVisibility(View.VISIBLE);
+        mainHandler.removeCallbacks(loadTimeout);
+        mainHandler.postDelayed(loadTimeout, LOAD_TIMEOUT_MS);
+    }
+
+    private void finishLoading() {
+        mainHandler.removeCallbacks(loadTimeout);
+        progressBar.setVisibility(View.GONE);
+    }
+
+    private void showLoadError() {
+        progressBar.setVisibility(View.GONE);
+        errorView.setVisibility(View.VISIBLE);
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -84,6 +107,17 @@ public class MainActivity extends Activity {
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                beginLoading();
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                finishLoading();
+                errorView.setVisibility(View.GONE);
+            }
+
+            @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
                 String host = uri.getHost();
@@ -97,7 +131,7 @@ public class MainActivity extends Activity {
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) {
-                    errorView.setVisibility(View.VISIBLE);
+                    showLoadError();
                 }
             }
         });
@@ -105,8 +139,8 @@ public class MainActivity extends Activity {
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onProgressChanged(WebView view, int newProgress) {
-                if (newProgress >= 95) {
-                    errorView.setVisibility(View.GONE);
+                if (newProgress >= 100) {
+                    finishLoading();
                 }
             }
 
@@ -163,6 +197,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        mainHandler.removeCallbacks(loadTimeout);
         if (webView != null) {
             webView.stopLoading();
             webView.destroy();
