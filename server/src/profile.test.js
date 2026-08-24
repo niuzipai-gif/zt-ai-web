@@ -11,6 +11,9 @@ test('profile keeps the configured digital-twin facts', () => {
   assert.match(ZT_SYSTEM_PROMPT, /不能进一步确认/)
   assert.match(ZT_SYSTEM_PROMPT, /如果消息中包含图片，必须实际观察图片/)
   assert.match(ZT_SYSTEM_PROMPT, /身份未核实/)
+  assert.match(ZT_SYSTEM_PROMPT, /附件.*解析|解析.*附件/)
+  assert.match(ZT_SYSTEM_PROMPT, /不能.*猜测|禁止.*编造/)
+  assert.match(ZT_SYSTEM_PROMPT, /摘要.*未包含|文件.*不足/)
 })
 
 test('chat language prompts are explicit for every supported locale', () => {
