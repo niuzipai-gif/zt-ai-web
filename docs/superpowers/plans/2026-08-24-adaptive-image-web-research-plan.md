@@ -198,7 +198,7 @@ git commit -m "feat: route image chats through adaptive web evidence"
 - Modify: `src/lib/i18n.js`
 - Create: `src/lib/research-sources.js`
 - Create: `src/lib/research-sources.test.js`
-- Modify: `src/styles.css`
+- Create: `src/research-sources.css`
 
 - [ ] **Step 1: Add the UI contract test**
 
