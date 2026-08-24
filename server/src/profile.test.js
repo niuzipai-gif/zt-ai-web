@@ -7,6 +7,8 @@ test('profile keeps the configured digital-twin facts', () => {
   assert.ok(ZT_SYSTEM_PROMPT.includes('AI 产品开发'))
   assert.match(ZT_SYSTEM_PROMPT, /先说结论，再说依据，最后给动作/)
   assert.match(ZT_SYSTEM_PROMPT, /像蔡宙廷本人一样自然表达/)
+  assert.match(ZT_SYSTEM_PROMPT, /不要定义“净利润毛利”或补充成本构成/)
+  assert.match(ZT_SYSTEM_PROMPT, /不能进一步确认/)
 })
 
 test('chat language prompts are explicit for every supported locale', () => {
