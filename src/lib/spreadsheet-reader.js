@@ -141,7 +141,7 @@ export async function extractSpreadsheetText(file) {
     throw new Error(`${name} 无法读取，文件可能已损坏或格式不受支持；请另存为 xlsx 或 CSV 后重试。`)
   }
   const sheetNames = Array.isArray(workbook.SheetNames) ? workbook.SheetNames : []
-  if (!sheetNames.length) return { text: `[附件解析摘要]\n文件：${name}\n工作簿没有可分析的工作表。`, status: 'ready' }
+  if (!sheetNames.length) return { text: `文件：${name}\n工作簿没有可分析的工作表。`, status: 'ready' }
   const visibleNames = sheetNames.slice(0, MAX_SHEETS)
   const parts = [`文件：${name}`, `格式：${/\.csv$/i.test(name) ? 'CSV' : 'Excel'}`, `工作表：${sheetNames.length} 张`]
   if (sheetNames.length > MAX_SHEETS) parts.push(`仅处理前 ${MAX_SHEETS} 张，另外 ${sheetNames.length - MAX_SHEETS} 张未读取。`)
@@ -150,5 +150,5 @@ export async function extractSpreadsheetText(file) {
     const details = sheetDetails(workbook.Sheets[sheetName])
     sheetSections.push([`工作表：${sheetName}`, details.overview, details.samples ? `代表性样本：\n${details.samples}` : ''].filter(Boolean).join('\n'))
   }
-  return trimSummary(`[附件解析摘要]\n${parts.join('\n')}\n\n${sheetSections.join('\n\n')}\n[/附件解析摘要]`)
+  return trimSummary(`${parts.join('\n')}\n\n${sheetSections.join('\n\n')}`)
 }

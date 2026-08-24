@@ -12,7 +12,8 @@ import { createChatSession, createSessionTitle, loadVisitorState, saveVisitorSta
 import { getInitialLanguage, LANGUAGE_OPTIONS, resumeDocumentByLanguage, siteCopy } from './lib/i18n.js'
 import { buildStarterPrompts, formatRelativeSessionTime, shouldUseCompactProfile } from './lib/chat-ux.js'
 import { filesFromDataTransfer, hasFilePayload } from './lib/attachments.js'
-import { attachmentMime, attachmentName, extractPdfText, isPdfAttachment, isTextAttachment } from './lib/attachment-reader.js'
+import { attachmentMime, attachmentName, extractPdfText, extractSpreadsheetText, isPdfAttachment, isSpreadsheetAttachment, isTextAttachment } from './lib/attachment-reader.js'
+import { attachmentStatusLabel, buildAttachmentContext } from './lib/attachment-context.js'
 import { renderMarkdown } from './lib/markdown.js'
 import { getStreamBatchSize } from './lib/streaming.js'
 import { evidenceLabel, researchSummary } from './lib/research-sources.js'
@@ -197,13 +198,32 @@ function prepareImage(file) {
 async function prepareAttachment(file) {
   const type = attachmentMime(file)
   const name = attachmentName(file)
-  const attachment = { id: `${name}-${file.lastModified}-${Math.random()}`, name, type: type || 'application/octet-stream', size: file.size }
-  if (type.startsWith('image/')) attachment.preview = await prepareImage(file)
-  else if (isPdfAttachment(file)) attachment.text = await extractPdfText(file)
-  else if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || /\.docx$/i.test(name)) attachment.text = (await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value.slice(0, 16000)
-  else if (isTextAttachment(file)) attachment.text = (await file.text()).slice(0, 16000)
-  if (!attachment.preview && !attachment.text) attachment.readError = '当前只读取了文件名和类型，暂不支持解析该文件内容。'
-  if (isPdfAttachment(file) && !attachment.text) attachment.readError = '这个 PDF 没有可提取的文字，可能是扫描图片；请改传截图或图片。'
+  const attachment = { id: `${name}-${file.lastModified}-${Math.random()}`, name, type: type || 'application/octet-stream', size: file.size, readStatus: 'pending' }
+  if (type.startsWith('image/')) {
+    attachment.preview = await prepareImage(file)
+    attachment.readStatus = attachment.preview ? 'preview-only' : 'error'
+  } else if (isSpreadsheetAttachment(file)) {
+    const result = await extractSpreadsheetText(file)
+    attachment.text = result.text
+    attachment.readStatus = result.status
+  } else if (isPdfAttachment(file)) {
+    attachment.text = await extractPdfText(file)
+    attachment.readStatus = attachment.text ? 'ready' : 'error'
+  } else if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || /\.docx$/i.test(name)) {
+    attachment.text = (await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value.slice(0, 16000)
+    attachment.readStatus = attachment.text ? 'ready' : 'error'
+  } else if (isTextAttachment(file)) {
+    attachment.text = (await file.text()).slice(0, 16000)
+    attachment.readStatus = attachment.text ? 'ready' : 'error'
+  }
+  if (!attachment.preview && !attachment.text) {
+    attachment.readStatus = 'error'
+    attachment.readError = '当前只读取了文件名和类型，暂不支持解析该文件内容。'
+  }
+  if (isPdfAttachment(file) && !attachment.text) {
+    attachment.readStatus = 'error'
+    attachment.readError = '这个 PDF 没有可提取的文字，可能是扫描图片；请改传截图或图片。'
+  }
   return attachment
 }
 
@@ -223,9 +243,9 @@ function ResearchSources({ research, copy, language }) {
   </details>
 }
 
-function AttachmentList({ attachments = [], compact = false, onPreview }) {
+function AttachmentList({ attachments = [], compact = false, onPreview, copy }) {
   if (!attachments.length) return null
-  return <div className={`attachment-list ${compact ? 'is-compact' : ''}`}>{attachments.map(file => <div className="attachment-chip" key={file.id}>{file.preview ? <button type="button" className="attachment-preview-button" onClick={() => onPreview?.(file)} aria-label={`预览 ${file.name}`}><img src={file.preview} alt={file.name} /></button> : <FileText size={14} />}<span title={file.name}>{file.name}</span><small>{file.readError ? '未解析' : file.text ? '已读取' : formatBytes(file.size)}</small></div>)}</div>
+  return <div className={`attachment-list ${compact ? 'is-compact' : ''}`}>{attachments.map(file => { const status = file.readStatus || (file.readError ? 'error' : file.text ? 'ready' : file.preview ? 'preview-only' : 'error'); return <div className={`attachment-chip is-${status}`} key={file.id} title={file.readError || undefined}>{file.preview ? <button type="button" className="attachment-preview-button" onClick={() => onPreview?.(file)} aria-label={`预览 ${file.name}`}><img src={file.preview} alt={file.name} /></button> : <FileText size={14} />}<span title={file.name}>{file.name}</span><small aria-label={attachmentStatusLabel(status, copy)}>{attachmentStatusLabel(status, copy)}</small></div> })}</div>
 }
 
 function visitorShortId(visitorId) {
@@ -304,7 +324,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     const files = Array.from(fileList || []).slice(0, Math.max(0, 4 - attachments.length))
     if (files.length) {
       const prepared = await Promise.all(files.map(async file => {
-        try { return await prepareAttachment(file) } catch (error) { return { id: `${file.name}-${file.lastModified}-${Math.random()}`, name: file.name, type: file.type || 'application/octet-stream', size: file.size, readError: error.message || '文件内容读取失败。' } }
+        try { return await prepareAttachment(file) } catch (error) { return { id: `${file.name}-${file.lastModified}-${Math.random()}`, name: file.name, type: file.type || 'application/octet-stream', size: file.size, readStatus: 'error', readError: error.message || '文件内容读取失败。' } }
       }))
       setAttachments(current => [...current, ...prepared].slice(0, 4))
     }
@@ -358,11 +378,12 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     const value = (draft?.value ?? input).trim()
     if ((!value && !nextAttachments.length) || activeMessageId) return
     const now = Date.now()
-    const attachmentText = nextAttachments.map(file => `[附件：${file.name}，类型：${file.type}，大小：${formatBytes(file.size)}]${file.text ? `\n${file.text}` : ''}${file.readError ? `\n[读取说明：${file.readError}]` : ''}`).join('\n')
-    const contentText = [value || copy.sendFallback, attachmentText].filter(Boolean).join('\n\n')
+    const attachmentText = buildAttachmentContext(nextAttachments, copy)
+    const attachmentFallback = copy.attachmentFallback || copy.sendFallback
+    const contentText = [value || (nextAttachments.length ? attachmentFallback : copy.sendFallback), attachmentText].filter(Boolean).join('\n\n')
     const imageParts = nextAttachments.filter(file => file.preview).map(file => ({ type: 'image_url', image_url: { url: file.preview } }))
     const content = imageParts.length ? [{ type: 'text', text: contentText }, ...imageParts] : contentText
-    const userMessage = { id: `user-${now}`, role: 'user', text: value || copy.sendFallback, content, attachments: nextAttachments, status: 'done' }
+    const userMessage = { id: `user-${now}`, role: 'user', text: value || (nextAttachments.length ? attachmentFallback : copy.sendFallback), content, attachments: nextAttachments, status: 'done' }
     const responseId = `response-${now}`
     const history = [...messages, userMessage].map(message => ({ role: message.role === 'zt' ? 'assistant' : message.role, content: message.content || message.text })).filter(message => message.content)
     streamQueueRef.current = []
@@ -408,7 +429,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     {message.status === 'thinking' && <span className="typing-indicator" aria-label="ZT.AI 正在思考"><i /><i /><i /></span>}
     {message.researching && <div className="research-live-status"><span className="research-live-dot" />{message.researchStatus || copy.researching || '正在核验公开资料'}<span className="research-live-pulse">···</span></div>}
     {message.text && <MarkdownMessage text={message.text} />}
-    <AttachmentList attachments={message.attachments} onPreview={setPreviewAttachment} />
+    <AttachmentList attachments={message.attachments} copy={copy} onPreview={setPreviewAttachment} />
     <ResearchSources research={message.research} copy={copy} language={language} />
   </>
   const restoreRetry = () => {
@@ -423,7 +444,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     <div className="chat-topline"><div><span className="eyebrow">{copy.eyebrow} · {visitorShortId(visitorId)}</span><h2>{copy.title}</h2></div><div className="chat-top-actions"><button className="chat-history-button" onClick={() => setHistoryOpen(true)}><History size={14} />{copy.history}</button><button className="chat-new-button" onClick={onNewChat}><Plus size={14} />{copy.newChat}</button><a className="resume-inline-download" href={resumeDocument.url} download={resumeDocument.name}><FileText size={13} />{copy.resume}</a><span className="free-pill"><span />{copy.free}</span></div></div>
     {messages.length ? <div className="messages" ref={messagesRef}>{messages.map((message, index) => <div key={message.id ?? `${message.role}-${index}`} className={`message-row ${message.role === 'user' ? 'from-user' : ''}`}><div className={`message-bubble ${message.status === 'thinking' ? 'is-thinking' : ''}`}><span className="message-label">{message.role === 'zt' ? 'ZT.AI' : copy.visitor}</span>{renderMessage(message)}{renderMedia(message.media)}</div></div>)}</div> : <div className="empty-chat" ref={messagesRef}><span className="empty-chat-mark"><MessageCircle size={20} /></span><span className="eyebrow">{copy.emptyEyebrow}</span><h3>{copy.emptyTitle}</h3><p>{copy.emptyBody}</p><div className="starter-prompts starter-prompt-group"><span>{copy.starterLabel}</span><div>{starterPrompts.map(prompt => <button key={prompt} onClick={() => { setInput(prompt); window.setTimeout(() => inputRef.current?.focus(), 0) }}>{prompt}<ArrowUpRight size={13} /></button>)}</div></div><button className="empty-chat-action" onClick={() => { setInput(copy.startPrompt); window.setTimeout(() => inputRef.current?.focus(), 0) }}>{copy.emptyAction} <ArrowUpRight size={14} /></button></div>}
     {retryPayload && <div className="chat-retry" role="status"><span>{copy.retryHint}</span><button onClick={restoreRetry}>{copy.retry}</button></div>}
-    {attachments.length > 0 && <div className="pending-attachments"><AttachmentList attachments={attachments} compact onPreview={setPreviewAttachment} />{attachments.map(file => <button key={file.id} onClick={() => removeAttachment(file.id)} aria-label={`移除 ${file.name}`}><X size={13} /></button>)}</div>}
+    {attachments.length > 0 && <div className="pending-attachments"><AttachmentList attachments={attachments} copy={copy} compact onPreview={setPreviewAttachment} />{attachments.map(file => <button key={file.id} onClick={() => removeAttachment(file.id)} aria-label={`移除 ${file.name}`}><X size={13} /></button>)}</div>}
     <div className={`chat-compose ${dragOver ? 'is-dragging' : ''}`} onPaste={handlePaste} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}><label className="attach-button" title={copy.upload}><Paperclip size={16} /><input type="file" multiple onChange={handleFiles} disabled={Boolean(activeMessageId)} /></label><input ref={inputRef} value={input} disabled={Boolean(activeMessageId)} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); send() } }} placeholder={activeMessageId ? copy.generating : copy.placeholder} /><button onClick={send} disabled={Boolean(activeMessageId) || (!input.trim() && !attachments.length)} aria-label={copy.send}><Send size={16} /></button></div>
     <div className="chat-footer"><ModelSwitch model={model} setModel={setModel} /><span className="chat-note"><MessageCircle size={14} /> {copy.publicNote}</span></div>
     {historyOpen && <ChatHistoryDrawer visitorId={visitorId} sessions={sessions} activeSessionId={session.id} copy={copy} language={language} onSelectSession={id => { onSelectSession(id); setHistoryOpen(false) }} onNewChat={() => { onNewChat(); setHistoryOpen(false) }} onClose={() => setHistoryOpen(false)} />}
