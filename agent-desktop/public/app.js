@@ -12,6 +12,7 @@ import { createTaskRunRegistry } from './task-runs.mjs'
 const $ = selector => document.querySelector(selector)
 const CHAT_TIMEOUT_MS = 45_000
 const CHAT_SLOW_NOTICE_MS = 8_000
+const MAX_PERSISTED_IMAGE_DATA_URL_CHARS = 2_000_000
 const DRAWER_TRANSITION_MS = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 1 : 180
 const drawerCloseTimers = new WeakMap()
 const state = {
@@ -210,7 +211,14 @@ function saveLoginFields() {
 function persistChats() {
   if (!state.accountId) return
   const keys = storageKeys()
-  const durable = state.chatSessions.slice(0, 30).map(conversation => ({ ...conversation, messages: conversation.messages.map(message => ({ ...message, attachments: Array.isArray(message.attachments) ? message.attachments.map(({ dataUrl, text, ...metadata }) => metadata) : message.attachments })) }))
+  const durable = state.chatSessions.slice(0, 30).map(conversation => ({ ...conversation, messages: conversation.messages.map(message => ({
+    ...message,
+    attachments: Array.isArray(message.attachments) ? message.attachments.map(({ dataUrl, text, ...metadata }) => ({
+      ...metadata,
+      ...(typeof dataUrl === 'string' && /^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(dataUrl) && dataUrl.length <= MAX_PERSISTED_IMAGE_DATA_URL_CHARS ? { dataUrl } : {}),
+      ...(text ? { text } : {}),
+    })) : message.attachments,
+  })) }))
   localStorage.setItem(keys.chats, JSON.stringify(durable))
   localStorage.setItem(keys.active, state.activeChatId)
   void apiFetch('/api/conversations', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ conversations: durable }) }).catch(() => {})
@@ -582,7 +590,8 @@ async function runChat({ agent = false, localAnswer = '' } = {}) {
   const chatId = state.activeChatId
   const conversation = currentConversation()
   const chatIntent = classifyIntent(task, { mode: 'CHAT', hasAgentContext: conversation?.agentContext === true })
-  const requiresResearch = chatIntent.route === 'agent' && chatIntent.kind === 'research'
+  const hasImageAttachment = attachments.some(attachment => /^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(String(attachment?.dataUrl || '')))
+  const requiresResearch = chatIntent.route === 'agent' && chatIntent.kind === 'research' && !hasImageAttachment
   const taskForModel = buildAttachmentPrompt(task, attachments)
   recordChatMessage('user', task, chatId, { attachments }); state.pendingAttachments = []; renderPendingAttachments(); renderMessages(); els.taskInput.value = ''; els.taskInput.disabled = true; els.run.disabled = true
   const body = appendMessage('assistant', '', true)
@@ -597,7 +606,12 @@ async function runChat({ agent = false, localAnswer = '' } = {}) {
   if (state.activeChatId === chatId) state.chatController = controller
   try {
     const activeConversation = state.chatSessions.find(item => item.id === chatId) || null
-    const messages = (activeConversation?.messages || [{ role: 'user', content: task }]).map(message => ({ ...message }))
+    const messages = (activeConversation?.messages || [{ role: 'user', content: task }]).map(message => ({
+      ...message,
+      content: message.role === 'user' && Array.isArray(message.attachments)
+        ? messageContentWithImages(message.content, message.attachments)
+        : message.content,
+    }))
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       if (messages[index].role === 'user') {
         messages[index].content = messageContentWithImages(taskForModel, attachments)
@@ -719,6 +733,12 @@ async function runAgentTask() {
   const conversation = currentConversation()
   const intent = classifyIntent(task, { mode: state.mode, hasAgentContext: conversation?.agentContext === true })
   const presentation = executionPresentation(intent)
+  const hasImageAttachment = state.pendingAttachments.some(attachment => /^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(String(attachment?.dataUrl || '')))
+  if (hasImageAttachment) {
+    const request = runChat({ agent: false, localAnswer: '' })
+    setNotice(presentation.summary)
+    return request
+  }
   if (intent.route === 'chat') {
     const request = runChat({ agent: true, localAnswer: buddyCapabilityAnswer(task) })
     setNotice(presentation.summary)

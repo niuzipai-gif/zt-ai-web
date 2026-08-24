@@ -16,6 +16,7 @@ import { MODEL_CATALOG, completeMiMoResponse, isPrivateDesktopRuntimeRequest, st
 import { buildWebVerificationContext, buildWebVerificationQuery, requiresWebVerification, sourcePayload } from './web-verification.js'
 import { searchWeb } from './web-search.js'
 import { buildAgentPlannerSystemPrompt, buildAgentSystemPrompt, buildPublicSystemPrompt } from './prompt-context.js'
+import { buildImageVerificationQuery, carryForwardImages, hasImageContent, hasImageInput, isImageIdentificationRequest } from './image-input.js'
 
 function loadEnvFile(filePath) {
   try {
@@ -176,12 +177,46 @@ function attachmentMetadata(attachments) {
   return (Array.isArray(attachments) ? attachments : []).slice(0, 8).map(file => ({ name: String(file?.name || '').slice(0, 160), type: String(file?.type || '').slice(0, 80) }))
 }
 
+function imageResearchPrompt(language) {
+  if (language === 'en') return 'Inspect the image before web research. Return one short, cautious line of searchable visual clues. Do not state an unverified identity as fact. If no useful clue is visible, return "unidentified". Do not output tools, JSON, or a general answer.'
+  if (language === 'ja') return 'ウェブ検索の前に画像を実際に確認し、検索に使える視覚的な手掛かりを慎重に一行で返してください。未確認の名前を事実として断定せず、手掛かりがなければ「未特定」と返してください。ツール、JSON、一般回答は出力しないでください。'
+  return '联网搜索前必须先实际观察对话中的图片。只输出一行谨慎的、可用于搜索的视觉线索：可读文字、品牌标志、物体类别、型号、地点或明显特征。不能把未核实的身份当成事实；没有线索只输出“未识别”。不要输出工具、JSON 或完整回答。'
+}
+
+async function collectModelText(stream) {
+  let text = ''
+  for await (const chunk of stream) text += chunk
+  return text.replace(/\s+/gu, ' ').trim().slice(0, 1_000)
+}
+
+async function runImageVisionPreflight({ model, messages, language }) {
+  const system = messages.find(message => message.role === 'system')?.content || ''
+  const visionMessages = [
+    { role: 'system', content: `${system}\n\n${imageResearchPrompt(language)}` },
+    ...messages.filter(message => message.role !== 'system'),
+  ]
+  const stream = model === 'deepseek'
+    ? streamDeepseek({ model: CHAT_MODELS.deepseek, messages: visionMessages })
+    : streamMinimax({ model: CHAT_MODELS.minimax, messages: visionMessages })
+  return collectModelText(stream)
+}
+
+function imageResearchFailureContext(inputText, visionHint) {
+  return `${inputText}\n\n[图片联网核验失败]\n这次公开资料检索没有拿到可核验来源。图片本身仍然可供视觉模型观察，但视觉线索${visionHint ? `“${visionHint}”` : ''}只是未核实线索，不能当成品牌、型号、人物、地点或产品身份的结论。回答时先描述能直接从图片看到的内容；涉及具体身份必须明确标注未核实，不能用旧知识补全、猜测或编造来源。不要因为检索失败就说没有看到图片。`
+}
+
+function imageResearchHintContext(visionHint) {
+  return visionHint ? `\n\n[图片初步视觉线索（未核实）]\n${visionHint}\n这只是检索线索，不是事实结论；必须以图片可见内容和下方公开来源共同核对。` : ''
+}
+
 async function handleChat(request, response) {
   if (!rateLimit(request)) { sendJson(request, response, 429, { error: '请求过于频繁，请稍后再试' }); return }
   const body = await readBody(request)
   const { model, messages } = normalizeChatRequest(body)
   const language = ['zh', 'en', 'ja'].includes(body.language) ? body.language : 'zh'
-  const providerMessages = [{ role: 'system', content: buildPublicSystemPrompt(language) }, ...messages.filter(message => message.role !== 'system')]
+  const originalMessages = messages.filter(message => message.role !== 'system')
+  const directlyAttachedImage = hasImageContent(originalMessages.findLast(message => message.role === 'user')?.content)
+  const providerMessages = carryForwardImages([{ role: 'system', content: buildPublicSystemPrompt(language) }, ...originalMessages])
   const incomingAttachments = Array.isArray(body.attachments) ? body.attachments.slice(0, 8) : []
   const attachmentNotes = incomingAttachments.filter(file => file && file.name).map(file => `[附件：${String(file.name).slice(0, 160)}，类型：${String(file.type || '未知').slice(0, 80)}]`)
   const latestUser = providerMessages.findLast(message => message.role === 'user')
@@ -194,26 +229,42 @@ async function handleChat(request, response) {
   let outputText = ''
   let status = 'success'
   const media = isMediaIntent(inputText)
+  const imageRequest = !media && (directlyAttachedImage || (hasImageInput(providerMessages) && isImageIdentificationRequest(inputText)))
   sseStart(request, response)
   sse(response, 'message.start', { model: CHAT_MODELS[model], media })
-  const shouldResearch = !media && requiresWebVerification(inputText)
+  const shouldResearch = !media && (requiresWebVerification(inputText) || imageRequest)
   let research = null
+  let researchError = null
+  let query = ''
+  let visionHint = ''
   if (shouldResearch) {
-    const query = buildWebVerificationQuery(inputText)
-    sse(response, 'research.started', { query })
+    if (imageRequest) {
+      sse(response, 'research.started', { query: '图片识别中' })
+      sse(response, 'research.progress', { message: '正在先观察图片，提取可核验线索…' })
+      try { visionHint = await runImageVisionPreflight({ model, messages: providerMessages, language }) } catch { visionHint = '' }
+      query = buildImageVerificationQuery(inputText, visionHint)
+      sse(response, 'research.progress', { message: `正在用图片线索核验公开资料：${query}` })
+    } else {
+      query = buildWebVerificationQuery(inputText)
+      sse(response, 'research.started', { query })
+    }
     try {
       research = await searchWeb({ query, onProgress: message => sse(response, 'research.progress', { message }) })
-      providerMessages.splice(1, 0, { role: 'system', content: buildWebVerificationContext(inputText, research) })
+      providerMessages.splice(1, 0, { role: 'system', content: `${buildWebVerificationContext(inputText, research)}${imageResearchHintContext(visionHint)}` })
       sse(response, 'research.sources', sourcePayload(research))
     } catch (error) {
-      status = 'error'
-      outputText = '我暂时没有拿到可核验的公开来源，所以不根据旧知识直接猜测。请稍后重试，或换一个更具体的关键词。'
+      researchError = error
       sse(response, 'research.error', { message: error.message })
-      sse(response, 'message.delta', { text: outputText })
-      sse(response, 'message.done', {})
-      response.end()
-      await recordTelemetry({ product: 'web', ...context, model: CHAT_MODELS[model], requestType: 'chat-research', status, inputText, outputText, metadata: { attachments: attachmentMetadata(incomingAttachments), webResearch: true, query, provider: null, sourceCount: 0, researchError: error.message } })
-      return
+      if (imageRequest) providerMessages.splice(1, 0, { role: 'system', content: imageResearchFailureContext(inputText, visionHint) })
+      else {
+        status = 'error'
+        outputText = '我暂时没有拿到可核验的公开来源，所以不根据旧知识直接猜测。请稍后重试，或换一个更具体的关键词。'
+        sse(response, 'message.delta', { text: outputText })
+        sse(response, 'message.done', {})
+        response.end()
+        await recordTelemetry({ product: 'web', ...context, model: CHAT_MODELS[model], requestType: 'chat-research', status, inputText, outputText, metadata: { attachments: attachmentMetadata(incomingAttachments), webResearch: true, query, provider: null, sourceCount: 0, researchError: error.message } })
+        return
+      }
     }
   }
   if (media) {
@@ -236,7 +287,7 @@ async function handleChat(request, response) {
   } catch (error) { status = 'error'; sse(response, 'message.error', { message: error.message }) }
   sse(response, 'message.done', {})
   response.end()
-  await recordTelemetry({ product: 'web', ...context, model: CHAT_MODELS[model], requestType: shouldResearch ? 'chat-research' : 'chat', status, inputText, outputText, metadata: { attachments: attachmentMetadata(incomingAttachments), webResearch: shouldResearch, query: research?.query || null, provider: research?.provider || null, sourceCount: research?.results?.length || 0 } })
+  await recordTelemetry({ product: 'web', ...context, model: CHAT_MODELS[model], requestType: shouldResearch ? 'chat-research' : 'chat', status, inputText, outputText, metadata: { attachments: attachmentMetadata(incomingAttachments), webResearch: shouldResearch, query: research?.query || query || null, provider: research?.provider || null, sourceCount: research?.results?.length || 0, researchError: researchError?.message || null, imageRequest } })
 }
 
 async function handleAgentChat(request, response) {
@@ -246,7 +297,7 @@ async function handleAgentChat(request, response) {
   const body = await readBody(request)
   const { model, messages } = normalizeChatRequest(body)
   const language = ['zh', 'en', 'ja'].includes(body.language) ? body.language : 'zh'
-  const providerMessages = [{ role: 'system', content: buildAgentSystemPrompt(language) }, ...messages.filter(message => message.role !== 'system')]
+  const providerMessages = carryForwardImages([{ role: 'system', content: buildAgentSystemPrompt(language) }, ...messages.filter(message => message.role !== 'system')])
   const context = clientContext(request, body, session, 'desktop-agent')
   const inputText = contentToText(providerMessages.findLast(message => message.role === 'user')?.content || '')
   let outputText = ''

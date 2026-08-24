@@ -55,14 +55,15 @@ test('migrates the previous single-session state into a private visitor session'
   assert.notEqual(restored.visitorId, 'visitor-a')
 })
 
-test('saves each browser store under its own visitor state key and strips private previews', () => {
+test('saves each browser store under its own visitor state key and keeps bounded image context', () => {
   const firstStorage = new Map()
   const secondStorage = new Map()
-  const first = createVisitorState({ visitorId: 'visitor-one', sessions: [createChatSession({ messages: [{ role: 'user', text: 'A', attachments: [{ name: 'a.png', preview: 'data:image/png;base64,secret' }] }] })] })
+  const first = createVisitorState({ visitorId: 'visitor-one', sessions: [createChatSession({ messages: [{ role: 'user', text: 'A', content: [{ type: 'text', text: 'A' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,secret' } }], attachments: [{ name: 'a.png', preview: 'data:image/png;base64,secret' }] }] })] })
   const second = createVisitorState({ visitorId: 'visitor-two', sessions: [createChatSession({ messages: [{ role: 'user', text: 'B' }] })] })
   saveVisitorState(firstStorage, first)
   saveVisitorState(secondStorage, second)
   assert.notEqual(firstStorage.get(getVisitorStateKey(first.visitorId)), secondStorage.get(getVisitorStateKey(second.visitorId)))
   assert.equal(JSON.parse(firstStorage.get(getVisitorStateKey(first.visitorId))).sessions[0].messages[0].attachments[0].preview, undefined)
+  assert.deepEqual(JSON.parse(firstStorage.get(getVisitorStateKey(first.visitorId))).sessions[0].messages[0].content[1], { type: 'image_url', image_url: { url: 'data:image/png;base64,secret' } })
   assert.equal(JSON.parse(secondStorage.get(getVisitorStateKey(second.visitorId))).sessions[0].messages[0].text, 'B')
 })

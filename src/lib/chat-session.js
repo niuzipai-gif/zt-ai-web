@@ -1,6 +1,7 @@
 export const VISITOR_STATE_KEY = 'zt-ai:visitor-state:v3'
 export const VISITOR_ID_KEY = 'zt-ai:visitor-id:v1'
 export const LEGACY_CHAT_SESSION_KEY = 'zt-ai:public-chat:v2'
+export const MAX_PERSISTED_IMAGE_DATA_URL_CHARS = 2_000_000
 
 function getItem(storage, key) {
   return typeof storage.getItem === 'function' ? storage.getItem(key) : storage.get(key)
@@ -130,7 +131,13 @@ export function loadVisitorState(storage = globalThis.localStorage, defaultMessa
 function sanitizeMessage(message) {
   return {
     ...message,
-    content: Array.isArray(message.content) ? message.content.filter(part => part?.type !== 'image_url') : message.content,
+    content: Array.isArray(message.content) ? message.content.filter(part => {
+      if (part?.type !== 'image_url') return true
+      const url = part.image_url?.url
+      return typeof url === 'string'
+        && /^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(url)
+        && url.length <= MAX_PERSISTED_IMAGE_DATA_URL_CHARS
+    }) : message.content,
     attachments: Array.isArray(message.attachments) ? message.attachments.map(({ preview, ...file }) => file) : message.attachments,
   }
 }

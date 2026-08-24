@@ -88,7 +88,19 @@ function conversationMessages(value) {
   return (Array.isArray(value) ? value : []).slice(-120).flatMap(message => {
     const role = message?.role === 'user' ? 'user' : 'assistant'
     const content = String(message?.content || '').trim().slice(0, 16_000)
-    return content ? [{ role, content }] : []
+    const attachments = Array.isArray(message?.attachments) ? message.attachments.slice(0, 4).flatMap(item => {
+      const dataUrl = String(item?.dataUrl || '')
+      const validImage = /^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(dataUrl) && dataUrl.length <= 2_000_000
+      return [{
+        name: String(item?.name || '附件').slice(0, 160),
+        type: String(item?.type || 'application/octet-stream').slice(0, 100),
+        size: Number(item?.size) || 0,
+        ...(validImage ? { dataUrl } : {}),
+        ...(item?.text ? { text: String(item.text).slice(0, 20_000) } : {}),
+        ...(item?.readError ? { readError: String(item.readError).slice(0, 300) } : {}),
+      }]
+    }) : []
+    return content ? [{ role, content, ...(attachments.length ? { attachments } : {}) }] : []
   })
 }
 
