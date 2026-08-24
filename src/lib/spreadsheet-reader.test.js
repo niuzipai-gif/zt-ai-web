@@ -40,14 +40,15 @@ test('parses csv as a structured table', async () => {
 
 test('rejects a corrupt workbook with a stable user-facing error', async () => {
   await assert.rejects(
-    () => extractSpreadsheetText(fakeFile('坏文件.xlsx', '', new Uint8Array([1, 2, 3]).buffer)),
+    () => extractSpreadsheetText({ name: '坏文件.xlsx', type: '', size: 3, arrayBuffer: async () => { throw new Error('read failed') } }),
     /无法读取|工作簿|文件/,
   )
 })
 
 test('marks oversized summaries as truncated and keeps the continuation hint', async () => {
-  const rows = [['ASIN', '说明']]
-  for (let index = 0; index < 2_000; index += 1) rows.push([`B${String(index).padStart(4, '0')}`, '这是一个用于验证摘要边界的较长说明'])
+  const headers = Array.from({ length: 40 }, (_, index) => `字段${index + 1}`)
+  const rows = [headers]
+  for (let index = 0; index < 8; index += 1) rows.push(headers.map((_, column) => column === 0 ? `B${String(index).padStart(4, '0')}` : '这是一个用于验证摘要边界的较长说明。'.repeat(20)))
   const workbook = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), '明细')
   const bytes = XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' })

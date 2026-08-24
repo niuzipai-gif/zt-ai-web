@@ -1,3 +1,5 @@
+export { extractSpreadsheetText, isSpreadsheetAttachment } from './spreadsheet-reader.js'
+
 export const MAX_ATTACHMENT_TEXT = 16_000
 export const MAX_PDF_BYTES = 20 * 1024 * 1024
 export const MAX_PDF_PAGES = 20
