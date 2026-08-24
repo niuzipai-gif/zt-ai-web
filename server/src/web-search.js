@@ -1,4 +1,5 @@
-const MAX_SEARCH_RESULTS = 6
+const DEFAULT_SEARCH_RESULTS = 6
+export const MAX_SEARCH_RESULTS = 24
 const DEFAULT_WEB_TIMEOUT_MS = 25_000
 const DUCKDUCKGO_HTML_URL = 'https://html.duckduckgo.com/html/'
 
@@ -26,9 +27,13 @@ export function resolveWebSearchConfig({ env = process.env } = {}) {
   return { baseUrl, apiKey }
 }
 
-export function parseSearchResults(html, limit = MAX_SEARCH_RESULTS) {
+function boundedLimit(value, fallback = DEFAULT_SEARCH_RESULTS) {
+  return Math.min(MAX_SEARCH_RESULTS, Math.max(1, Number(value) || fallback))
+}
+
+export function parseSearchResults(html, limit = DEFAULT_SEARCH_RESULTS) {
   const links = [...String(html || '').matchAll(/<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)]
-  return links.slice(0, limit).map((match, index) => {
+  return links.slice(0, boundedLimit(limit)).map((match, index) => {
     const href = decodeHtml(match[1]).replace(/^\/\/duckduckgo\.com\/l\/\?uddg=/i, '')
     const url = decodeURIComponent(href).split('&rut=')[0]
     const title = decodeHtml(match[2]).replace(/<[^>]+>/g, '').trim()
@@ -39,9 +44,9 @@ export function parseSearchResults(html, limit = MAX_SEARCH_RESULTS) {
   }).filter(item => item.title && /^https?:\/\//i.test(item.url))
 }
 
-export function normalizeFirecrawlSearch(body, limit = MAX_SEARCH_RESULTS) {
+export function normalizeFirecrawlSearch(body, limit = DEFAULT_SEARCH_RESULTS) {
   const raw = Array.isArray(body?.data?.web) ? body.data.web : Array.isArray(body?.data) ? body.data : []
-  return raw.slice(0, Math.min(MAX_SEARCH_RESULTS, Math.max(1, Number(limit) || MAX_SEARCH_RESULTS))).map((item, index) => ({
+  return raw.slice(0, boundedLimit(limit)).map((item, index) => ({
     rank: index + 1,
     title: String(item?.title || item?.metadata?.title || '未命名页面').trim(),
     url: String(item?.url || item?.metadata?.sourceURL || '').trim(),
@@ -56,7 +61,7 @@ async function firecrawlRequest(pathname, body, { fetchImpl = fetch, timeoutMs =
   const response = await fetchImpl(`${resolvedConfig.baseUrl}${pathname}`, {
     method: 'POST',
     headers: { ...authorization, 'content-type': 'application/json', 'user-agent': 'ZT.AI Public Research/0.2.26' },
-    body: JSON.stringify({ ...body, limit: Math.min(MAX_SEARCH_RESULTS, Number(body.limit) || MAX_SEARCH_RESULTS) }),
+    body: JSON.stringify({ ...body, limit: boundedLimit(body.limit) }),
     signal: AbortSignal.timeout(timeoutMs),
   })
   const raw = await response.text()
@@ -66,7 +71,7 @@ async function firecrawlRequest(pathname, body, { fetchImpl = fetch, timeoutMs =
   return parsed
 }
 
-async function searchPublicIndex(query, { limit, fetchImpl = fetch, timeoutMs = DEFAULT_WEB_TIMEOUT_MS } = {}) {
+async function searchPublicIndex(query, { limit = DEFAULT_SEARCH_RESULTS, fetchImpl = fetch, timeoutMs = DEFAULT_WEB_TIMEOUT_MS } = {}) {
   const response = await fetchImpl(`${DUCKDUCKGO_HTML_URL}?q=${encodeURIComponent(query)}`, {
     headers: { accept: 'text/html,application/xhtml+xml', 'user-agent': 'Mozilla/5.0 (compatible; ZT.AI-Research/0.2.26)' },
     signal: AbortSignal.timeout(timeoutMs),
@@ -77,26 +82,27 @@ async function searchPublicIndex(query, { limit, fetchImpl = fetch, timeoutMs = 
   return results
 }
 
-export async function searchWeb({ query, limit = MAX_SEARCH_RESULTS, fetchImpl = fetch, timeoutMs = DEFAULT_WEB_TIMEOUT_MS, onProgress, config } = {}) {
+export async function searchWeb({ query, limit = DEFAULT_SEARCH_RESULTS, fetchImpl = fetch, timeoutMs = DEFAULT_WEB_TIMEOUT_MS, onProgress, config } = {}) {
   const cleanQuery = String(query || '').trim().slice(0, 240)
   if (!cleanQuery) throw new Error('资料检索缺少 query')
+  const bounded = boundedLimit(limit)
   const resolvedConfig = config || resolveWebSearchConfig()
   onProgress?.('正在连接公开资料检索…')
   try {
     const body = await firecrawlRequest('/search', {
       query: cleanQuery,
-      limit,
+      limit: bounded,
       sources: ['web'],
       scrapeOptions: { formats: [{ type: 'markdown' }] },
     }, { fetchImpl, timeoutMs, config: resolvedConfig })
-    const results = normalizeFirecrawlSearch(body, limit)
+    const results = normalizeFirecrawlSearch(body, bounded)
     if (!results.length) throw new Error('Firecrawl 未返回可核验来源')
     onProgress?.(`已获得 ${results.length} 条公开来源，正在整理来源…`)
     return { tool: 'web_search', provider: 'firecrawl', query: cleanQuery, results }
   } catch (primaryError) {
     onProgress?.('首选资料源暂时不可用，正在切换备用公开索引…')
     try {
-      const results = await searchPublicIndex(cleanQuery, { limit, fetchImpl, timeoutMs })
+      const results = await searchPublicIndex(cleanQuery, { limit: bounded, fetchImpl, timeoutMs })
       onProgress?.(`已获得 ${results.length} 条备用公开来源，正在整理来源…`)
       return { tool: 'web_search', provider: 'duckduckgo', query: cleanQuery, results }
     } catch (fallbackError) {
