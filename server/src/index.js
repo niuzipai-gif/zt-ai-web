@@ -7,7 +7,7 @@ import { CHAT_MODELS, contentToText, isMediaIntent, normalizeChatRequest } from 
 import { streamMinimax } from './providers/minimax.js'
 import { streamDeepseek } from './providers/deepseek.js'
 import { runHiddenMediaRequest } from './providers/mmx.js'
-import { AGENT_PLANNER_PROMPT, AGENT_SYSTEM_PROMPT, CHAT_LANGUAGE_PROMPTS, ZT_PROFILE, ZT_SYSTEM_PROMPT } from './profile.js'
+import { ZT_PROFILE } from './profile.js'
 import { createAuthService } from './auth.js'
 import { createTelemetry } from './telemetry.js'
 import { createAdminApi } from './admin.js'
@@ -15,6 +15,7 @@ import { isAllowedOrigin } from './cors.js'
 import { MODEL_CATALOG, completeMiMoResponse, isPrivateDesktopRuntimeRequest, streamChatCompletionEvents, streamGatewayChat, streamResponseEvents } from './mimocode-openai.js'
 import { buildWebVerificationContext, buildWebVerificationQuery, requiresWebVerification, sourcePayload } from './web-verification.js'
 import { searchWeb } from './web-search.js'
+import { buildAgentPlannerSystemPrompt, buildAgentSystemPrompt, buildPublicSystemPrompt } from './prompt-context.js'
 
 function loadEnvFile(filePath) {
   try {
@@ -180,7 +181,7 @@ async function handleChat(request, response) {
   const body = await readBody(request)
   const { model, messages } = normalizeChatRequest(body)
   const language = ['zh', 'en', 'ja'].includes(body.language) ? body.language : 'zh'
-  const providerMessages = [{ role: 'system', content: `${ZT_SYSTEM_PROMPT}\n${CHAT_LANGUAGE_PROMPTS[language]}` }, ...messages.filter(message => message.role !== 'system')]
+  const providerMessages = [{ role: 'system', content: buildPublicSystemPrompt(language) }, ...messages.filter(message => message.role !== 'system')]
   const incomingAttachments = Array.isArray(body.attachments) ? body.attachments.slice(0, 8) : []
   const attachmentNotes = incomingAttachments.filter(file => file && file.name).map(file => `[附件：${String(file.name).slice(0, 160)}，类型：${String(file.type || '未知').slice(0, 80)}]`)
   const latestUser = providerMessages.findLast(message => message.role === 'user')
@@ -245,7 +246,7 @@ async function handleAgentChat(request, response) {
   const body = await readBody(request)
   const { model, messages } = normalizeChatRequest(body)
   const language = ['zh', 'en', 'ja'].includes(body.language) ? body.language : 'zh'
-  const providerMessages = [{ role: 'system', content: `${AGENT_SYSTEM_PROMPT}\n${CHAT_LANGUAGE_PROMPTS[language]}` }, ...messages.filter(message => message.role !== 'system')]
+  const providerMessages = [{ role: 'system', content: buildAgentSystemPrompt(language) }, ...messages.filter(message => message.role !== 'system')]
   const context = clientContext(request, body, session, 'desktop-agent')
   const inputText = contentToText(providerMessages.findLast(message => message.role === 'user')?.content || '')
   let outputText = ''
@@ -271,7 +272,7 @@ async function handleAgentPlan(request, response) {
   const model = String(body.model || '').toLowerCase() === 'deepseek' ? 'deepseek' : 'minimax'
   const language = ['zh', 'en', 'ja'].includes(body.language) ? body.language : 'zh'
   const context = clientContext(request, body, session, 'desktop-agent')
-  const providerMessages = [{ role: 'system', content: `${AGENT_SYSTEM_PROMPT}\n${AGENT_PLANNER_PROMPT}\n${CHAT_LANGUAGE_PROMPTS[language]}` }, { role: 'user', content: `工作目标：\n${task}\n\n请只返回符合约束的 JSON 计划。` }]
+  const providerMessages = [{ role: 'system', content: buildAgentPlannerSystemPrompt(language) }, { role: 'user', content: `工作目标：\n${task}\n\n请只返回符合约束的 JSON 计划。` }]
   try {
     const stream = model === 'deepseek' ? streamDeepseek({ model: CHAT_MODELS.deepseek, messages: providerMessages }) : streamMinimax({ model: CHAT_MODELS.minimax, messages: providerMessages })
     let text = ''
@@ -317,7 +318,7 @@ async function handleMiMoOpenAI(request, response, route) {
     let status = 'success'
     if (body.stream === false) {
       try {
-        const completed = await completeMiMoResponse({ request: body, systemPrompt: AGENT_SYSTEM_PROMPT, streamChat, responseId })
+        const completed = await completeMiMoResponse({ request: body, systemPrompt: buildAgentSystemPrompt(body.language || 'zh'), streamChat, responseId })
         outputText = completed.output
           .filter(item => item.type === 'message')
           .flatMap(item => item.content || [])
@@ -333,7 +334,7 @@ async function handleMiMoOpenAI(request, response, route) {
     }
     privateSseStart(response)
     try {
-      for await (const frame of streamResponseEvents({ request: body, systemPrompt: AGENT_SYSTEM_PROMPT, streamChat, responseId })) {
+      for await (const frame of streamResponseEvents({ request: body, systemPrompt: buildAgentSystemPrompt(body.language || 'zh'), streamChat, responseId })) {
         if (frame.type === 'response.output_text.delta') outputText += frame.data.delta || ''
         sse(response, frame.type, frame.data)
       }
@@ -351,7 +352,7 @@ async function handleMiMoOpenAI(request, response, route) {
     let outputText = ''
     privateSseStart(response)
     try {
-      for await (const frame of streamChatCompletionEvents({ request: body, systemPrompt: AGENT_SYSTEM_PROMPT, streamChat })) {
+      for await (const frame of streamChatCompletionEvents({ request: body, systemPrompt: buildAgentSystemPrompt(body.language || 'zh'), streamChat })) {
         const text = frame.choices?.[0]?.delta?.content || ''
         outputText += text
         response.write(`data: ${JSON.stringify(frame)}\n\n`)

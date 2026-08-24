@@ -10,9 +10,11 @@ const READ_PATTERN = /(?:查看|看看|读取|打开|列出|扫描|检查|分析
 const WORKSPACE_CONTEXT_PATTERN = /(?:桌面|工作区|目录|文件夹|文件|项目|仓库|代码|README|\.md\b|\.json\b|\.js\b|\.py\b|workspace|folder|file|repository|code)/iu
 const SENSITIVE_PATTERN = /(?:删除|清空|卸载|安装软件|发送邮件|发消息|发布到|修改系统|注册表|权限提升|delete|uninstall|send\s+(?:an?\s+)?email|publish|system\s+settings?|registry|elevat(?:e|ion))/iu
 const URL_PATTERN = /https?:\/\/[^\s<>]+/iu
-const AUTO_VERIFY_TIME_PATTERN = /(?:最近|最新|现在|目前|今天|今年|这两天|刚刚|近期|当下|很火|爆火|火了|流行|热门|趋势)/u
+const AUTO_VERIFY_TIME_PATTERN = /(?:最近|最新|现在|目前|今天|今年|这两天|刚刚|近期|当下|很火|爆火|火了|流行|热门|趋势|(?:这|本|上|下)周[一二三四五六日天]|this\s+(?:week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|last\s+(?:week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|next\s+(?:week|monday|tuesday|wednesday|thursday|friday|saturday|sunday))/iu
 const AUTO_VERIFY_QUESTION_PATTERN = /(?:是什么|什么是|谁是|谁的|哪家|哪里|哪个|多少|怎么回事|知道吗|有没有|是真是假|真的?吗|靠谱吗)[？?！!。\s]*$/u
 const NEWS_REQUEST_PATTERN = /(?:新闻|资讯|头条|报道|事件|动态|消息|大新闻|headline|news|current\s+events?|recent\s+events?|this\s+week|last\s+week)/iu
+const EVENT_REQUEST_PATTERN = /(?:展会|展览|博览会|会议|活动|演出|赛事|赛程|日程|安排|场次|航班|列车|班次|开放时间|营业时间)/iu
+const AUTO_VERIFY_FACT_PATTERN = /(?:是什么|什么是|谁是|谁的|哪家|哪里|哪个|哪些|多少|怎么样|怎么回事|知道吗|有没有|是否|安排|日程|what|who|which|where|when|how)/iu
 const UNKNOWN_ENTITY_PATTERN = /(?:不知道|不确定|没见过|没听过|不认识|不清楚|确认未知)/u
 const AGENT_FOLLOWUP_PATTERN = /^(?:调查|搜索|检索|查找|分析|执行|处理)?(?:好(?:了)?没|完(?:成)?了没|到哪了|怎么样了|有结果了吗|查到了吗|弄好了吗)|^(?:结果呢|进度呢|继续|继续查|继续调查|继续处理|然后呢|下一步|再试一次|重试)[？?！!。…\s]*$/u
 
@@ -24,7 +26,7 @@ export function classifyIntent(input, { mode = 'BUDDY', hasAgentContext = false 
   const text = String(input || '').trim()
   if (!text) return result('chat', 'chat', 1, '空消息不执行')
 
-  const needsVerification = UNKNOWN_ENTITY_PATTERN.test(text) || AUTO_VERIFY_QUESTION_PATTERN.test(text) || NEWS_REQUEST_PATTERN.test(text) || (AUTO_VERIFY_TIME_PATTERN.test(text) && /(?:是什么|什么是|谁是|怎么样|怎么回事|知道吗|有没有|真假|靠谱吗)/u.test(text))
+  const needsVerification = UNKNOWN_ENTITY_PATTERN.test(text) || AUTO_VERIFY_QUESTION_PATTERN.test(text) || NEWS_REQUEST_PATTERN.test(text) || (EVENT_REQUEST_PATTERN.test(text) && (AUTO_VERIFY_TIME_PATTERN.test(text) || AUTO_VERIFY_FACT_PATTERN.test(text))) || (AUTO_VERIFY_TIME_PATTERN.test(text) && /(?:是什么|什么是|谁是|怎么样|怎么回事|知道吗|有没有|真假|靠谱吗)/u.test(text))
 
   // Chat mode never receives device/file execution rights, but factual web
   // verification is still available so the assistant does not guess about

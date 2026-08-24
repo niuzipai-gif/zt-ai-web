@@ -5,6 +5,8 @@ import { AGENT_SYSTEM_PROMPT, CHAT_LANGUAGE_PROMPTS, ZT_PROFILE, ZT_SYSTEM_PROMP
 test('profile keeps the configured digital-twin facts', () => {
   assert.equal(ZT_PROFILE.company, '深圳市坤信科技有限公司')
   assert.ok(ZT_SYSTEM_PROMPT.includes('AI 产品开发'))
+  assert.match(ZT_SYSTEM_PROMPT, /先说结论，再说依据，最后给动作/)
+  assert.match(ZT_SYSTEM_PROMPT, /像蔡宙廷本人一样自然表达/)
 })
 
 test('chat language prompts are explicit for every supported locale', () => {
@@ -30,4 +32,6 @@ test('desktop agent prompt requires concise user-facing execution summaries with
   assert.match(AGENT_SYSTEM_PROMPT, /不展示思维链|推理过程/)
   assert.match(AGENT_SYSTEM_PROMPT, /最多 6 条/)
   assert.match(AGENT_SYSTEM_PROMPT, /不要直接倾倒原始工具日志/)
+  assert.match(AGENT_SYSTEM_PROMPT, /结论、证据、动作/)
+  assert.match(AGENT_SYSTEM_PROMPT, /贴近蔡宙廷的表达方式/)
 })

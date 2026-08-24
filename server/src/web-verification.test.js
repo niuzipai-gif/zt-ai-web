@@ -16,6 +16,8 @@ test('routes relative dates and standalone news requests to web verification', (
   assert.equal(requiresWebVerification('昨晚发生了什么重要事件'), true)
   assert.equal(requiresWebVerification('AI 圈子有什么重要的新闻'), true)
   assert.equal(requiresWebVerification('What happened in AI yesterday?'), true)
+  assert.equal(requiresWebVerification('这周六深圳有什么展会'), true)
+  assert.equal(requiresWebVerification('下周日上海有哪些展览活动'), true)
 })
 
 test('routes volatile facts and stronger verification language to web verification', () => {

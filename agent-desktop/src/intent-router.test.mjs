@@ -31,6 +31,8 @@ test('routes uncertain and time-sensitive factual questions to mandatory web ver
   assert.equal(recent.route, 'agent')
   assert.equal(recent.kind, 'research')
   assert.equal(classifyIntent('OpenClaw 是什么？', { mode: 'BUDDY' }).route, 'agent')
+  assert.equal(classifyIntent('这周六深圳有什么展会', { mode: 'BUDDY' }).kind, 'research')
+  assert.equal(classifyIntent('这周六深圳有什么展会', { mode: 'CHAT' }).kind, 'research')
 })
 
 test('does not let a greeting prefix hide an explicit action', () => {
