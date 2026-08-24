@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>ZT.AI Control Room</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="login-view" class="login-view"><div class="login-card"><img class="brand-logo" src="./zt-logo.png" alt="ZT.AI" /><span class="eyebrow">ZT.AI · PRIVATE CONTROL ROOM</span><h1>产品监控中枢</h1><p>仅限管理员使用。这里记录 ZT.AI 各产品的访问、模型用量和授权审计。</p><form id="login-form"><label>管理员账号<input id="admin-username" autocomplete="username" value="shali" required /></label><label>管理员密码<input id="admin-password" type="password" autocomplete="current-password" required /></label><button class="primary" type="submit">进入控制台 <span>↗</span></button></form><div id="login-error" class="error"></div><small>访问记录用于产品运维与成本估算；消息详情仅在管理员登录后显示。</small></div></div>
+    <div id="app-view" class="app-view hidden">
+      <aside class="sidebar"><div class="brand"><img class="brand-logo" src="./zt-logo.png" alt="ZT.AI" /><div><strong>ZT.AI</strong><span>CONTROL ROOM</span></div></div><nav><button class="active" data-nav="overview">总览 <span>01</span></button><button data-nav="visitors">访客与会话 <span>02</span></button><button data-nav="usage">模型用量 <span>03</span></button><button data-nav="users">用户审核 <span>04</span></button></nav><div class="sidebar-foot"><span class="status-dot"></span><div><strong>监控在线</strong><small id="last-sync">等待同步</small></div><button id="logout" title="退出">↗</button></div></aside>
+      <main class="main"><header class="topbar"><div><span class="eyebrow">ADMIN CONSOLE · 2026</span><h1>产品监控中枢</h1></div><div class="top-actions"><span class="secure-pill">● ENCRYPTED VIEW</span><button id="refresh" class="ghost">刷新数据 ↻</button></div></header>
+        <div id="view-overview" class="view-panel">
+          <section class="notice"><strong>数据与隐私</strong><span>列表默认显示脱敏 IP；完整 IP 与消息内容只在本控制台认证后查看。token 与费用为估算值，供应商未返回 usage 时可能存在误差。当前存储：<b id="storage-status">读取中</b>。</span></section>
+          <section class="kpis"><article><span>访问访客</span><strong id="kpi-visitors">—</strong><small>页面访问 <b id="kpi-pageviews">—</b> 次 · 按产品隔离 ID</small></article><article><span>记录请求</span><strong id="kpi-requests">—</strong><small>聊天与 Agent 调用</small></article><article><span>估算 tokens</span><strong id="kpi-tokens">—</strong><small>输入 + 输出近似值</small></article><article><span>估算成本</span><strong id="kpi-cost">—</strong><small>需配置模型价格</small></article><article><span>注册账号</span><strong id="kpi-accounts">—</strong><small>待审核 <b id="kpi-pending-accounts">—</b> · 已通过 <b id="kpi-active-accounts">—</b></small></article></section>
+          <section class="dashboard-grid"><article class="panel chart-panel"><div class="panel-head"><div><span class="eyebrow">PRODUCT MIX</span><h2>产品调用分布</h2></div><span class="mini-status">LIVE</span></div><div id="product-chart" class="product-chart"></div></article><article class="panel model-panel"><div class="panel-head"><div><span class="eyebrow">MODEL ROUTING</span><h2>模型路由</h2></div></div><div id="model-list" class="model-list"></div></article></section>
+        </div>
+        <div id="view-visitors" class="view-panel hidden">
+          <section class="panel visitors-panel"><div class="panel-head"><div><span class="eyebrow">IDENTITY INDEX</span><h2>访客与会话</h2><p>点击一行查看完整 IP、访问记录、调用审计和消息时间线；账号流量优先按登录账号归并。</p></div><div class="filters"><select id="product-filter"><option value="">全部产品</option><option value="web">公开网页</option><option value="desktop-agent">桌面 Agent</option></select><input id="visitor-query" placeholder="搜索用户名 / 邮箱 / ID / 脱敏 IP" /><button id="export-visitors" class="ghost">导出 CSV</button></div></div><div class="table-wrap"><table><thead><tr><th>关联账号 / 访客 ID</th><th>产品</th><th>最近 IP</th><th>访问 / 请求</th><th>使用模型</th><th>最近访问</th><th></th></tr></thead><tbody id="visitor-table"><tr><td colspan="7" class="empty">正在读取…</td></tr></tbody></table></div></section>
+        </div>
+        <div id="view-usage" class="view-panel hidden">
+          <section class="panel visitors-panel"><div class="panel-head"><div><span class="eyebrow">MODEL USAGE</span><h2>模型用量明细</h2><p>按产品、模型、用户名和访客查询真实记录；token 与费用为估算值。</p></div><div class="filters"><select id="usage-product-filter"><option value="">全部产品</option><option value="web">公开网页</option><option value="desktop-agent">桌面 Agent</option></select><select id="usage-model-filter"><option value="">全部模型</option><option value="MiniMax-M3">MiniMax-M3</option><option value="deepseek-v4-flash">deepseek-v4-flash</option></select><input id="usage-query" placeholder="搜索用户名 / 邮箱 / 访客 / 类型" /><button id="export-usage" class="ghost">导出 CSV</button></div></div><div class="table-wrap"><table><thead><tr><th>时间</th><th>产品</th><th>关联账号 / 访客 ID</th><th>模型</th><th>类型</th><th>状态</th><th>Tokens</th><th>成本</th></tr></thead><tbody id="usage-table"><tr><td colspan="8" class="empty">正在读取…</td></tr></tbody></table></div></section>
+        </div>
+        <div id="view-users" class="view-panel hidden">
+          <section class="panel visitors-panel"><div class="panel-head"><div><span class="eyebrow">ACCOUNT REVIEW</span><h2>用户审核与期限</h2><p>注册申请默认待审核；通过时默认授予 24 小时。管理员可按账号调整小时数、设为长期或立即注销。</p></div><div class="filters"><select id="user-status-filter"><option value="">全部状态</option><option value="pending">待审核</option><option value="active">已通过</option><option value="revoked">已注销</option></select><input id="user-query" placeholder="搜索用户名 / 手机号 / 邮箱 / 用户 ID" /></div></div><div class="table-wrap"><table><thead><tr><th>用户名 / 联系方式</th><th>状态 / 到期时间</th><th>注册时间</th><th>审核时间</th><th>最近登录</th><th>期限与操作</th></tr></thead><tbody id="user-table"><tr><td colspan="6" class="empty">正在读取…</td></tr></tbody></table></div></section>
+        </div>
+      </main>
+    </div>
+    <div id="detail-drawer" class="drawer hidden"><div class="drawer-backdrop" id="drawer-close"></div><aside class="drawer-panel"><div class="drawer-head"><div><span class="eyebrow">VISITOR DETAIL</span><h2 id="detail-title">访客详情</h2></div><button id="drawer-x" class="close">×</button></div><div id="detail-content"></div></aside></div>
+    <script>window.ZT_AI_ADMIN_API_BASE='https://zt-ai-gateway.onrender.com'</script>
+    <script src='./app.js'></script>
+    <script src="./detail-enhancements.js"></script>
+  </body>
+</html>
