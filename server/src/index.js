@@ -15,8 +15,10 @@ import { isAllowedOrigin } from './cors.js'
 import { MODEL_CATALOG, completeMiMoResponse, isPrivateDesktopRuntimeRequest, streamChatCompletionEvents, streamGatewayChat, streamResponseEvents } from './mimocode-openai.js'
 import { buildWebVerificationContext, buildWebVerificationQuery, requiresWebVerification, sourcePayload } from './web-verification.js'
 import { searchWeb } from './web-search.js'
+import { buildResearchPlan, runAdaptiveResearch } from './web-research.js'
+import { resolveImageSearchConfig, searchGoogleWebDetection, searchTinEye } from './image-search.js'
 import { buildAgentPlannerSystemPrompt, buildAgentSystemPrompt, buildPublicSystemPrompt } from './prompt-context.js'
-import { buildImageVerificationQuery, carryForwardImages, hasImageContent, hasImageInput, isImageIdentificationRequest } from './image-input.js'
+import { buildImageVerificationQuery, carryForwardImages, hasImageContent, hasImageInput, isImageIdentificationRequest, latestImage } from './image-input.js'
 
 function loadEnvFile(filePath) {
   try {
@@ -209,6 +211,87 @@ function imageResearchHintContext(visionHint) {
   return visionHint ? `\n\n[图片初步视觉线索（未核实）]\n${visionHint}\n这只是检索线索，不是事实结论；必须以图片可见内容和下方公开来源共同核对。` : ''
 }
 
+function researchQueries({ inputText, query, imageRequest, visionHint = '', entities = [] }) {
+  const queries = [query]
+  if (imageRequest) {
+    if (visionHint) queries.push(`图片原始出处：${visionHint}`)
+    queries.push(`${query} 原图出处`, `${query} 具体来源`)
+    for (const entity of entities.slice(0, 4)) queries.push(`图片实体 ${entity} 原图出处`)
+  } else {
+    if (/(?:来源|出处|官方|核实|证据|验证)/iu.test(inputText)) queries.push(`${query} 官方来源`, `${query} 原始资料`)
+    if (/(?:最新|最近|当前|今天|新闻|动态)/iu.test(inputText)) queries.push(`${query} 最新消息`, `${query} 官方公告`)
+    if (/(?:是什么|谁是|哪个|哪些)/iu.test(inputText)) queries.push(`${query} 资料介绍`)
+  }
+  return [...new Set(queries.map(item => String(item || '').replace(/\s+/gu, ' ').trim().slice(0, 240)).filter(Boolean))]
+}
+
+function mergeResearchSources(researches = []) {
+  const seen = new Set()
+  const results = []
+  const providers = new Set()
+  for (const research of researches) {
+    if (research?.provider) providers.add(String(research.provider))
+    for (const item of Array.isArray(research?.results) ? research.results : []) {
+      const url = String(item?.url || '').trim()
+      if (!/^https?:\/\//iu.test(url) || seen.has(url)) continue
+      seen.add(url)
+      results.push({ ...item, rank: results.length + 1 })
+      if (results.length >= 24) break
+    }
+    if (results.length >= 24) break
+  }
+  return { results, provider: providers.size > 1 ? 'multi' : [...providers][0] || '公开检索' }
+}
+
+async function runImageWebResearch({ imageDataUrl, inputText, visionHint, onProgress }) {
+  const config = resolveImageSearchConfig()
+  const reverseResearch = []
+  const providerErrors = []
+  const reverseProviders = []
+  const providerTasks = [
+    ['google-vision', config.googleApiKey, searchGoogleWebDetection],
+    ['tineye', config.tineyeApiKey, searchTinEye],
+  ]
+  for (const [name, apiKey, search] of providerTasks) {
+    if (!apiKey) continue
+    try {
+      onProgress?.(`正在使用 ${name === 'google-vision' ? 'Google 图片网页检测' : 'TinEye 反向搜图'}…`)
+      const result = await search({ imageDataUrl, config: { apiKey }, onProgress })
+      reverseResearch.push(result)
+      reverseProviders.push(name)
+    } catch (error) {
+      providerErrors.push({ provider: name, message: String(error?.message || '图片检索失败').slice(0, 240) })
+    }
+  }
+  const entities = reverseResearch.flatMap(item => Array.isArray(item.entities) ? item.entities.map(entity => entity.description) : []).filter(Boolean)
+  const queryList = researchQueries({ inputText, query: buildImageVerificationQuery(inputText, visionHint), imageRequest: true, visionHint, entities })
+  const plan = buildResearchPlan({ inputText, imageRequest: true, ambiguous: !visionHint || !reverseResearch.length })
+  let textResearch = null
+  try {
+    textResearch = await runAdaptiveResearch({
+      queries: queryList,
+      ...plan,
+      onProgress,
+    })
+  } catch (error) {
+    providerErrors.push({ provider: 'text-search', message: String(error?.message || '文字核验失败').slice(0, 240) })
+  }
+  const merged = mergeResearchSources([...reverseResearch, textResearch])
+  if (!merged.results.length) {
+    throw new Error(providerErrors.map(item => item.message).filter(Boolean).join('；') || '未找到可核验的公开来源')
+  }
+  return {
+    provider: merged.provider,
+    query: queryList.join(' | ').slice(0, 240),
+    queries: queryList,
+    results: merged.results,
+    expanded: Boolean(textResearch?.expanded || merged.results.length > plan.initialLimit),
+    searchedQueryCount: Number(textResearch?.searchedQueryCount || 0),
+    reverseProviders,
+    providerErrors,
+  }
+}
+
 async function handleChat(request, response) {
   if (!rateLimit(request)) { sendJson(request, response, 429, { error: '请求过于频繁，请稍后再试' }); return }
   const body = await readBody(request)
@@ -249,7 +332,19 @@ async function handleChat(request, response) {
       sse(response, 'research.started', { query })
     }
     try {
-      research = await searchWeb({ query, onProgress: message => sse(response, 'research.progress', { message }) })
+      const onProgress = message => sse(response, 'research.progress', { message })
+      if (imageRequest) {
+        research = await runImageWebResearch({
+          imageDataUrl: latestImage(providerMessages)?.image_url?.url || '',
+          inputText,
+          visionHint,
+          onProgress,
+        })
+      } else {
+        const queries = researchQueries({ inputText, query, imageRequest: false })
+        const plan = buildResearchPlan({ inputText })
+        research = await runAdaptiveResearch({ queries, ...plan, onProgress })
+      }
       providerMessages.splice(1, 0, { role: 'system', content: `${buildWebVerificationContext(inputText, research)}${imageResearchHintContext(visionHint)}` })
       sse(response, 'research.sources', sourcePayload(research))
     } catch (error) {
@@ -431,7 +526,22 @@ export function createServer() {
     try {
       const route = request.url.split('?')[0]
       if ((route === '/admin' || route.startsWith('/admin/')) && !route.startsWith('/admin/api/')) return await serveControlRoom(request, response)
-      if (request.method === 'GET' && route === '/api/health') return sendJson(request, response, 200, { ok: true, service: 'zt-ai-gateway', profile: { name: ZT_PROFILE.name, identity: ZT_PROFILE.identity }, models: CHAT_MODELS, providers: { minimax: Boolean(process.env.MINIMAX_API_KEY), deepseek: Boolean(process.env.DEEPSEEK_API_KEY) }, storage: telemetry.storage })
+      if (request.method === 'GET' && route === '/api/health') {
+        const imageSearchConfig = resolveImageSearchConfig()
+        return sendJson(request, response, 200, {
+          ok: true,
+          service: 'zt-ai-gateway',
+          profile: { name: ZT_PROFILE.name, identity: ZT_PROFILE.identity },
+          models: CHAT_MODELS,
+          providers: {
+            minimax: Boolean(process.env.MINIMAX_API_KEY),
+            deepseek: Boolean(process.env.DEEPSEEK_API_KEY),
+            googleVision: Boolean(imageSearchConfig.googleApiKey),
+            tineye: Boolean(imageSearchConfig.tineyeApiKey),
+          },
+          storage: telemetry.storage,
+        })
+      }
       if (request.method === 'POST' && route === '/api/visit') {
         if (!rateLimit(request)) return sendJson(request, response, 429, { error: '访问过于频繁，请稍后再试' })
         const body = await readBody(request)

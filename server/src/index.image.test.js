@@ -95,3 +95,79 @@ test('continues to the multimodal model when image web verification is unavailab
     await new Promise(resolve => upstream.close(resolve))
   }
 })
+
+test('combines reverse-image evidence and expanded text sources in the SSE payload', async () => {
+  const originalFetch = globalThis.fetch
+  const upstreamCalls = []
+  const upstream = http.createServer(async (request, response) => {
+    if (request.url.endsWith('/images:annotate')) {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ responses: [{ webDetection: {
+        webEntities: [{ description: '黄色卡通包装', score: 0.72 }],
+        pagesWithMatchingImages: Array.from({ length: 4 }, (_, index) => ({ url: `https://vision-${index}.example/page`, pageTitle: `Vision page ${index}` })),
+        fullMatchingImages: Array.from({ length: 4 }, (_, index) => ({ url: `https://vision-full-${index}.example/image.png` })),
+      } }] }))
+      return
+    }
+    if (request.url.endsWith('/search')) {
+      let raw = ''
+      for await (const chunk of request) raw += chunk
+      const query = JSON.parse(raw).query
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ success: true, data: { web: Array.from({ length: 8 }, (_, index) => ({ title: `${query} ${index}`, url: `https://text-${query.length}-${index}.example/source`, description: '文字核验摘要' })) } }))
+      return
+    }
+    if (request.url.endsWith('/chat/completions')) {
+      let raw = ''
+      for await (const chunk of request) raw += chunk
+      upstreamCalls.push(JSON.parse(raw))
+      const result = upstreamResponse(upstreamCalls.length === 1 ? '黄色卡通包装，图片文字和具体出处仍需公开来源核对。' : '我先结合图片和公开来源核对，具体出处以来源中能确认的内容为准。')
+      response.writeHead(result.status, Object.fromEntries(result.headers))
+      response.end(await result.text())
+      return
+    }
+    response.writeHead(404)
+    response.end('not found')
+  })
+  await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve))
+  const upstreamPort = upstream.address().port
+  process.env.MINIMAX_BASE_URL = `http://127.0.0.1:${upstreamPort}/v1`
+  process.env.FIRECRAWL_BASE_URL = `http://127.0.0.1:${upstreamPort}/v2`
+  process.env.GOOGLE_CLOUD_VISION_API_KEY = 'fixture'
+  process.env.GOOGLE_CLOUD_VISION_BASE_URL = `http://127.0.0.1:${upstreamPort}/v1`
+  const gateway = createServer()
+  await new Promise(resolve => gateway.listen(0, '127.0.0.1', resolve))
+  const gatewayPort = gateway.address().port
+  const imageUrl = 'data:image/png;base64,abc'
+
+  try {
+    globalThis.fetch = originalFetch
+    const response = await originalFetch(`http://127.0.0.1:${gatewayPort}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'MINIMAX',
+        language: 'zh',
+        visitorId: 'visitor-image-expanded',
+        conversationId: 'image-expanded',
+        messages: [{ role: 'user', content: [{ type: 'text', text: '查一下这个图片是什么出处' }, { type: 'image_url', image_url: { url: imageUrl } }] }],
+      }),
+    })
+    const body = await response.text()
+    assert.equal(response.status, 200)
+    const sourceFrame = body.split(/\r?\n\r?\n/).find(frame => frame.startsWith('event: research.sources'))
+    assert.ok(sourceFrame)
+    const payload = JSON.parse(sourceFrame.split(/\r?\n/).find(line => line.startsWith('data:')).slice(5))
+    assert.equal(payload.provider, 'multi')
+    assert.equal(payload.expanded, true)
+    assert.ok(payload.sources.length > 6)
+    assert.ok(payload.sources.some(source => source.evidenceType === 'image-match-page'))
+    assert.ok(upstreamCalls.length >= 2)
+  } finally {
+    globalThis.fetch = originalFetch
+    delete process.env.GOOGLE_CLOUD_VISION_API_KEY
+    delete process.env.GOOGLE_CLOUD_VISION_BASE_URL
+    await new Promise(resolve => gateway.close(resolve))
+    await new Promise(resolve => upstream.close(resolve))
+  }
+})

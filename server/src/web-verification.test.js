@@ -60,3 +60,27 @@ test('builds a prompt-safe research context and a UI source payload', () => {
   assert.match(context, /https:\/\/example\.com\/a/)
   assert.deepEqual(sourcePayload(research), { provider: 'duckduckgo', query: '牛来是什么', sources: [{ rank: 1, title: 'Example', url: 'https://example.com/a', snippet: '摘要' }] })
 })
+
+test('keeps more than six independent sources for expanded research', () => {
+  const research = {
+    provider: 'multi',
+    query: '图片出处 | 图片原图',
+    expanded: true,
+    searchedQueryCount: 2,
+    results: Array.from({ length: 8 }, (_, index) => ({
+      rank: index + 1,
+      title: `Source ${index + 1}`,
+      url: `https://source-${index + 1}.example/item`,
+      snippet: `摘要 ${index + 1}`,
+      provider: index < 4 ? 'google-vision' : 'firecrawl',
+      evidenceType: index < 4 ? 'image-match-page' : 'text-search',
+    })),
+  }
+  const context = buildWebVerificationContext('这张图是什么出处', research)
+  const payload = sourcePayload(research)
+  assert.match(context, /https:\/\/source-8\.example\/item/)
+  assert.equal(payload.sources.length, 8)
+  assert.equal(payload.expanded, true)
+  assert.equal(payload.searchedQueryCount, 2)
+  assert.equal(payload.sources[0].evidenceType, 'image-match-page')
+})

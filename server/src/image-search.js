@@ -25,7 +25,7 @@ function errorMessage(provider, response) {
 export function resolveImageSearchConfig({ env = process.env } = {}) {
   return {
     googleApiKey: String(env.ZT_AI_GOOGLE_VISION_API_KEY || env.GOOGLE_CLOUD_VISION_API_KEY || ''),
-    googleBaseUrl: String(env.ZT_AI_GOOGLE_VISION_BASE_URL || GOOGLE_VISION_BASE_URL).replace(/\/$/u, ''),
+    googleBaseUrl: String(env.ZT_AI_GOOGLE_VISION_BASE_URL || env.GOOGLE_CLOUD_VISION_BASE_URL || GOOGLE_VISION_BASE_URL).replace(/\/$/u, ''),
     tineyeApiKey: String(env.ZT_AI_TINEYE_API_KEY || env.TINEYE_API_KEY || ''),
     tineyeBaseUrl: String(env.ZT_AI_TINEYE_BASE_URL || TINEYE_BASE_URL).replace(/\/$/u, ''),
   }
