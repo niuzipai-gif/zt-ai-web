@@ -50,6 +50,20 @@ test('builds a multimodal user message from pasted image attachments', () => {
   ])
 })
 
+test('persists only safe HTTPS media results for desktop chat history', () => {
+  const [conversation] = normalizeConversations([{
+    id: 'chat-media',
+    messages: [
+      { role: 'user', content: '生成一张图片' },
+      { role: 'assistant', content: '已通过 MMX 生成图片。', media: { kind: 'image', url: 'https://cdn.example.test/image.png' } },
+      { role: 'assistant', content: '不应带入危险地址', media: { kind: 'image', url: 'javascript:alert(1)' } },
+    ],
+  }])
+
+  assert.deepEqual(conversation.messages[1].media, { kind: 'image', url: 'https://cdn.example.test/image.png' })
+  assert.equal(conversation.messages[2].media, undefined)
+})
+
 test('merges durable Codex conversations without leaking another account or replacing richer local messages', () => {
   const local = [addConversationMessage(createConversation('chat-1', 100), { role: 'user', content: '本地问题' }, 200)]
   const merged = mergeServerConversations(local, [

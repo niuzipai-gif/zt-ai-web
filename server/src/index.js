@@ -535,6 +535,7 @@ export function createServer() {
           models: CHAT_MODELS,
           providers: {
             minimax: Boolean(process.env.MINIMAX_API_KEY),
+            media: Boolean((process.env.MMX_API_KEY || process.env.MINIMAX_API_KEY) && process.env.MMX_ENABLED === 'true'),
             deepseek: Boolean(process.env.DEEPSEEK_API_KEY),
             googleVision: Boolean(imageSearchConfig.googleApiKey),
             tineye: Boolean(imageSearchConfig.tineyeApiKey),

@@ -3,6 +3,15 @@ import assert from 'node:assert/strict'
 import { classifyIntent } from './intent-router.mjs'
 import { executionPresentation } from './presentation.mjs'
 
+test('routes explicit image and video creation to the public MMX media chat path', () => {
+  for (const text of ['随便生成一个美女的图片给我', '帮我做一个产品宣传短视频', '帮我生图']) {
+    const result = classifyIntent(text, { mode: 'BUDDY' })
+    assert.equal(result.kind, 'media')
+    assert.equal(result.route, 'chat')
+  }
+  assert.equal(classifyIntent('生成一份项目报告', { mode: 'BUDDY' }).kind, 'write')
+})
+
 test('routes greetings and short questions to direct answers inside ZT.buddy', () => {
   const greeting = classifyIntent('你好', { mode: 'BUDDY' })
   assert.equal(greeting.route, 'chat')

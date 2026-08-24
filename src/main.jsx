@@ -539,7 +539,7 @@ function App() {
   })
   useEffect(() => { const handler = event => setPage(event.detail); document.getElementById('root').addEventListener('navigate', handler); return () => document.getElementById('root').removeEventListener('navigate', handler) }, [])
   const navigate = value => { setPage(value); setMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
-  return <div className={`app-shell page-${page}`}>
+  return <div className={`app-shell ${isAndroidShell ? 'android-shell' : ''} page-${page}`}>
     <header className="topbar"><button className="mobile-menu" onClick={() => setMenuOpen(value => !value)} aria-label={language === 'zh' ? '打开菜单' : 'Open menu'}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><Brand compact copy={copy} /><nav className={menuOpen ? 'open' : ''}>{Object.entries(pages).map(([key, label]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => navigate(key)}>{label}</button>)}</nav><div className="topbar-right">{!isAndroidShell && <button className={`desktop-download ${page === 'downloads' ? 'active' : ''}`} onClick={() => navigate('downloads')} aria-label={copy.desktopDownload}><Download size={14} /><span>{copy.desktopDownload}</span></button>}<LanguageSwitch language={language} setLanguage={setLanguage} copy={copy} /><span className="availability"><span /> {copy.availability}</span><button className="more-button" aria-label="More"><MoreHorizontal size={20} /></button></div></header>
     <main className="main-content">
       {page === 'home' && <HomePage copy={copy.home} onChat={() => navigate('chat')} />}

@@ -95,3 +95,10 @@ test('Codex runtime keeps retryable errors alive and exposes the final nested fa
   assert.equal(events.at(-1).type, 'session.failed')
   assert.equal(events.at(-1).message, '网关流在响应完成前断开')
 })
+
+test('Codex runtime guards media requests behind the gateway MMX route', async () => {
+  const source = await fs.readFile(path.join(path.dirname(fileURLToPath(import.meta.url)), 'codex-app-server.mjs'), 'utf8')
+  assert.match(source, /MMX|媒体路由/)
+  assert.match(source, /image_gen|imagegen/)
+  assert.match(source, /media\.completed|媒体 URL|媒体地址/)
+})

@@ -44,5 +44,5 @@ export function normalizeChatRequest(body) {
 }
 
 export function isMediaIntent(text = '') {
-  return /(?:生成|做一张|画一张|制作|帮我做|帮我生成|create|generate)[\s\S]{0,100}(?:图片|图像|海报|封面|背景图|视频|短片|image|video)/iu.test(text)
+  return /(?:(?:生成|做一张|画一张|制作|帮我做|帮我生成|create|generate)[\s\S]{0,100}(?:图片|图像|海报|封面|背景图|视频|短片|生图|生视频|image|video)|(?:生图|生视频|文生图|文生视频))/iu.test(text)
 }

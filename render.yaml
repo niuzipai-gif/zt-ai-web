@@ -56,6 +56,10 @@ services:
         value: data/zt-ai.json
       - key: MMX_ENABLED
         value: "true"
+      - key: MMX_API_KEY
+        sync: false
+      - key: MMX_BASE_URL
+        value: https://api.minimaxi.com/v1
       - key: MMX_IMAGE_MODEL
         value: image-01
       - key: MMX_VIDEO_MODEL

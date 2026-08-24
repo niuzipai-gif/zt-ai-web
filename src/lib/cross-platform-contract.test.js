@@ -15,4 +15,5 @@ test('public web header can suppress the download entry only inside the Android 
   const source = await fs.readFile('src/main.jsx', 'utf8')
   assert.match(source, /isAndroidShell/)
   assert.match(source, /!isAndroidShell/)
+  assert.match(source, /android-shell/)
 })

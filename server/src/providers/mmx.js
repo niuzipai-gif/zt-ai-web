@@ -1,11 +1,12 @@
-const API_ROOT = () => (process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1').replace(/\/v1\/?$/, '')
+const MEDIA_API_KEY = () => process.env.MMX_API_KEY || process.env.MINIMAX_API_KEY || ''
+const API_ROOT = () => (process.env.MMX_BASE_URL || process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1').replace(/\/v1\/?$/, '')
 const mediaTimeout = () => Number(process.env.MMX_HTTP_TIMEOUT_MS || 45_000)
 
 async function minimaxRequest(path, options = {}) {
   const response = await fetch(`${API_ROOT()}${path}`, {
     ...options,
     headers: {
-      authorization: `Bearer ${process.env.MINIMAX_API_KEY}`,
+      authorization: `Bearer ${MEDIA_API_KEY()}`,
       'content-type': 'application/json',
       ...(options.headers || {}),
     },
@@ -77,6 +78,6 @@ async function generateVideo(prompt) {
 }
 
 export async function runHiddenMediaRequest({ text }) {
-  if (!process.env.MINIMAX_API_KEY || process.env.MMX_ENABLED !== 'true') return null
+  if (!MEDIA_API_KEY() || process.env.MMX_ENABLED !== 'true') return null
   return /视频|短片|video/i.test(text) ? generateVideo(text) : generateImage(text)
 }

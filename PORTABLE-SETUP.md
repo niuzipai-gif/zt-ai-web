@@ -12,7 +12,7 @@
    Copy-Item aikey.env.example aikey.env
    ```
 
-4. 打开 `aikey.env`，填入自己的 `MINIMAX_API_KEY`、`DEEPSEEK_API_KEY` 和需要的 `MMX_API_KEY`。
+4. 打开 `aikey.env`，填入自己的 `MINIMAX_API_KEY`、`DEEPSEEK_API_KEY`；如果媒体服务使用独立密钥，再填写 `MMX_API_KEY` 和可选的 `MMX_BASE_URL`。网关会优先使用 MMX 配置，并在未填写时回退到 `MINIMAX_API_KEY`。
 5. 安装依赖：
 
    ```powershell

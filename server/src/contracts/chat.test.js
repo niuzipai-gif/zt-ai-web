@@ -1,6 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeChatRequest, contentToText } from './chat.js'
+import { normalizeChatRequest, contentToText, isMediaIntent } from './chat.js'
+
+test('recognizes explicit image and video creation without treating documents as media', () => {
+  assert.equal(isMediaIntent('随便生成一个美女的图片给我'), true)
+  assert.equal(isMediaIntent('帮我制作一个产品宣传短视频'), true)
+  assert.equal(isMediaIntent('帮我生视频'), true)
+  assert.equal(isMediaIntent('生成一份项目报告'), false)
+})
 
 test('keeps text and image parts when normalizing a chat request', () => {
   const result = normalizeChatRequest({

@@ -255,6 +255,21 @@ function appendAttachmentPreview(container, attachments = []) {
     : `<span class="attachment-chip"><span class="attachment-file-icon" aria-hidden="true">▧</span><span>${escapeHtml(attachment.name)}</span></span>`).join('')
   container.appendChild(list)
 }
+function appendMediaPreview(container, media = null) {
+  if (!container) return
+  container.querySelector('.media-preview')?.remove()
+  const url = String(media?.url || '').trim()
+  if (!/^https?:\/\//i.test(url)) return
+  const preview = document.createElement('div'); preview.className = 'media-preview'
+  const kind = String(media?.kind || '').toLowerCase() === 'video' ? 'video' : 'image'
+  if (kind === 'video') {
+    const video = document.createElement('video'); video.controls = true; video.preload = 'metadata'; video.src = url; video.setAttribute('aria-label', 'MMX 生成的视频'); preview.appendChild(video)
+  } else {
+    const image = document.createElement('img'); image.loading = 'lazy'; image.src = url; image.alt = 'MMX 生成的图片'; preview.appendChild(image)
+  }
+  const link = document.createElement('a'); link.href = url; link.target = '_blank'; link.rel = 'noreferrer'; link.textContent = kind === 'video' ? '打开视频' : '打开图片'; preview.appendChild(link)
+  container.appendChild(preview)
+}
 function renderSourceDrawer(container, sources = [], meta = {}) {
   if (!container) return
   container.querySelector('.source-drawer')?.remove()
@@ -275,7 +290,7 @@ function renderMessages() {
   const conversation = currentConversation()
   els.messages.innerHTML = ''
   if (!conversation) return
-  for (const message of conversation.messages) appendMessage(message.role, message.content, false, message.attachments, message.sources)
+  for (const message of conversation.messages) appendMessage(message.role, message.content, false, message.attachments, message.sources, message.media)
 }
 function recordChatMessage(role, content, chatId = state.activeChatId, extras = {}) {
   const conversation = state.chatSessions.find(item => item.id === chatId) || null
@@ -359,14 +374,14 @@ function setMode(_mode = 'BUDDY', { recordNavigation = true } = {}) {
   renderContext()
   if (recordNavigation) rememberNavigation()
 }
-function appendMessage(role, content, streaming = false, attachments = [], sources = []) {
+function appendMessage(role, content, streaming = false, attachments = [], sources = [], media = null) {
   const row = document.createElement('div'); row.className = `message ${role === 'user' ? 'user-message' : 'assistant-message'}`
   const bubble = document.createElement('div'); bubble.className = 'bubble'
   if (role === 'assistant') { const label = document.createElement('div'); label.className = 'message-label'; label.textContent = 'ZT.AI'; bubble.appendChild(label) }
   const body = document.createElement('div'); body.className = 'message-body markdown-message'
   if (streaming) body.innerHTML = '<span class="typing-indicator" aria-label="ZT.AI 正在思考"><i></i><i></i><i></i></span>'
   else body.innerHTML = renderMarkdown(role === 'assistant' ? assistantText(content) : content || '')
-  bubble.appendChild(body); appendAttachmentPreview(bubble, attachments); renderSourceDrawer(bubble, sources); row.appendChild(bubble); els.messages.appendChild(row); els.messages.scrollTop = els.messages.scrollHeight
+  bubble.appendChild(body); appendAttachmentPreview(bubble, attachments); appendMediaPreview(bubble, media); renderSourceDrawer(bubble, sources); row.appendChild(bubble); els.messages.appendChild(row); els.messages.scrollTop = els.messages.scrollHeight
   return body
 }
 
@@ -596,7 +611,7 @@ async function runChat({ agent = false, localAnswer = '' } = {}) {
   recordChatMessage('user', task, chatId, { attachments }); state.pendingAttachments = []; renderPendingAttachments(); renderMessages(); els.taskInput.value = ''; els.taskInput.disabled = true; els.run.disabled = true
   const body = appendMessage('assistant', '', true)
   const controller = new AbortController()
-  const run = state.taskRuns.create(chatId, { kind: 'chat', task, controller, agentStream: null, sources: [] })
+  const run = state.taskRuns.create(chatId, { kind: 'chat', task, controller, agentStream: null, sources: [], media: null })
   run.activeAgentMessage = { row: body.parentElement?.parentElement || null, output: '', chatId }
   const smooth = createSmoothStream({ onUpdate: output => { run.output = output; if (state.activeChatId !== chatId) return; body.innerHTML = renderMarkdown(assistantText(output)); els.messages.scrollTop = els.messages.scrollHeight; state.usedTokens += 1; renderContext() } })
   run.agentStream = smooth
@@ -637,6 +652,12 @@ async function runChat({ agent = false, localAnswer = '' } = {}) {
           run.sources = Array.isArray(data.sources || data.results) ? (data.sources || data.results) : []
           if (state.activeChatId === chatId) renderSourceDrawer(body.closest('.bubble'), run.sources, data)
         }
+        if (event === 'media.started') smooth.push(`\n\n正在调用 MMX 生成${data.kind === 'video' ? '视频' : '图片'}…`)
+        if (event === 'media.completed' && data.url) {
+          run.media = { kind: data.kind === 'video' ? 'video' : 'image', url: String(data.url) }
+          smooth.push(`\n\n已通过 MMX 生成${run.media.kind === 'video' ? '视频' : '图片'}。`)
+          if (state.activeChatId === chatId) appendMediaPreview(body.closest('.bubble'), run.media)
+        }
         if (event === 'message.delta') smooth.push(data.text || '')
         if (event === 'message.error') smooth.push(conversationFailurePresentation(data.message))
       }, { signal: controller.signal, run })
@@ -644,10 +665,10 @@ async function runChat({ agent = false, localAnswer = '' } = {}) {
     }
     smooth.finish()
     const output = assistantText(await smooth.done)
-    recordChatMessage('assistant', output, chatId, { sources: run.sources })
+    recordChatMessage('assistant', output, chatId, { sources: run.sources, media: run.media })
   } catch (error) {
     const message = error?.name === 'AbortError' ? '这次回答等待超时了，网关没有及时返回结果。消息已保留，你可以直接重试。' : describeNetworkError(error, '发送消息')
-    smooth.push(message); smooth.finish(); const output = assistantText(await smooth.done); recordChatMessage('assistant', output, chatId, { sources: run.sources })
+    smooth.push(message); smooth.finish(); const output = assistantText(await smooth.done); recordChatMessage('assistant', output, chatId, { sources: run.sources, media: run.media })
   } finally {
     window.clearTimeout(timeout); window.clearTimeout(slowNotice)
     if (state.chatController === controller) state.chatController = null
@@ -737,6 +758,11 @@ async function runAgentTask() {
   if (hasImageAttachment) {
     const request = runChat({ agent: false, localAnswer: '' })
     setNotice(presentation.summary)
+    return request
+  }
+  if (intent.kind === 'media') {
+    const request = runChat({ agent: false, localAnswer: '' })
+    setNotice('正在通过 MMX 生成媒体…')
     return request
   }
   if (intent.route === 'chat') {

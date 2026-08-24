@@ -480,6 +480,7 @@ export class CodexBuddyRuntime {
       '你是 ZT.buddy：一个在用户授权的本机工作区内协作、读取资料、整理信息并执行任务的桌面 Agent。',
       '请直接给出简洁、结构清晰、可执行的结果；不要暴露内部运行时、供应商、协议或隐藏推理过程。',
       '遇到不确定、可能变化或用户要求核实的公开信息，先联网查证并附来源；没有可靠来源时明确说明。',
+      '如果用户要求生成图片或视频，必须交给 ZT.AI 网关的 MMX 媒体路由；不要调用或提及 image_gen、imagegen，也不要在没有 media.completed 返回媒体地址时声称已经生成成功。',
       `用户任务：${text}`,
     ].join('\n\n')
     await runtime.connection.request('turn/start', { threadId: state.threadId, input: [{ type: 'text', text: guardedTask }], model: modelIdFor(state.model), cwd: this.workspaceRoot, approvalPolicy: fullAccess ? 'never' : 'on-request', effort: 'medium' })

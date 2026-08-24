@@ -32,7 +32,12 @@ function cleanMessage(message) {
       ...(item?.fingerprint ? { fingerprint: String(item.fingerprint).slice(0, 1_000) } : {}),
     }]
   }) : []
-  return content ? { role, content, ...(attachments.length ? { attachments } : {}), ...(sources.length ? { sources } : {}) } : null
+  const mediaUrl = String(message?.media?.url || '').trim()
+  const media = /^https?:\/\//i.test(mediaUrl) ? {
+    kind: String(message?.media?.kind || '').toLowerCase() === 'video' ? 'video' : 'image',
+    url: mediaUrl.slice(0, 2_000),
+  } : null
+  return content ? { role, content, ...(attachments.length ? { attachments } : {}), ...(sources.length ? { sources } : {}), ...(media ? { media } : {}) } : null
 }
 
 function titleFromMessages(messages, fallback = '新对话') {

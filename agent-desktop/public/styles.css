@@ -27,6 +27,7 @@
 .attachment-chip.is-reading{border-color:#bfd7cc;background:#f1f7f3}.attachment-reading{display:inline-flex;align-items:center;gap:4px;color:#5f9078;flex:none;white-space:nowrap!important}.attachment-reading i{width:7px;height:7px;border:1.5px solid #8fbda2;border-top-color:#4d9b70;border-radius:50%;animation:spin .7s linear infinite}
 .attachment-file-icon{display:grid;place-items:center;width:24px;height:24px;border-radius:5px;background:#e8eef0;color:#7b8c94;font-size:14px;flex:none}.composer.is-dragging{border-color:#54b789;box-shadow:0 0 0 4px rgba(84,183,137,.14)}
 .attachment-open{color:inherit;text-decoration:none}.attachment-open:hover{border-color:#b9c9cc;background:#eef5f3}.attachment-open img{cursor:zoom-in}
+.media-preview{display:grid;gap:7px;margin:11px 0 2px}.media-preview img,.media-preview video{display:block;width:min(100%,560px);max-height:460px;object-fit:contain;border-radius:11px;background:#edf2f3;border:1px solid #e0e8ea}.media-preview a{justify-self:start;color:#9c7038;font-size:10px;text-decoration:none}.media-preview a:hover{text-decoration:underline}
 
 /* Desktop Soft Glass surface: the native/app chrome and workspace read as one continuous layer. */
 :root{--bg:#e9eef2;--glass:rgba(248,250,251,.62);--glass-strong:rgba(255,255,255,.78);--glass-line:rgba(255,255,255,.74);--glass-shadow:0 24px 70px rgba(47,63,74,.12)}

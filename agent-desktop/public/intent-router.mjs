@@ -5,6 +5,7 @@ const CHAT_ONLY_PATTERNS = [
 
 const RESEARCH_PATTERN = /(?:搜索|搜一下|上网搜|查资料|查找资料|查一下|调查一下|检索|联网|核实|确认一下|官网|官方文档|来源|资料链接|research|search|look\s*up|documentation|official\s+docs?)/iu
 const COMMAND_PATTERN = /(?:运行|测试|构建|执行命令|启动|安装|部署|发布|run|test|build|execute|command|install|deploy)/iu
+const MEDIA_PATTERN = /(?:(?:生成|做一张|画一张|制作|帮我做|帮我生成|create|generate)[\s\S]{0,100}(?:图片|图像|海报|封面|背景图|视频|短片|生图|生视频|image|video)|(?:生图|生视频|文生图|文生视频))/iu
 const WRITE_PATTERN = /(?:创建|新建|写入|修改|编辑|实现|开发|重构|生成|整理|移动|归档|复制|重命名|删除|清理|上传|发送|保存|create|write|edit|implement|refactor|generate|organize|move|rename|delete|upload|send)/iu
 const READ_PATTERN = /(?:查看|看看|读取|打开|列出|扫描|检查|分析|统计|识别|找出|有哪些|桌面|工作区|目录|文件夹|文件|项目|仓库|代码|日志|read|inspect|review|open|list|scan|analy[sz]e)/iu
 const WORKSPACE_CONTEXT_PATTERN = /(?:桌面|工作区|目录|文件夹|文件|项目|仓库|代码|README|\.md\b|\.json\b|\.js\b|\.py\b|workspace|folder|file|repository|code)/iu
@@ -25,6 +26,7 @@ function result(kind, route, confidence, reason, extra = {}) {
 export function classifyIntent(input, { mode = 'BUDDY', hasAgentContext = false } = {}) {
   const text = String(input || '').trim()
   if (!text) return result('chat', 'chat', 1, '空消息不执行')
+  if (MEDIA_PATTERN.test(text)) return result('media', 'chat', 0.99, '图片或视频创作交给网关 MMX 媒体路由')
 
   const needsVerification = UNKNOWN_ENTITY_PATTERN.test(text) || AUTO_VERIFY_QUESTION_PATTERN.test(text) || NEWS_REQUEST_PATTERN.test(text) || (EVENT_REQUEST_PATTERN.test(text) && (AUTO_VERIFY_TIME_PATTERN.test(text) || AUTO_VERIFY_FACT_PATTERN.test(text))) || (AUTO_VERIFY_TIME_PATTERN.test(text) && /(?:是什么|什么是|谁是|怎么样|怎么回事|知道吗|有没有|真假|靠谱吗)/u.test(text))
 
