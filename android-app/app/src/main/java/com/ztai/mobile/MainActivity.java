@@ -3,9 +3,12 @@ package com.ztai.mobile;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.pm.PackageManager;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
+import android.Manifest;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -13,6 +16,7 @@ import android.view.View;
 import android.webkit.DownloadListener;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.PermissionRequest;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -26,11 +30,14 @@ public class MainActivity extends Activity {
     private static final String START_URL = "https://niuzipai-gif.github.io/zt-ai-web/?zt-shell=android";
     private static final long LOAD_TIMEOUT_MS = 20_000L;
     private static final int FILE_CHOOSER_REQUEST = 4101;
+    private static final int RECORD_AUDIO_REQUEST = 4102;
+    private static final String TRUSTED_WEB_ORIGIN = "https://niuzipai-gif.github.io";
 
     private WebView webView;
     private ProgressBar progressBar;
     private TextView errorView;
     private ValueCallback<Uri[]> filePathCallback;
+    private PermissionRequest pendingPermissionRequest;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable loadTimeout = () -> showLoadError();
 
@@ -145,6 +152,24 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onPermissionRequest(PermissionRequest request) {
+                if (!isTrustedAudioRequest(request)) {
+                    request.deny();
+                    return;
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                        && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                    if (pendingPermissionRequest != null) {
+                        pendingPermissionRequest.deny();
+                    }
+                    pendingPermissionRequest = request;
+                    requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, RECORD_AUDIO_REQUEST);
+                    return;
+                }
+                request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+            }
+
+            @Override
             public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> callback,
                                              FileChooserParams params) {
                 if (filePathCallback != null) {
@@ -175,6 +200,31 @@ public class MainActivity extends Activity {
         }
     }
 
+    private boolean isTrustedAudioRequest(PermissionRequest request) {
+        if (request == null || request.getOrigin() == null
+                || !TRUSTED_WEB_ORIGIN.equals(request.getOrigin().toString())) {
+            return false;
+        }
+        String[] resources = request.getResources();
+        return resources != null && resources.length == 1
+                && PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resources[0]);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != RECORD_AUDIO_REQUEST || pendingPermissionRequest == null) {
+            return;
+        }
+        PermissionRequest request = pendingPermissionRequest;
+        pendingPermissionRequest = null;
+        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+        } else {
+            request.deny();
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -198,6 +248,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         mainHandler.removeCallbacks(loadTimeout);
+        if (pendingPermissionRequest != null) {
+            pendingPermissionRequest.deny();
+            pendingPermissionRequest = null;
+        }
         if (webView != null) {
             webView.stopLoading();
             webView.destroy();
