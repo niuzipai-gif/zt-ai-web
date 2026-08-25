@@ -64,3 +64,9 @@ services:
         value: image-01
       - key: MMX_VIDEO_MODEL
         value: MiniMax-Hailuo-2.3
+      - key: VOICE_MODE_ENABLED
+        value: "false"
+      - key: MINIMAX_VOICE_ID
+        sync: false
+      - key: ASR_PROVIDER
+        sync: false

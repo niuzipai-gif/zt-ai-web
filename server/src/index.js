@@ -19,6 +19,7 @@ import { buildResearchPlan, runAdaptiveResearch } from './web-research.js'
 import { resolveImageSearchConfig, searchGoogleWebDetection, searchTinEye } from './image-search.js'
 import { buildAgentPlannerSystemPrompt, buildAgentSystemPrompt, buildPublicSystemPrompt } from './prompt-context.js'
 import { buildImageVerificationQuery, carryForwardImages, hasImageContent, hasImageInput, isImageIdentificationRequest, latestImage } from './image-input.js'
+import { voiceCapability } from './contracts/voice.js'
 
 function loadEnvFile(filePath) {
   try {
@@ -521,13 +522,19 @@ export function createServer() {
     if (request.method === 'OPTIONS') {
       const optionRoute = request.url.split('?')[0]
       if (optionRoute.startsWith('/api/agent/openai/v1/')) { sendPrivateJson(response, 403, { error: '该接口仅供本机桌面运行时调用' }); return }
-      response.writeHead(204, { 'access-control-allow-origin': corsOrigin(request), 'access-control-allow-methods': 'POST, GET, OPTIONS', 'access-control-allow-headers': 'content-type, authorization, x-zt-agent-secret', vary: 'Origin' }); response.end(); return
+      response.writeHead(204, { 'access-control-allow-origin': corsOrigin(request), 'access-control-allow-methods': 'POST, GET, DELETE, OPTIONS', 'access-control-allow-headers': 'content-type, authorization, x-zt-agent-secret', vary: 'Origin' }); response.end(); return
     }
     try {
       const route = request.url.split('?')[0]
       if ((route === '/admin' || route.startsWith('/admin/')) && !route.startsWith('/admin/api/')) return await serveControlRoom(request, response)
+      if (request.method === 'GET' && route === '/api/voice/status') {
+        response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'access-control-allow-origin': corsOrigin(request), vary: 'Origin' })
+        response.end(JSON.stringify(voiceCapability()))
+        return
+      }
       if (request.method === 'GET' && route === '/api/health') {
         const imageSearchConfig = resolveImageSearchConfig()
+        const voice = voiceCapability()
         return sendJson(request, response, 200, {
           ok: true,
           service: 'zt-ai-gateway',
@@ -539,6 +546,7 @@ export function createServer() {
             deepseek: Boolean(process.env.DEEPSEEK_API_KEY),
             googleVision: Boolean(imageSearchConfig.googleApiKey),
             tineye: Boolean(imageSearchConfig.tineyeApiKey),
+            voice: voice.enabled,
           },
           storage: telemetry.storage,
         })
