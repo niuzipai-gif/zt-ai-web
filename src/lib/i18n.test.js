@@ -1,5 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { getInitialLanguage, LANGUAGE_OPTIONS, resumeDocumentByLanguage, siteCopy } from './i18n.js'
 
 test('selects and persists supported language choices', () => {
@@ -30,6 +32,13 @@ test('provides a matching resume file for every interface language', () => {
     assert.ok(siteCopy[code].chat.starterPrompts.every(Boolean))
     assert.ok(siteCopy[code].chat.retry)
     assert.ok(siteCopy[code].chat.retryHint)
+  }
+})
+
+test('resume download paths point to published DOCX files', () => {
+  for (const code of ['zh', 'en', 'ja']) {
+    const publicPath = fileURLToPath(new URL(`../../public/${resumeDocumentByLanguage[code].path}`, import.meta.url))
+    assert.ok(existsSync(publicPath), `${code} resume asset is missing: ${resumeDocumentByLanguage[code].path}`)
   }
 })
 

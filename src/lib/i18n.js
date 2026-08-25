@@ -147,9 +147,9 @@ Object.assign(siteCopy.en.chat, { attachmentFallback: 'Please analyze the attach
 Object.assign(siteCopy.ja.chat, { attachmentFallback: 'アップロードした添付ファイルを分析してください。', attachmentReady: '読み取り済み', attachmentTruncated: '一部表示', attachmentError: '未解析', attachmentPreviewOnly: '画像プレビュー' })
 
 export const resumeDocumentByLanguage = {
-  zh: { path: '中文简历.docx', name: '蔡宙廷_FDE个人简历.docx' },
-  en: { path: 'English 简历.docx', name: 'Cai_Zhouting_FDE_Resume_EN.docx' },
-  ja: { path: '日本語简历.docx', name: '蔡宙廷_FDE職務経歴書_日本語.docx' },
+  zh: { path: 'resume.docx', name: '蔡宙廷_FDE个人简历.docx' },
+  en: { path: 'resume-en.docx', name: 'Cai_Zhouting_FDE_Resume_EN.docx' },
+  ja: { path: 'resume-ja.docx', name: '蔡宙廷_FDE職務経歴書_日本語.docx' },
 }
 
 for (const copy of Object.values(siteCopy)) {
