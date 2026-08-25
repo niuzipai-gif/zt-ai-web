@@ -61,9 +61,17 @@ test('collapsed chat history leaves no residual rail and remains reopenable from
 
 test('desktop renderer exposes an accessible tool drawer for execution context', async () => {
   const html = await fs.readFile(path.join(root, 'index.html'), 'utf8')
+  const app = await fs.readFile(path.join(root, 'app.js'), 'utf8')
   for (const id of ['execution-summary', 'context-ring', 'tool-trigger', 'voice-button', 'authorize-device']) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`)
   }
+  for (const id of ['voice-mode', 'voice-orb', 'voice-status', 'voice-transcript', 'voice-close', 'voice-stop']) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`)
+  }
+  assert.match(html, /id="voice-mode"[^>]*class="[^"]*hidden/)
+  assert.match(app, /openVoiceMode/)
+  assert.match(app, /createVoiceAudioController/)
+  assert.doesNotMatch(app, /语音入口已准备；接入声音模型后可开始语音输入/)
   assert.match(html, /data-drawer-section="context"/)
   assert.match(html, /data-drawer-section="permissions"/)
 })

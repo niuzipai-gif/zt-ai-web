@@ -58,6 +58,20 @@
       </div>
     </div>
 
+    <div id="voice-mode" class="voice-mode hidden" data-voice-status="idle" role="dialog" aria-modal="true" aria-hidden="true" aria-label="ZT.AI 语音模式">
+      <div class="voice-mode-panel">
+        <div class="voice-mode-head">
+          <div><span class="eyebrow">ZT.AI · VOICE MODE</span><h2>和 ZT.AI 说话</h2></div>
+          <button id="voice-close" class="voice-mode-close" type="button" aria-label="退出语音模式" title="退出语音模式">×</button>
+        </div>
+        <div id="voice-status" class="voice-mode-status" data-status="idle" aria-live="polite">语音服务还没有配置完成，先用文字聊聊。</div>
+        <button id="voice-orb" class="voice-orb" type="button" data-voice-status="idle" aria-label="开始录音" title="开始录音"><canvas aria-hidden="true"></canvas></button>
+        <div id="voice-transcript" class="voice-mode-transcript" aria-live="polite">点击光球开始说话</div>
+        <div class="voice-mode-actions"><button id="voice-stop" class="voice-mode-action" type="button" aria-label="结束录音" title="结束录音">■</button></div>
+        <div class="voice-mode-disclosure">你的声音只用于当前设备的语音输入；AI 回复会在语音服务接通后播放。</div>
+      </div>
+    </div>
+
     <div id="auth-gate" class="auth-gate">
       <section id="auth-login-view" class="auth-card glass-card">
         <div class="brand auth-brand"><img src="/zt-logo.png" alt="ZT.AI" /><div><strong>ZT.AI</strong><span>DESKTOP WORKSPACE</span></div></div><span class="eyebrow">PRIVATE WORKSPACE</span><h2>登录你的 ZT.buddy</h2><p>ZT.buddy 需要独立账户。任务只在你选择的电脑和工作区执行。</p>

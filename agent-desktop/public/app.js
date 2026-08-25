@@ -8,6 +8,9 @@ import { authPresentation, shouldSubmitComposer } from './interaction-state.mjs'
 import { attachmentReadFailure, extractDocxText, extractPdfText, extractSpreadsheetText, filesFromDataTransfer, hasFilePayload, isDocxAttachment, isPdfAttachment, isSpreadsheetAttachment, isTextAttachment } from './attachment-reader.mjs'
 import { createNavigationState, goBack, goForward, pushNavigationState } from './navigation-state.mjs'
 import { createTaskRunRegistry } from './task-runs.mjs'
+import { createVoiceState, transitionVoiceState } from './voice-mode.mjs'
+import { createVoiceAudioController } from './voice-audio.mjs'
+import { clampLevel, orbVisualState, readAnalyserLevel } from './voice-orb.mjs'
 
 const $ = selector => document.querySelector(selector)
 const CHAT_TIMEOUT_MS = 45_000
@@ -40,6 +43,12 @@ const state = {
   railCollapsed: localStorage.getItem('zt-ai:desktop-rail-collapsed') === 'true',
   navigation: createNavigationState(),
   taskRuns: createTaskRunRegistry(),
+  voice: {
+    lifecycle: createVoiceState(),
+    controller: null,
+    analyser: null,
+    animationFrame: 0,
+  },
 }
 
 const els = {
@@ -47,6 +56,7 @@ const els = {
   conversationEyebrow: $('#conversation-eyebrow'), conversationTitle: $('#conversation-title'), conversationSubtitle: $('#conversation-subtitle'),
   messages: $('#messages'), taskInput: $('#task-input'), composer: $('#composer'), attachmentPreview: $('#attachment-preview'), fileInput: $('#file-input'), run: $('#run-task'), newTask: $('#new-task'), refresh: $('#app-refresh'), history: $('#history'), sidebarToggle: $('#sidebar-toggle'), appBack: $('#app-back'), appForward: $('#app-forward'),
   toolTrigger: $('#tool-trigger'), toolDrawer: $('#tool-drawer'), permissionDrawer: $('#permission-drawer'), permissionTrigger: $('#permission-trigger'), voice: $('#voice-button'), modelSelect: $('#model-select'),
+  voiceMode: $('#voice-mode'), voiceOrb: $('#voice-orb'), voiceStatus: $('#voice-status'), voiceTranscript: $('#voice-transcript'), voiceClose: $('#voice-close'), voiceStop: $('#voice-stop'),
   inspectorToggle: $('#inspector-toggle'), executionSummary: $('#execution-summary'),
   contextRing: $('#context-ring'), contextRingLarge: $('#context-ring-large'), contextPercent: $('#context-percent'), contextPercentLarge: $('#context-percent-large'), contextModel: $('#context-model'), contextUsed: $('#context-used'), contextUsedLarge: $('#context-used-large'), contextRemaining: $('#context-remaining'),
   plan: $('#plan'), log: $('#activity-log'), logCount: $('#log-count'), title: $('#execution-title'), status: $('#execution-status'),
@@ -917,11 +927,131 @@ async function showSkillBrowser() {
 function toolAction(tool) { if (tool === 'file') { els.fileInput?.click(); return } setNotice(`${tool} 已加入当前对话工具范围`) }
 function setNotice(text) { const body = appendMessage('assistant', text); body.closest('.message')?.classList.add('system-message'); setTimeout(() => body.closest('.message')?.remove(), 3500) }
 
+function voiceMessage(status, error = '') {
+  if (status === 'listening') return '正在听你说话。再次点击光球结束录音。'
+  if (status === 'processing') return '录音已结束，正在等待语音识别服务。'
+  if (status === 'speaking') return 'ZT.AI 正在说话。'
+  if (status === 'error') return error || '语音服务暂时不可用；你的录音没有上传或保存。'
+  return '语音服务还没有配置完成，先用文字聊聊。'
+}
+
+function renderDesktopVoiceState() {
+  const lifecycle = state.voice.lifecycle
+  const status = lifecycle.status
+  if (!els.voiceMode) return
+  els.voiceMode.dataset.voiceStatus = status
+  els.voiceMode.setAttribute('aria-hidden', String(els.voiceMode.classList.contains('hidden')))
+  els.voiceOrb?.setAttribute('data-voice-status', status)
+  els.voiceOrb?.setAttribute('aria-label', status === 'listening' ? '结束录音' : '开始录音')
+  if (els.voiceStatus) {
+    els.voiceStatus.dataset.status = status
+    els.voiceStatus.textContent = voiceMessage(status, lifecycle.error)
+  }
+  if (els.voiceTranscript) els.voiceTranscript.textContent = lifecycle.transcript || (status === 'error' ? lifecycle.error : status === 'idle' ? '点击光球开始说话' : '')
+  if (els.voiceStop) els.voiceStop.disabled = status !== 'listening'
+}
+
+function renderDesktopVoiceOrb(timestamp = 0) {
+  if (!els.voiceMode || els.voiceMode.classList.contains('hidden') || !els.voiceOrb) return
+  const canvas = els.voiceOrb.querySelector('canvas')
+  if (canvas) {
+    const rect = els.voiceOrb.getBoundingClientRect()
+    const ratio = Math.max(1, Math.min(2, window.devicePixelRatio || 1))
+    const width = Math.max(1, Math.round(rect.width * ratio))
+    const height = Math.max(1, Math.round(rect.height * ratio))
+    if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height }
+    const context = canvas.getContext('2d')
+    if (context) {
+      context.setTransform(ratio, 0, 0, ratio, 0, 0)
+      const size = Math.min(rect.width, rect.height)
+      const center = size / 2
+      const visual = orbVisualState(state.voice.lifecycle.status)
+      const analyserLevel = readAnalyserLevel(state.voice.analyser)
+      const fallback = state.voice.lifecycle.status === 'listening' ? 0.16 + Math.sin(timestamp / 520) * 0.035 : state.voice.lifecycle.status === 'processing' ? 0.12 + Math.sin(timestamp / 780) * 0.02 : state.voice.lifecycle.status === 'speaking' ? 0.18 + Math.sin(timestamp / 330) * 0.045 : 0.08 + Math.sin(timestamp / 1200) * 0.012
+      const level = Math.max(analyserLevel, clampLevel(fallback))
+      context.clearRect(0, 0, rect.width, rect.height)
+      const glow = context.createRadialGradient(center, center, size * .08, center, center, size * .49)
+      glow.addColorStop(0, visual.color.glow)
+      glow.addColorStop(.62, 'rgba(255,255,255,.08)')
+      glow.addColorStop(1, 'rgba(255,255,255,0)')
+      context.fillStyle = glow
+      context.fillRect(0, 0, rect.width, rect.height)
+      const radius = size * (.205 + level * .075)
+      const core = context.createRadialGradient(center - radius * .28, center - radius * .32, radius * .12, center, center, radius)
+      core.addColorStop(0, '#fffaf1')
+      core.addColorStop(.35, visual.color.core)
+      core.addColorStop(1, 'rgba(84,183,137,.4)')
+      context.beginPath(); context.arc(center, center, radius, 0, Math.PI * 2); context.fillStyle = core; context.fill()
+      for (let index = 0; index < 28; index += 1) {
+        const angle = (Math.PI * 2 * index) / 28 + timestamp / (visual.motion === 'input' ? 26000 : 52000)
+        const distance = size * (.29 + (index % 5) * .026) + level * size * .08 * ((index % 3) + 1) / 3
+        const x = center + Math.cos(angle) * distance
+        const y = center + Math.sin(angle) * distance
+        const dot = 1.2 + ((index * 7) % 5) * .28 + level * 2
+        context.beginPath(); context.arc(x, y, dot, 0, Math.PI * 2); context.fillStyle = index % 4 === 0 ? visual.color.core : visual.color.particle; context.globalAlpha = .38 + (index % 5) * .1; context.fill()
+      }
+      context.globalAlpha = 1
+    }
+  }
+  state.voice.animationFrame = window.requestAnimationFrame(renderDesktopVoiceOrb)
+}
+
+function setVoiceLifecycle(event) {
+  state.voice.lifecycle = transitionVoiceState(state.voice.lifecycle, event)
+  renderDesktopVoiceState()
+}
+
+function openVoiceMode() {
+  if (!els.voiceMode) return
+  els.voiceMode.classList.remove('hidden')
+  els.voiceMode.setAttribute('aria-hidden', 'false')
+  state.voice.lifecycle = createVoiceState()
+  state.voice.controller ||= createVoiceAudioController()
+  renderDesktopVoiceState()
+  window.cancelAnimationFrame(state.voice.animationFrame)
+  state.voice.animationFrame = window.requestAnimationFrame(renderDesktopVoiceOrb)
+  els.voiceClose?.focus()
+}
+
+function closeVoiceMode() {
+  if (!els.voiceMode) return
+  window.cancelAnimationFrame(state.voice.animationFrame)
+  void state.voice.controller?.cancel()
+  state.voice.controller = null
+  state.voice.analyser = null
+  state.voice.lifecycle = createVoiceState()
+  renderDesktopVoiceState()
+  els.voiceMode.classList.add('hidden')
+  els.voiceMode.setAttribute('aria-hidden', 'true')
+  els.voice?.focus()
+}
+
+async function toggleVoiceInput() {
+  const status = state.voice.lifecycle.status
+  if (status === 'listening') {
+    const result = await state.voice.controller?.stop()
+    if (result?.status === 'ready') {
+      setVoiceLifecycle({ type: 'finish-listening', transcript: '' })
+      setVoiceLifecycle({ type: 'fail', error: '语音识别服务还没有接通；录音已在本机丢弃，没有上传或保存。' })
+    } else setVoiceLifecycle({ type: 'fail', error: result?.error || '录音停止失败' })
+    return
+  }
+  if (!['idle', 'error'].includes(status)) return
+  setVoiceLifecycle({ type: 'start-listening' })
+  const result = await state.voice.controller?.start()
+  if (result?.status !== 'recording') {
+    setVoiceLifecycle({ type: 'fail', error: result?.error || '当前设备无法使用麦克风' })
+    return
+  }
+  state.voice.analyser = result.analyser || null
+  renderDesktopVoiceState()
+}
+
 els.sidebarToggle?.addEventListener('click', () => setRailCollapsed(!state.railCollapsed))
 els.appBack?.addEventListener('click', () => { state.navigation = goBack(state.navigation); applyNavigationSnapshot(state.navigation.current) })
 els.appForward?.addEventListener('click', () => { state.navigation = goForward(state.navigation); applyNavigationSnapshot(state.navigation.current) })
 els.modelSelect.addEventListener('change', () => { state.model = normalizeModel(els.modelSelect.value); localStorage.setItem('zt-ai:agent-model', state.model); renderContext() })
-els.toolTrigger.addEventListener('click', toggleDrawer); $('#drawer-close')?.addEventListener('click', () => closeDrawer(els.toolDrawer)); $('#permission-drawer-close')?.addEventListener('click', () => closeDrawer(els.permissionDrawer)); els.permissionTrigger.addEventListener('click', () => { isDrawerVisible(els.permissionDrawer) ? closeDrawer(els.permissionDrawer) : openPermissionDrawer() }); document.addEventListener('keydown', event => { if (event.key === 'Escape' && (isDrawerVisible(els.toolDrawer) || isDrawerVisible(els.permissionDrawer))) closeDrawer() }); document.addEventListener('click', event => { const inDrawer = els.toolDrawer.contains(event.target) || els.permissionDrawer.contains(event.target); const onTrigger = els.toolTrigger.contains(event.target) || els.permissionTrigger.contains(event.target); if (!inDrawer && !onTrigger && (isDrawerVisible(els.toolDrawer) || isDrawerVisible(els.permissionDrawer))) closeDrawer() }); els.inspectorToggle?.addEventListener('click', () => setInspectorOpen(!state.inspectorOpen)); els.voice.addEventListener('click', () => { setNotice('语音入口已准备；接入声音模型后可开始语音输入。') })
+els.toolTrigger.addEventListener('click', toggleDrawer); $('#drawer-close')?.addEventListener('click', () => closeDrawer(els.toolDrawer)); $('#permission-drawer-close')?.addEventListener('click', () => closeDrawer(els.permissionDrawer)); els.permissionTrigger.addEventListener('click', () => { isDrawerVisible(els.permissionDrawer) ? closeDrawer(els.permissionDrawer) : openPermissionDrawer() }); document.addEventListener('keydown', event => { if (event.key === 'Escape' && (isDrawerVisible(els.toolDrawer) || isDrawerVisible(els.permissionDrawer))) closeDrawer(); else if (event.key === 'Escape' && els.voiceMode && !els.voiceMode.classList.contains('hidden')) closeVoiceMode() }); document.addEventListener('click', event => { const inDrawer = els.toolDrawer.contains(event.target) || els.permissionDrawer.contains(event.target); const onTrigger = els.toolTrigger.contains(event.target) || els.permissionTrigger.contains(event.target); if (!inDrawer && !onTrigger && (isDrawerVisible(els.toolDrawer) || isDrawerVisible(els.permissionDrawer))) closeDrawer() }); els.inspectorToggle?.addEventListener('click', () => setInspectorOpen(!state.inspectorOpen)); els.voice?.addEventListener('click', openVoiceMode); els.voiceClose?.addEventListener('click', closeVoiceMode); els.voiceOrb?.addEventListener('click', () => { void toggleVoiceInput() }); els.voiceStop?.addEventListener('click', () => { if (state.voice.lifecycle.status === 'listening') void toggleVoiceInput() })
 document.querySelectorAll('.drawer-option').forEach(button => button.addEventListener('click', async () => { if (button.dataset.tool === 'skills') { await showSkillBrowser(); return } toolAction(button.dataset.tool); toggleDrawer() }))
 document.querySelectorAll('[data-capability]').forEach(input => input.addEventListener('change', () => updatePermission(input.dataset.capability, input.checked)))
 els.taskInput.addEventListener('paste', handleComposerPaste)
