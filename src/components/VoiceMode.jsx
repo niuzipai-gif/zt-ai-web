@@ -14,7 +14,6 @@ export function VoiceMode({ copy, preview = false, capability, onClose }) {
   const [analyser, setAnalyser] = useState(null)
   const [reducedMotion] = useState(browserReducedMotion)
   const [playbackStatus, setPlaybackStatus] = useState('idle')
-  const audioRef = useRef(null)
   const controllerRef = useRef(null)
   const playbackRef = useRef(null)
 
@@ -33,15 +32,14 @@ export function VoiceMode({ copy, preview = false, capability, onClose }) {
         setPlaybackStatus(event.status)
         if (event.status === 'speaking') {
           setAnalyser(event.analyser)
-          setState(current => transitionVoiceState(current, { type: 'start-speaking', audioUrl: current.audioUrl || 'https://voice.invalid/preview.mp3' }))
+          setState(current => current.audioUrl ? transitionVoiceState(current, { type: 'start-speaking', audioUrl: current.audioUrl }) : current)
         }
-        if (event.status === 'idle' && state.status === 'speaking') setState(current => transitionVoiceState(current, { type: 'finish-speaking' }))
+        if (event.status === 'idle') setState(current => current.status === 'speaking' ? transitionVoiceState(current, { type: 'finish-speaking' }) : current)
       },
     })
     return () => {
       controllerRef.current?.dispose?.()
       playbackRef.current?.dispose?.()
-      audioRef.current = null
     }
   }, [])
 
