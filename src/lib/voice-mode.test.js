@@ -1,0 +1,24 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { createVoiceState, transitionVoiceState } from './voice-mode.js'
+
+test('voice lifecycle moves from idle through listening, processing and speaking', () => {
+  let state = createVoiceState()
+  state = transitionVoiceState(state, { type: 'start-listening' })
+  assert.equal(state.status, 'listening')
+  state = transitionVoiceState(state, { type: 'finish-listening', transcript: '你好' })
+  assert.deepEqual(state, { status: 'processing', transcript: '你好', error: '', audioUrl: '' })
+  state = transitionVoiceState(state, { type: 'start-speaking', audioUrl: 'https://example.test/answer.mp3' })
+  assert.equal(state.status, 'speaking')
+  assert.equal(state.audioUrl, 'https://example.test/answer.mp3')
+  state = transitionVoiceState(state, { type: 'finish-speaking' })
+  assert.equal(state.status, 'idle')
+})
+
+test('voice lifecycle keeps a recoverable error and cancels without stale audio', () => {
+  const failed = transitionVoiceState(createVoiceState(), { type: 'fail', error: '语音暂时不可用' })
+  assert.deepEqual(failed, { status: 'error', transcript: '', error: '语音暂时不可用', audioUrl: '' })
+  const reset = transitionVoiceState(failed, { type: 'reset' })
+  assert.equal(reset.status, 'idle')
+  assert.equal(reset.audioUrl, '')
+})
