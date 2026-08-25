@@ -60,7 +60,6 @@ export function createVoiceAudioController({ mediaDevices = defaultMediaDevices(
   function stop() {
     if (!recorder) return Promise.resolve(unavailable('当前没有正在进行的录音'))
     const activeRecorder = recorder
-    const activeStream = stream
     const mimeType = activeRecorder.mimeType || 'audio/webm'
     return new Promise(resolve => {
       let settled = false
@@ -75,7 +74,6 @@ export function createVoiceAudioController({ mediaDevices = defaultMediaDevices(
       activeRecorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data) }
       activeRecorder.onstop = finish
       try { activeRecorder.state === 'inactive' ? finish() : activeRecorder.stop() } catch (error) { clear(); resolve(unavailable(error.message || '录音停止失败')) }
-      stopTracks(activeStream)
     })
   }
 
