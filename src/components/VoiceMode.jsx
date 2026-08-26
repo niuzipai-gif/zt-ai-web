@@ -2,20 +2,22 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Mic, Pause, Play, Square, X } from 'lucide-react'
 import { VoiceOrb } from './VoiceOrb.jsx'
 import { createVoiceState, transitionVoiceState } from '../lib/voice-mode.js'
-import { createVoiceAudioController, createVoicePlayback } from '../lib/voice-audio.js'
+import { createVoiceAudioController, createVoicePlayback, createVoiceRecognition } from '../lib/voice-audio.js'
 
 function browserReducedMotion() {
   return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
 }
 
-export function VoiceMode({ copy, preview = false, capability, onClose }) {
+export function VoiceMode({ copy, preview = false, capability, language = 'zh', onSubmit, onClose }) {
   const [state, setState] = useState(() => createVoiceState())
   const [transcript, setTranscript] = useState('')
   const [analyser, setAnalyser] = useState(null)
   const [reducedMotion] = useState(browserReducedMotion)
   const [playbackStatus, setPlaybackStatus] = useState('idle')
   const controllerRef = useRef(null)
+  const recognitionRef = useRef(null)
   const playbackRef = useRef(null)
+  const transcriptRef = useRef('')
 
   const statusText = useMemo(() => {
     if (state.status === 'listening') return copy.voiceListening
@@ -27,6 +29,15 @@ export function VoiceMode({ copy, preview = false, capability, onClose }) {
 
   useEffect(() => {
     controllerRef.current = createVoiceAudioController()
+    recognitionRef.current = createVoiceRecognition({
+      language,
+      onTranscript: (value, isFinal) => {
+        if (!value) return
+        transcriptRef.current = isFinal ? `${transcriptRef.current} ${value}`.trim() : value
+        setTranscript(transcriptRef.current)
+      },
+      onError: error => setState(current => transitionVoiceState(current, { type: 'fail', error })),
+    })
     playbackRef.current = createVoicePlayback({
       onStateChange: event => {
         setPlaybackStatus(event.status)
@@ -39,11 +50,18 @@ export function VoiceMode({ copy, preview = false, capability, onClose }) {
     })
     return () => {
       controllerRef.current?.dispose?.()
+      recognitionRef.current?.dispose?.()
       playbackRef.current?.dispose?.()
     }
-  }, [])
+  }, [language])
 
   const startListening = async () => {
+    if (!capability?.enabled && !preview) {
+      setState(current => transitionVoiceState(current, { type: 'fail', error: copy.voiceNeedProvider }))
+      return
+    }
+    transcriptRef.current = ''
+    setTranscript('')
     setState(current => transitionVoiceState(current, { type: 'start-listening' }))
     const result = await controllerRef.current?.start?.()
     if (result?.status !== 'recording') {
@@ -51,22 +69,47 @@ export function VoiceMode({ copy, preview = false, capability, onClose }) {
       return
     }
     setAnalyser(result.analyser)
+    const recognition = recognitionRef.current?.start?.()
+    if (recognition?.status !== 'listening') {
+      await controllerRef.current?.cancel?.()
+      setAnalyser(null)
+      setState(current => transitionVoiceState(current, { type: 'fail', error: recognition?.error || copy.voiceUnavailable }))
+    }
   }
 
   const stopListening = async () => {
+    recognitionRef.current?.stop?.()
     const result = await controllerRef.current?.stop?.()
     setAnalyser(null)
     if (result?.status !== 'ready') {
       setState(current => transitionVoiceState(current, { type: 'fail', error: result?.error || copy.voiceUnavailable }))
       return
     }
-    setState(current => transitionVoiceState(current, { type: 'finish-listening', transcript: '' }))
-    setState(current => transitionVoiceState(current, { type: 'fail', error: capability?.input ? copy.voiceUnavailable : copy.voiceNeedProvider }))
+    const value = transcriptRef.current.trim()
+    if (!value) {
+      setState(current => transitionVoiceState(current, { type: 'fail', error: copy.voiceNoTranscript || copy.voiceUnavailable }))
+      return
+    }
+    setState(current => transitionVoiceState(current, { type: 'finish-listening', transcript: value }))
+    if (typeof onSubmit !== 'function') {
+      setState(current => transitionVoiceState(current, { type: 'fail', error: copy.voiceNeedProvider }))
+      return
+    }
+    try {
+      const reply = await onSubmit(value)
+      if (!reply?.audioUrl) throw new Error(copy.voiceUnavailable)
+      playbackRef.current?.load(reply.audioUrl)
+      setState(current => transitionVoiceState(current, { type: 'start-speaking', audioUrl: reply.audioUrl }))
+      await playbackRef.current?.play?.()
+    } catch (error) {
+      setState(current => transitionVoiceState(current, { type: 'fail', error: error?.message || copy.voiceUnavailable }))
+    }
   }
 
   const handleOrb = () => {
     if (state.status === 'listening') { void stopListening(); return }
     if (state.status === 'speaking') { playbackRef.current?.stop?.(); return }
+    if (state.status === 'processing') return
     void startListening()
   }
 

@@ -2,6 +2,18 @@ const MEDIA_API_KEY = () => process.env.MMX_API_KEY || process.env.MINIMAX_API_K
 const API_ROOT = () => (process.env.MMX_BASE_URL || process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1').replace(/\/v1\/?$/, '')
 const mediaTimeout = () => Number(process.env.MMX_HTTP_TIMEOUT_MS || 45_000)
 
+function voiceLanguage(language) {
+  const value = String(language || 'zh').toLowerCase()
+  if (value.startsWith('en')) return 'en'
+  if (value.startsWith('ja') || value.startsWith('jp')) return 'ja'
+  return 'zh'
+}
+
+function voiceIdForLanguage(language) {
+  const suffix = voiceLanguage(language).toUpperCase()
+  return String(process.env[`MINIMAX_VOICE_ID_${suffix}`] || process.env.MINIMAX_VOICE_ID || '').trim()
+}
+
 async function minimaxRequest(path, options = {}) {
   const response = await fetch(`${API_ROOT()}${path}`, {
     ...options,
@@ -75,6 +87,31 @@ async function generateVideo(prompt) {
     if (status.status === 'Fail') throw new Error(`MMX 视频生成失败：${status.error_message || '未知错误'}`)
   }
   return { kind: 'video', status: 'processing', taskId }
+}
+
+export async function synthesizeVoice({ text, language = 'zh' } = {}) {
+  if (!MEDIA_API_KEY()) throw new Error('MMX 语音服务未配置')
+  const normalizedLanguage = voiceLanguage(language)
+  const voiceId = voiceIdForLanguage(normalizedLanguage)
+  if (!voiceId) throw new Error('MMX 自定义音色未配置')
+  const value = String(text || '').replace(/```[\s\S]*?```/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[*_#>`~-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 10_000)
+  if (!value) throw new Error('没有可合成的回答内容')
+  const body = await minimaxRequest('/v1/t2a_v2', {
+    method: 'POST',
+    body: JSON.stringify({
+      model: process.env.MINIMAX_TTS_MODEL || 'speech-2.8-hd',
+      text: value,
+      stream: false,
+      language_boost: normalizedLanguage === 'en' ? 'English' : normalizedLanguage === 'ja' ? 'Japanese' : 'Chinese',
+      voice_setting: { voice_id: voiceId, speed: Number(process.env.MINIMAX_TTS_SPEED || 1), vol: 1, pitch: 0 },
+      audio_setting: { sample_rate: 32_000, bitrate: 128_000, format: 'mp3', channel: 1 },
+      output_format: 'url',
+      aigc_watermark: false,
+    }),
+  })
+  const url = String(body.data?.audio || '').trim()
+  if (!/^https:\/\//i.test(url)) throw new Error('MMX 语音接口没有返回可播放地址')
+  return { kind: 'audio', status: 'completed', url, language: normalizedLanguage }
 }
 
 export async function runHiddenMediaRequest({ text }) {

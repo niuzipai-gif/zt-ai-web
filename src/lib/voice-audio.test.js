@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chooseRecorderMime, createVoiceAudioController, createVoicePlayback } from './voice-audio.js'
+import { chooseRecorderMime, createVoiceAudioController, createVoicePlayback, createVoiceRecognition } from './voice-audio.js'
 
 test('recorder chooses a supported audio MIME and reports unavailable capability', () => {
   assert.equal(chooseRecorderMime(type => type === 'audio/webm;codecs=opus'), 'audio/webm;codecs=opus')
@@ -27,4 +27,23 @@ test('playback rejects non-https URLs and reports autoplay blocks', async () => 
   assert.equal(result.status, 'blocked')
   assert.equal(events.at(-1).status, 'blocked')
   playback.dispose()
+})
+
+test('speech recognition reports interim text and can be stopped safely', () => {
+  const events = []
+  const instances = []
+  class FakeRecognition {
+    start() { this.started = true }
+    stop() { this.stopped = true; this.onend?.() }
+  }
+  const recognition = createVoiceRecognition({
+    recognitionFactory: () => { const instance = new FakeRecognition(); instances.push(instance); return instance },
+    language: 'en',
+    onTranscript: (text, isFinal) => events.push({ text, isFinal }),
+  })
+  assert.equal(recognition.start().status, 'listening')
+  instances[0].onresult({ results: [{ 0: { transcript: 'Hello ZT.AI' }, isFinal: true }] })
+  assert.deepEqual(events, [{ text: 'Hello ZT.AI', isFinal: true }])
+  assert.deepEqual(recognition.stop(), { status: 'stopped' })
+  assert.equal(instances[0].stopped, true)
 })

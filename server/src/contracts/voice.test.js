@@ -12,3 +12,14 @@ test('voice capability exposes public readiness but never provider credentials',
   const result = voiceCapability({ VOICE_MODE_ENABLED: 'true', MINIMAX_VOICE_ID: 'CaiZhouTingVoice01', ASR_PROVIDER: 'configured' })
   assert.deepEqual(result, { enabled: true, input: true, output: true, reason: 'ready' })
 })
+
+test('voice capability accepts language-specific cloned voices with browser recognition fallback', () => {
+  const result = voiceCapability({
+    VOICE_MODE_ENABLED: 'true',
+    MINIMAX_VOICE_ID_ZH: 'CaiZhouTingZh20260827',
+    MINIMAX_VOICE_ID_EN: 'CaiZhouTingEn20260827',
+    MINIMAX_VOICE_ID_JA: 'CaiZhouTingJa20260827',
+    ASR_PROVIDER: 'browser',
+  })
+  assert.deepEqual(result, { enabled: true, input: true, output: true, reason: 'ready' })
+})

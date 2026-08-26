@@ -65,8 +65,20 @@ services:
       - key: MMX_VIDEO_MODEL
         value: MiniMax-Hailuo-2.3
       - key: VOICE_MODE_ENABLED
-        value: "false"
+        value: "true"
       - key: MINIMAX_VOICE_ID
-        sync: false
+        value: CaiZhouTingZh20260827
+      - key: MINIMAX_VOICE_ID_ZH
+        value: CaiZhouTingZh20260827
+      - key: MINIMAX_VOICE_ID_EN
+        value: CaiZhouTingEn20260827
+      - key: MINIMAX_VOICE_ID_JA
+        value: CaiZhouTingJa20260827
+      - key: MINIMAX_TTS_MODEL
+        value: speech-2.8-hd
+      - key: MINIMAX_TTS_SPEED
+        value: "1"
       - key: ASR_PROVIDER
-        sync: false
+        value: browser
+      - key: VOICE_BROWSER_ASR
+        value: "true"

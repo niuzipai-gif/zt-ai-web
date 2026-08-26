@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { CHAT_MODELS, contentToText, isMediaIntent, normalizeChatRequest } from './contracts/chat.js'
 import { streamMinimax } from './providers/minimax.js'
 import { streamDeepseek } from './providers/deepseek.js'
-import { runHiddenMediaRequest } from './providers/mmx.js'
+import { runHiddenMediaRequest, synthesizeVoice } from './providers/mmx.js'
 import { ZT_PROFILE } from './profile.js'
 import { createAuthService } from './auth.js'
 import { createTelemetry } from './telemetry.js'
@@ -531,6 +531,15 @@ export function createServer() {
         response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'access-control-allow-origin': corsOrigin(request), vary: 'Origin' })
         response.end(JSON.stringify(voiceCapability()))
         return
+      }
+      if (request.method === 'POST' && route === '/api/voice/synthesize') {
+        if (!rateLimit(request)) return sendJson(request, response, 429, { error: '语音请求过于频繁，请稍后再试' })
+        const body = await readBody(request)
+        try {
+          return sendJson(request, response, 200, await synthesizeVoice({ text: body.text, language: body.language }))
+        } catch (error) {
+          return sendJson(request, response, 502, { error: error.message || '语音合成暂时不可用' })
+        }
       }
       if (request.method === 'GET' && route === '/api/health') {
         const imageSearchConfig = resolveImageSearchConfig()

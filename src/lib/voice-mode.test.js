@@ -22,3 +22,12 @@ test('voice lifecycle keeps a recoverable error and cancels without stale audio'
   assert.equal(reset.status, 'idle')
   assert.equal(reset.audioUrl, '')
 })
+
+test('voice lifecycle keeps interim recognition text while listening', () => {
+  const state = transitionVoiceState(
+    transitionVoiceState(createVoiceState(), { type: 'start-listening' }),
+    { type: 'update-transcript', transcript: '正在说话' },
+  )
+  assert.equal(state.status, 'listening')
+  assert.equal(state.transcript, '正在说话')
+})

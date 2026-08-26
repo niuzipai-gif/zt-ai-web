@@ -14,6 +14,9 @@ test('Android shell marks itself for the web header and owns a cancellable loadi
   assert.match(source, /onPermissionRequest\(/)
   assert.match(source, /RESOURCE_AUDIO_CAPTURE/)
   assert.match(source, /requestPermissions\(/)
+  assert.match(source, /addJavascriptInterface\(/)
+  assert.match(source, /ztaiAndroidVoice/)
+  assert.match(source, /SpeechRecognizer/)
 })
 
 test('public web header can suppress the download entry only inside the Android shell', async () => {

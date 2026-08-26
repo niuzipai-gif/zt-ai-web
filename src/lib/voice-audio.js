@@ -16,6 +16,18 @@ function defaultRecorderFactory() {
   return Recorder ? (stream, options) => new Recorder(stream, options) : null
 }
 
+function defaultRecognitionFactory() {
+  const Recognition = globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition
+  return Recognition ? () => new Recognition() : null
+}
+
+function recognitionLanguage(language) {
+  const value = String(language || 'zh').toLowerCase()
+  if (value.startsWith('en')) return 'en-US'
+  if (value.startsWith('ja') || value.startsWith('jp')) return 'ja-JP'
+  return 'zh-CN'
+}
+
 function stopTracks(stream) {
   stream?.getTracks?.().forEach(track => track.stop?.())
 }
@@ -42,6 +54,8 @@ export function createVoiceAudioController({ mediaDevices = defaultMediaDevices(
       const mimeType = chooseRecorderMime(isTypeSupported)
       recorder = recorderFactory(stream, mimeType ? { mimeType } : undefined)
       chunks = []
+      recorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data) }
+      recorder.start?.()
       startedAt = now()
       if (audioContextFactory && stream.getAudioTracks?.().length) {
         audioContext = new audioContextFactory()
@@ -71,7 +85,6 @@ export function createVoiceAudioController({ mediaDevices = defaultMediaDevices(
         clear()
         resolve({ status: 'ready', blob, durationMs, mimeType })
       }
-      activeRecorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data) }
       activeRecorder.onstop = finish
       try { activeRecorder.state === 'inactive' ? finish() : activeRecorder.stop() } catch (error) { clear(); resolve(unavailable(error.message || '录音停止失败')) }
     })
@@ -86,6 +99,80 @@ export function createVoiceAudioController({ mediaDevices = defaultMediaDevices(
 
   function dispose() { void cancel(); closeAudioContext() }
   return { start, stop, cancel, dispose, getAnalyser: () => analyser }
+}
+
+export function createVoiceRecognition({ language = 'zh', recognitionFactory = defaultRecognitionFactory(), bridge = globalThis.ztaiAndroidVoice, onTranscript = () => {}, onError = () => {} } = {}) {
+  let recognition = null
+  let listening = false
+  const bridgeCallbacks = {
+    result: globalThis.__ztaiAndroidVoiceOnResult,
+    error: globalThis.__ztaiAndroidVoiceOnError,
+  }
+
+  const unavailable = error => ({ status: 'unavailable', error: String(error || '当前设备不支持语音识别') })
+  const installBridgeCallbacks = () => {
+    globalThis.__ztaiAndroidVoiceOnResult = (text, isFinal = true) => onTranscript(String(text || '').trim(), Boolean(isFinal))
+    globalThis.__ztaiAndroidVoiceOnError = error => onError(String(error || '语音识别暂时不可用'))
+  }
+  const restoreBridgeCallbacks = () => {
+    if (bridgeCallbacks.result) globalThis.__ztaiAndroidVoiceOnResult = bridgeCallbacks.result
+    else delete globalThis.__ztaiAndroidVoiceOnResult
+    if (bridgeCallbacks.error) globalThis.__ztaiAndroidVoiceOnError = bridgeCallbacks.error
+    else delete globalThis.__ztaiAndroidVoiceOnError
+  }
+
+  function start() {
+    if (listening) return { status: 'listening' }
+    if (bridge?.start) {
+      try {
+        installBridgeCallbacks()
+        bridge.start(recognitionLanguage(language))
+        listening = true
+        return { status: 'listening', mode: 'android' }
+      } catch (error) {
+        restoreBridgeCallbacks()
+        return unavailable(error?.message || '安卓语音识别暂时不可用')
+      }
+    }
+    if (!recognitionFactory) return unavailable('当前设备没有可用的语音识别服务')
+    try {
+      recognition = recognitionFactory()
+      recognition.lang = recognitionLanguage(language)
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.maxAlternatives = 1
+      recognition.onresult = event => {
+        let text = ''
+        let final = true
+        const startIndex = Number(event?.resultIndex) || 0
+        for (let index = startIndex; index < (event?.results?.length || 0); index += 1) {
+          const result = event.results[index]
+          text += result?.[0]?.transcript || ''
+          final = final && result?.isFinal !== false
+        }
+        if (text.trim()) onTranscript(text.trim(), final)
+      }
+      recognition.onerror = event => onError(event?.error || '语音识别暂时不可用')
+      recognition.start()
+      listening = true
+      return { status: 'listening', mode: 'browser' }
+    } catch (error) {
+      recognition = null
+      return unavailable(error?.message || '语音识别启动失败')
+    }
+  }
+
+  function stop() {
+    if (bridge?.stop && listening) { try { bridge.stop() } catch {} }
+    try { recognition?.stop?.() } catch {}
+    recognition = null
+    listening = false
+    restoreBridgeCallbacks()
+    return { status: 'stopped' }
+  }
+
+  function dispose() { return stop() }
+  return { start, stop, dispose, isListening: () => listening }
 }
 
 function secureAudioUrl(url) {

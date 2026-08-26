@@ -20,6 +20,9 @@ export function transitionVoiceState(current, event = {}) {
   if (type === 'start-listening' && (state.status === 'idle' || state.status === 'error')) {
     return { status: 'listening', transcript: '', error: '', audioUrl: '' }
   }
+  if (type === 'update-transcript' && state.status === 'listening') {
+    return { ...state, transcript: String(event.transcript || '').trim() }
+  }
   if (type === 'finish-listening' && state.status === 'listening') {
     return { status: 'processing', transcript: String(event.transcript || '').trim(), error: '', audioUrl: '' }
   }

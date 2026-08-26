@@ -12,6 +12,9 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.speech.RecognitionListener;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
 import android.view.View;
 import android.webkit.DownloadListener;
 import android.webkit.ValueCallback;
@@ -26,6 +29,12 @@ import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
+import android.webkit.JavascriptInterface;
+
+import org.json.JSONObject;
+
+import java.util.ArrayList;
+
 public class MainActivity extends Activity {
     private static final String START_URL = "https://niuzipai-gif.github.io/zt-ai-web/?zt-shell=android";
     private static final long LOAD_TIMEOUT_MS = 20_000L;
@@ -38,6 +47,7 @@ public class MainActivity extends Activity {
     private TextView errorView;
     private ValueCallback<Uri[]> filePathCallback;
     private PermissionRequest pendingPermissionRequest;
+    private AndroidVoiceBridge voiceBridge;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable loadTimeout = () -> showLoadError();
 
@@ -111,6 +121,8 @@ public class MainActivity extends Activity {
         settings.setDisplayZoomControls(false);
         settings.setSupportZoom(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
+        voiceBridge = new AndroidVoiceBridge();
+        webView.addJavascriptInterface(voiceBridge, "ztaiAndroidVoice");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -210,6 +222,100 @@ public class MainActivity extends Activity {
                 && PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resources[0]);
     }
 
+    private final class AndroidVoiceBridge {
+        private SpeechRecognizer recognizer;
+
+        @JavascriptInterface
+        public void start(String language) {
+            runOnUiThread(() -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                        && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                    dispatchError("请先允许麦克风权限，再开始语音对话");
+                    return;
+                }
+                if (!SpeechRecognizer.isRecognitionAvailable(MainActivity.this)) {
+                    dispatchError("当前设备没有可用的系统语音识别服务");
+                    return;
+                }
+                destroyRecognizer();
+                recognizer = SpeechRecognizer.createSpeechRecognizer(MainActivity.this);
+                recognizer.setRecognitionListener(new RecognitionListener() {
+                    @Override public void onReadyForSpeech(Bundle params) { }
+                    @Override public void onBeginningOfSpeech() { }
+                    @Override public void onRmsChanged(float rmsdB) { }
+                    @Override public void onBufferReceived(byte[] buffer) { }
+                    @Override public void onEndOfSpeech() { }
+                    @Override public void onError(int error) { dispatchError(errorMessage(error)); }
+                    @Override public void onResults(Bundle results) {
+                        dispatchResult(firstMatch(results), true);
+                    }
+                    @Override public void onPartialResults(Bundle results) {
+                        dispatchResult(firstMatch(results), false);
+                    }
+                    @Override public void onEvent(int eventType, Bundle params) { }
+                });
+                Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, language == null ? "zh-CN" : language);
+                intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+                intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+                recognizer.startListening(intent);
+            });
+        }
+
+        @JavascriptInterface
+        public void stop() {
+            runOnUiThread(this::destroyRecognizer);
+        }
+
+        void dispose() {
+            runOnUiThread(this::destroyRecognizer);
+        }
+
+        private void destroyRecognizer() {
+            if (recognizer == null) return;
+            try { recognizer.stopListening(); } catch (RuntimeException ignored) { }
+            recognizer.cancel();
+            recognizer.destroy();
+            recognizer = null;
+        }
+
+        private String firstMatch(Bundle results) {
+            if (results == null) return "";
+            ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+            return matches == null || matches.isEmpty() ? "" : String.valueOf(matches.get(0));
+        }
+
+        private void dispatchResult(String text, boolean isFinal) {
+            if (webView == null || text == null || text.trim().isEmpty()) return;
+            String script = "window.__ztaiAndroidVoiceOnResult && window.__ztaiAndroidVoiceOnResult("
+                    + JSONObject.quote(text) + "," + isFinal + ")";
+            webView.evaluateJavascript(script, null);
+        }
+
+        private void dispatchError(String message) {
+            if (webView == null) return;
+            String script = "window.__ztaiAndroidVoiceOnError && window.__ztaiAndroidVoiceOnError("
+                    + JSONObject.quote(message == null ? "语音识别暂时不可用" : message) + ")";
+            webView.evaluateJavascript(script, null);
+        }
+
+        private String errorMessage(int error) {
+            switch (error) {
+                case SpeechRecognizer.ERROR_AUDIO: return "麦克风音频输入失败";
+                case SpeechRecognizer.ERROR_CLIENT: return "语音识别客户端暂时不可用";
+                case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: return "语音识别没有麦克风权限";
+                case SpeechRecognizer.ERROR_NETWORK:
+                case SpeechRecognizer.ERROR_NETWORK_TIMEOUT: return "语音识别网络超时，请检查网络后重试";
+                case SpeechRecognizer.ERROR_NO_MATCH: return "没有听清你的话，请再说一次";
+                case SpeechRecognizer.ERROR_RECOGNIZER_BUSY: return "语音识别正在处理上一句话，请稍后再试";
+                case SpeechRecognizer.ERROR_SERVER: return "系统语音识别服务暂时不可用";
+                case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: return "没有听到声音，请再说一次";
+                default: return "语音识别暂时不可用，请再试一次";
+            }
+        }
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -248,6 +354,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         mainHandler.removeCallbacks(loadTimeout);
+        if (voiceBridge != null) {
+            voiceBridge.dispose();
+            voiceBridge = null;
+        }
         if (pendingPermissionRequest != null) {
             pendingPermissionRequest.deny();
             pendingPermissionRequest = null;
