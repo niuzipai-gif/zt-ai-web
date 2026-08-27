@@ -67,6 +67,7 @@
         <div id="voice-status" class="voice-mode-status" data-status="idle" aria-live="polite">语音服务还没有配置完成，先用文字聊聊。</div>
         <button id="voice-orb" class="voice-orb" type="button" data-voice-status="idle" aria-label="开始录音" title="开始录音"><canvas aria-hidden="true"></canvas></button>
         <div id="voice-transcript" class="voice-mode-transcript" aria-live="polite">点击光球开始说话</div>
+        <div class="voice-mode-input-row"><textarea id="voice-text-input" class="voice-mode-input" rows="2" placeholder="可直接输入；语音识别文字也会显示在这里" aria-label="输入问题或查看语音识别结果"></textarea><button id="voice-text-submit" class="voice-mode-submit" type="button" aria-label="发送文字问题" title="发送文字问题">↗</button></div>
         <div class="voice-mode-actions"><button id="voice-stop" class="voice-mode-action" type="button" aria-label="结束录音" title="结束录音">■</button><button id="voice-play" class="voice-mode-action" type="button" aria-label="播放开场问候" title="播放开场问候">▶</button></div>
         <div class="voice-mode-disclosure">你的声音只用于当前设备的语音输入；AI 回复会在语音服务接通后播放。</div>
       </div>

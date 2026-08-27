@@ -1,4 +1,4 @@
-const STATUSES = new Set(['idle', 'listening', 'processing', 'speaking', 'error'])
+const STATUSES = new Set(['idle', 'listening', 'processing', 'ready', 'speaking', 'blocked', 'error'])
 const GREETING_STATUSES = new Set(['idle', 'loading', 'ready', 'speaking', 'blocked', 'error'])
 
 export function createVoiceState() {
@@ -81,10 +81,21 @@ export function transitionVoiceState(current, event = {}) {
   if (type === 'finish-listening' && state.status === 'listening') {
     return { status: 'processing', transcript: String(event.transcript || '').trim(), error: '', audioUrl: '' }
   }
-  if (type === 'start-speaking' && state.status === 'processing') {
+  if (type === 'start-processing' && ['idle', 'error', 'processing', 'ready', 'blocked'].includes(state.status)) {
+    return { status: 'processing', transcript: String(event.transcript || '').trim(), error: '', audioUrl: '' }
+  }
+  if (type === 'ready' && state.status === 'processing') {
     const audioUrl = String(event.audioUrl || '').trim()
-    if (!/^https:\/\//i.test(audioUrl)) return state
-    return { ...state, status: 'speaking', audioUrl, error: '' }
+    if (!/^https:\/\//i.test(audioUrl)) return { ...state, status: 'error', error: '没有可播放的语音回答。', audioUrl: '' }
+    return { ...state, status: 'ready', audioUrl, error: '' }
+  }
+  if (type === 'start-speaking' && ['processing', 'ready', 'blocked'].includes(state.status)) {
+    const audioUrl = String(event.audioUrl || '').trim()
+    if (!/^https:\/\//i.test(audioUrl) && !state.audioUrl) return state
+    return { ...state, status: 'speaking', audioUrl: audioUrl || state.audioUrl, error: '' }
+  }
+  if (type === 'blocked' && ['processing', 'ready', 'blocked'].includes(state.status)) {
+    return { ...state, status: 'blocked', error: String(event.error || '回答已准备好，请点击播放按钮。').trim() }
   }
   if (type === 'finish-speaking' && state.status === 'speaking') return idleState()
   return state

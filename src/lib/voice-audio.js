@@ -118,7 +118,7 @@ export function createVoiceAudioController({ mediaDevices = defaultMediaDevices(
   return { start, stop, cancel, dispose, getAnalyser: () => analyser }
 }
 
-export function createVoiceRecognition({ language = 'zh', recognitionFactory = defaultRecognitionFactory(), bridge = globalThis.ztaiAndroidVoice, onTranscript = () => {}, onError = () => {} } = {}) {
+export function createVoiceRecognition({ language = 'zh', recognitionFactory = defaultRecognitionFactory(), bridge = globalThis.ztaiAndroidVoice, onTranscript = () => {}, onError = () => {}, onEnd = () => {} } = {}) {
   let recognition = null
   let listening = false
   const bridgeCallbacks = {
@@ -181,6 +181,7 @@ export function createVoiceRecognition({ language = 'zh', recognitionFactory = d
         if (text.trim()) onTranscript(text.trim(), final)
       }
       recognition.onerror = event => handleError(event?.error || '语音识别暂时不可用')
+      recognition.onend = () => onEnd()
       recognition.start()
       listening = true
       return { status: 'listening', mode: 'browser' }
@@ -241,6 +242,8 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), audioCon
     audio = audioFactory()
     audio.preload = 'auto'
     audio.src = safeUrl
+    audio.currentTime = 0
+    audio.load?.()
     audio.addEventListener?.('ended', onEnded)
     audio.addEventListener?.('error', onError)
     audio.addEventListener?.('pause', onPause)

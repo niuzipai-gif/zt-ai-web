@@ -76,6 +76,21 @@ test('speech recognition reports interim text and can be stopped safely', () => 
   assert.equal(instances[0].stopped, true)
 })
 
+test('speech recognition exposes the native end event for final transcript handoff', () => {
+  let ended = 0
+  class FakeRecognition {
+    start() {}
+    stop() { this.onend?.() }
+  }
+  const recognition = createVoiceRecognition({
+    recognitionFactory: () => new FakeRecognition(),
+    onEnd: () => { ended += 1 },
+  })
+  assert.equal(recognition.start().status, 'listening')
+  recognition.stop()
+  assert.equal(ended, 1)
+})
+
 test('speech recognition leaves the language unset in auto mode', () => {
   const instances = []
   class FakeRecognition { start() {} stop() {} }

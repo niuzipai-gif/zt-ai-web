@@ -58,6 +58,26 @@ test('voice lifecycle keeps interim recognition text while listening', () => {
   assert.equal(state.transcript, '正在说话')
 })
 
+test('voice reply keeps a playable ready state when Safari blocks autoplay', () => {
+  let state = transitionVoiceState(createVoiceState(), { type: 'start-listening' })
+  state = transitionVoiceState(state, { type: 'finish-listening', transcript: '你好' })
+  state = transitionVoiceState(state, { type: 'ready', audioUrl: 'https://example.test/reply.mp3' })
+  assert.equal(state.status, 'ready')
+  assert.equal(state.audioUrl, 'https://example.test/reply.mp3')
+  state = transitionVoiceState(state, { type: 'blocked', error: '请点击播放按钮重试。' })
+  assert.equal(state.status, 'blocked')
+  assert.equal(state.audioUrl, 'https://example.test/reply.mp3')
+  assert.equal(transitionVoiceState(state, { type: 'start-speaking' }).status, 'speaking')
+})
+
+test('voice text submission enters processing from an idle or recoverable state', () => {
+  let state = transitionVoiceState(createVoiceState(), { type: 'start-processing', transcript: '手动输入的问题' })
+  assert.deepEqual(state, { status: 'processing', transcript: '手动输入的问题', error: '', audioUrl: '' })
+  state = transitionVoiceState(state, { type: 'ready', audioUrl: 'https://example.test/reply.mp3' })
+  assert.equal(state.status, 'ready')
+  assert.equal(transitionVoiceState(state, { type: 'start-processing', transcript: '第二个问题' }).status, 'processing')
+})
+
 test('voice greeting is prepared on open and remains manually replayable when autoplay is blocked', () => {
   let greeting = createVoiceGreetingState('你好，我是 ZT.AI。')
   assert.deepEqual(greeting, { status: 'idle', text: '你好，我是 ZT.AI。', audioUrl: '', error: '' })

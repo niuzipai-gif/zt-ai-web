@@ -65,7 +65,7 @@ test('desktop renderer exposes an accessible tool drawer for execution context',
   for (const id of ['execution-summary', 'context-ring', 'tool-trigger', 'voice-button', 'authorize-device']) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`)
   }
-  for (const id of ['voice-mode', 'voice-orb', 'voice-status', 'voice-transcript', 'voice-close', 'voice-stop', 'voice-play']) {
+  for (const id of ['voice-mode', 'voice-orb', 'voice-status', 'voice-transcript', 'voice-text-input', 'voice-text-submit', 'voice-close', 'voice-stop', 'voice-play']) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`)
   }
   assert.match(html, /id="voice-mode"[^>]*class="[^"]*hidden/)
