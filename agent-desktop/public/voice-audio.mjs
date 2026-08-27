@@ -61,9 +61,19 @@ export function createVoiceRecognition({ language = 'zh', recognitionFactory = d
   let listening = false
   const bridgeCallbacks = { result: globalThis.__ztaiAndroidVoiceOnResult, error: globalThis.__ztaiAndroidVoiceOnError }
   const unavailable = error => ({ status: 'unavailable', error: String(error || '当前设备不支持语音识别') })
+  const resetAfterError = () => {
+    listening = false
+    try { recognition?.stop?.() } catch {}
+    recognition = null
+    restoreBridgeCallbacks()
+  }
+  const handleError = error => {
+    resetAfterError()
+    onError(error)
+  }
   const installBridgeCallbacks = () => {
     globalThis.__ztaiAndroidVoiceOnResult = (text, isFinal = true) => onTranscript(String(text || '').trim(), Boolean(isFinal))
-    globalThis.__ztaiAndroidVoiceOnError = error => onError(String(error || '语音识别暂时不可用'))
+    globalThis.__ztaiAndroidVoiceOnError = error => handleError(String(error || '语音识别暂时不可用'))
   }
   const restoreBridgeCallbacks = () => {
     if (bridgeCallbacks.result) globalThis.__ztaiAndroidVoiceOnResult = bridgeCallbacks.result
@@ -95,7 +105,7 @@ export function createVoiceRecognition({ language = 'zh', recognitionFactory = d
         }
         if (text.trim()) onTranscript(text.trim(), final)
       }
-      recognition.onerror = event => onError(event?.error || '语音识别暂时不可用')
+      recognition.onerror = event => handleError(event?.error || '语音识别暂时不可用')
       recognition.start()
       listening = true
       return { status: 'listening', mode: 'browser' }
@@ -110,6 +120,14 @@ export function createVoiceRecognition({ language = 'zh', recognitionFactory = d
     return { status: 'stopped' }
   }
   return { start, stop, dispose: stop, isListening: () => listening }
+}
+
+export function formatVoiceRecognitionError(error) {
+  const code = String(error || '').trim().toLowerCase()
+  if (code === 'service-not-allowed' || code === 'language-not-supported') return '当前环境不提供语音识别服务，请检查系统语音服务或改用文字输入。'
+  if (code === 'not-allowed' || code === 'permission-denied' || code.includes('permission')) return '麦克风或语音识别权限未开启，请允许后重试。'
+  if (code === 'network') return '语音识别网络连接失败，请检查网络后重试。'
+  return String(error || '语音识别暂时不可用').trim()
 }
 
 function secureAudioUrl(url) {

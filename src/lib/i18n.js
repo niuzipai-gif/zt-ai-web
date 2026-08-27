@@ -143,6 +143,9 @@ export const siteCopy = {
 }
 
 Object.assign(siteCopy.zh.chat, { attachmentFallback: '请分析我上传的附件。', attachmentReady: '已读取', attachmentTruncated: '已截断', attachmentError: '未解析', attachmentPreviewOnly: '图片预览' })
+Object.assign(siteCopy.zh.chat, { voiceBrowserUnsupported: '当前浏览器不提供语音识别，请改用 Safari、安卓 App 或桌面端。', voiceNetworkError: '语音识别网络连接失败，请检查网络后重试。' })
+Object.assign(siteCopy.en.chat, { voiceBrowserUnsupported: 'This browser does not provide speech recognition. Use Safari, the Android app or desktop app.', voiceNetworkError: 'Speech recognition network connection failed. Check the network and try again.' })
+Object.assign(siteCopy.ja.chat, { voiceBrowserUnsupported: 'このブラウザは音声認識に対応していません。Safari、Androidアプリ、またはデスクトップ版をご利用ください。', voiceNetworkError: '音声認識のネットワーク接続に失敗しました。ネットワークを確認して再試行してください。' })
 Object.assign(siteCopy.en.chat, { attachmentFallback: 'Please analyze the attachment I uploaded.', attachmentReady: 'Read', attachmentTruncated: 'Truncated', attachmentError: 'Unread', attachmentPreviewOnly: 'Image preview' })
 Object.assign(siteCopy.ja.chat, { attachmentFallback: 'アップロードした添付ファイルを分析してください。', attachmentReady: '読み取り済み', attachmentTruncated: '一部表示', attachmentError: '未解析', attachmentPreviewOnly: '画像プレビュー' })
 

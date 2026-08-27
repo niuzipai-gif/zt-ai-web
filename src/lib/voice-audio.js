@@ -36,6 +36,14 @@ export function mergeVoiceTranscript(stableText = '', nextText = '', isFinal = f
   return { stable: isFinal ? display : stable, display }
 }
 
+export function formatVoiceRecognitionError(error, copy = {}) {
+  const code = String(error || '').trim().toLowerCase()
+  if (code === 'service-not-allowed' || code === 'language-not-supported') return copy.voiceBrowserUnsupported || copy.voiceUnavailable || '当前浏览器不提供语音识别，请改用 Safari、安卓 App 或桌面端。'
+  if (code === 'not-allowed' || code === 'permission-denied' || code.includes('permission')) return copy.voicePermissionDenied || copy.voiceUnavailable || '麦克风或语音识别权限未开启。'
+  if (code === 'network') return copy.voiceNetworkError || copy.voiceUnavailable || '语音识别网络连接失败，请检查网络后重试。'
+  return String(error || copy.voiceUnavailable || '语音识别暂时不可用').trim()
+}
+
 function stopTracks(stream) {
   stream?.getTracks?.().forEach(track => track.stop?.())
 }
@@ -118,9 +126,19 @@ export function createVoiceRecognition({ language = 'zh', recognitionFactory = d
   }
 
   const unavailable = error => ({ status: 'unavailable', error: String(error || '当前设备不支持语音识别') })
+  const resetAfterError = () => {
+    listening = false
+    try { recognition?.stop?.() } catch {}
+    recognition = null
+    restoreBridgeCallbacks()
+  }
+  const handleError = error => {
+    resetAfterError()
+    onError(error)
+  }
   const installBridgeCallbacks = () => {
     globalThis.__ztaiAndroidVoiceOnResult = (text, isFinal = true) => onTranscript(String(text || '').trim(), Boolean(isFinal))
-    globalThis.__ztaiAndroidVoiceOnError = error => onError(String(error || '语音识别暂时不可用'))
+    globalThis.__ztaiAndroidVoiceOnError = error => handleError(String(error || '语音识别暂时不可用'))
   }
   const restoreBridgeCallbacks = () => {
     if (bridgeCallbacks.result) globalThis.__ztaiAndroidVoiceOnResult = bridgeCallbacks.result
@@ -160,7 +178,7 @@ export function createVoiceRecognition({ language = 'zh', recognitionFactory = d
         }
         if (text.trim()) onTranscript(text.trim(), final)
       }
-      recognition.onerror = event => onError(event?.error || '语音识别暂时不可用')
+      recognition.onerror = event => handleError(event?.error || '语音识别暂时不可用')
       recognition.start()
       listening = true
       return { status: 'listening', mode: 'browser' }

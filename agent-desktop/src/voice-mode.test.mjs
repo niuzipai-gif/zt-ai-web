@@ -1,6 +1,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createVoiceState, transitionVoiceState } from '../public/voice-mode.mjs'
+import { createVoiceState, startVoiceCapture, transitionVoiceState } from '../public/voice-mode.mjs'
+
+test('desktop voice capture starts recognition before awaiting microphone permission', async () => {
+  const calls = []
+  const result = await startVoiceCapture({
+    recognition: {
+      start: () => { calls.push('recognition'); return { status: 'listening' } },
+      stop: () => calls.push('stop-recognition'),
+    },
+    recorder: { start: async () => { calls.push('recorder'); return { status: 'recording' } } },
+  })
+  assert.deepEqual(calls, ['recognition', 'recorder'])
+  assert.equal(result.status, 'recording')
+})
 
 test('desktop voice lifecycle uses the same state names and transitions', () => {
   let state = transitionVoiceState(createVoiceState(), { type: 'start-listening' })

@@ -22,3 +22,7 @@ export function orbVisualState(status) {
   if (status === 'error') return { motion: 'error', color: { ...palette, core: '#c47a68' }, labelKey: 'voiceUnavailable' }
   return { motion: 'rest', color: palette, labelKey: 'voiceModeTitle' }
 }
+
+export function shouldAnimateOrb(status) {
+  return status === 'listening' || status === 'processing' || status === 'speaking'
+}

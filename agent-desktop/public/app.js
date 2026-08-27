@@ -8,9 +8,9 @@ import { authPresentation, shouldSubmitComposer } from './interaction-state.mjs'
 import { attachmentReadFailure, extractDocxText, extractPdfText, extractSpreadsheetText, filesFromDataTransfer, hasFilePayload, isDocxAttachment, isPdfAttachment, isSpreadsheetAttachment, isTextAttachment } from './attachment-reader.mjs'
 import { createNavigationState, goBack, goForward, pushNavigationState } from './navigation-state.mjs'
 import { createTaskRunRegistry } from './task-runs.mjs'
-import { createVoiceState, transitionVoiceState } from './voice-mode.mjs'
-import { createVoiceAudioController, createVoicePlayback, createVoiceRecognition } from './voice-audio.mjs'
-import { clampLevel, orbVisualState, readAnalyserLevel } from './voice-orb.mjs'
+import { createVoiceState, startVoiceCapture, transitionVoiceState } from './voice-mode.mjs'
+import { createVoiceAudioController, createVoicePlayback, createVoiceRecognition, formatVoiceRecognitionError } from './voice-audio.mjs'
+import { clampLevel, orbVisualState, readAnalyserLevel, shouldAnimateOrb } from './voice-orb.mjs'
 
 const $ = selector => document.querySelector(selector)
 const CHAT_TIMEOUT_MS = 45_000
@@ -979,10 +979,12 @@ function renderDesktopVoiceOrb(timestamp = 0) {
       context.setTransform(ratio, 0, 0, ratio, 0, 0)
       const size = Math.min(rect.width, rect.height)
       const center = size / 2
-      const visual = orbVisualState(state.voice.lifecycle.status)
+      const status = state.voice.lifecycle.status
+      const visual = orbVisualState(status)
       const analyserLevel = readAnalyserLevel(state.voice.analyser)
-      const fallback = state.voice.lifecycle.status === 'listening' ? 0.16 + Math.sin(timestamp / 520) * 0.035 : state.voice.lifecycle.status === 'processing' ? 0.12 + Math.sin(timestamp / 780) * 0.02 : state.voice.lifecycle.status === 'speaking' ? 0.18 + Math.sin(timestamp / 330) * 0.045 : 0.08 + Math.sin(timestamp / 1200) * 0.012
-      const level = Math.max(analyserLevel, clampLevel(fallback))
+      const animate = shouldAnimateOrb(status) && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      const fallback = status === 'listening' ? 0.16 + Math.sin(timestamp / 520) * 0.035 : status === 'processing' ? 0.12 + Math.sin(timestamp / 780) * 0.02 : status === 'speaking' ? 0.18 + Math.sin(timestamp / 330) * 0.045 : 0
+      const level = animate ? Math.max(analyserLevel, clampLevel(fallback)) : 0
       context.clearRect(0, 0, rect.width, rect.height)
       const glow = context.createRadialGradient(center, center, size * .08, center, center, size * .49)
       glow.addColorStop(0, visual.color.glow)
@@ -1007,12 +1009,19 @@ function renderDesktopVoiceOrb(timestamp = 0) {
       context.globalAlpha = 1
     }
   }
+  if (shouldAnimateOrb(state.voice.lifecycle.status)) state.voice.animationFrame = window.requestAnimationFrame(renderDesktopVoiceOrb)
+  else state.voice.animationFrame = 0
+}
+
+function requestVoiceOrbRender() {
+  window.cancelAnimationFrame(state.voice.animationFrame)
   state.voice.animationFrame = window.requestAnimationFrame(renderDesktopVoiceOrb)
 }
 
 function setVoiceLifecycle(event) {
   state.voice.lifecycle = transitionVoiceState(state.voice.lifecycle, event)
   renderDesktopVoiceState()
+  requestVoiceOrbRender()
 }
 
 function openVoiceMode() {
@@ -1034,7 +1043,9 @@ function openVoiceMode() {
       setVoiceLifecycle({ type: 'update-transcript', transcript: display })
     },
     onError: error => {
-      if (state.voice.lifecycle.status === 'listening') setVoiceLifecycle({ type: 'fail', error: String(error || '语音识别暂时不可用') })
+      void state.voice.controller?.cancel?.()
+      state.voice.analyser = null
+      if (state.voice.lifecycle.status === 'listening') setVoiceLifecycle({ type: 'fail', error: formatVoiceRecognitionError(error) })
     },
   })
   state.voice.playback = createVoicePlayback({
@@ -1053,8 +1064,7 @@ function openVoiceMode() {
     },
   })
   renderDesktopVoiceState()
-  window.cancelAnimationFrame(state.voice.animationFrame)
-  state.voice.animationFrame = window.requestAnimationFrame(renderDesktopVoiceOrb)
+  requestVoiceOrbRender()
   els.voiceClose?.focus()
 }
 
@@ -1104,19 +1114,13 @@ async function toggleVoiceInput() {
   }
   if (!['idle', 'error'].includes(status)) return
   setVoiceLifecycle({ type: 'start-listening' })
-  const result = await state.voice.controller?.start()
+  state.voice.finalTranscript = ''
+  const result = await startVoiceCapture({ recognition: state.voice.recognition, recorder: state.voice.controller })
   if (result?.status !== 'recording') {
-    setVoiceLifecycle({ type: 'fail', error: result?.error || '当前设备无法使用麦克风' })
+    setVoiceLifecycle({ type: 'fail', error: formatVoiceRecognitionError(result?.error || '当前设备无法使用麦克风') })
     return
   }
   state.voice.analyser = result.analyser || null
-  const recognition = state.voice.recognition?.start?.()
-  if (recognition?.status !== 'listening') {
-    await state.voice.controller?.cancel?.()
-    state.voice.analyser = null
-    setVoiceLifecycle({ type: 'fail', error: recognition?.error || '当前设备没有可用的语音识别服务' })
-    return
-  }
   renderDesktopVoiceState()
 }
 

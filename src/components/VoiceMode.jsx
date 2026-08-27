@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Mic, Pause, Play, Square, X } from 'lucide-react'
 import { VoiceOrb } from './VoiceOrb.jsx'
-import { createVoiceState, transitionVoiceState } from '../lib/voice-mode.js'
-import { createVoiceAudioController, createVoicePlayback, createVoiceRecognition, mergeVoiceTranscript } from '../lib/voice-audio.js'
+import { createVoiceState, startVoiceCapture, transitionVoiceState } from '../lib/voice-mode.js'
+import { createVoiceAudioController, createVoicePlayback, createVoiceRecognition, formatVoiceRecognitionError, mergeVoiceTranscript } from '../lib/voice-audio.js'
 
 function browserReducedMotion() {
   return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
@@ -39,7 +39,11 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
         transcriptRef.current = merged.display
         setTranscript(merged.display)
       },
-      onError: error => setState(current => transitionVoiceState(current, { type: 'fail', error })),
+      onError: error => {
+        void controllerRef.current?.cancel?.()
+        setAnalyser(null)
+        setState(current => transitionVoiceState(current, { type: 'fail', error: formatVoiceRecognitionError(error, copy) }))
+      },
     })
     playbackRef.current = createVoicePlayback({
       onStateChange: event => {
@@ -67,18 +71,12 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
     finalTranscriptRef.current = ''
     setTranscript('')
     setState(current => transitionVoiceState(current, { type: 'start-listening' }))
-    const result = await controllerRef.current?.start?.()
+    const result = await startVoiceCapture({ recognition: recognitionRef.current, recorder: controllerRef.current })
     if (result?.status !== 'recording') {
-      setState(current => transitionVoiceState(current, { type: 'fail', error: result?.error || copy.voiceUnavailable }))
+      setState(current => transitionVoiceState(current, { type: 'fail', error: formatVoiceRecognitionError(result?.error || copy.voiceUnavailable, copy) }))
       return
     }
     setAnalyser(result.analyser)
-    const recognition = recognitionRef.current?.start?.()
-    if (recognition?.status !== 'listening') {
-      await controllerRef.current?.cancel?.()
-      setAnalyser(null)
-      setState(current => transitionVoiceState(current, { type: 'fail', error: recognition?.error || copy.voiceUnavailable }))
-    }
   }
 
   const stopListening = async () => {

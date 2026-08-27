@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react'
-import { clampLevel, orbVisualState, readAnalyserLevel } from '../lib/audio-reactivity.js'
+import { clampLevel, orbVisualState, readAnalyserLevel, shouldAnimateOrb } from '../lib/audio-reactivity.js'
 
 const PARTICLES = Array.from({ length: 36 }, (_, index) => ({
   angle: (Math.PI * 2 * index) / 36,
@@ -32,7 +32,7 @@ function drawOrb(context, width, height, status, analyser, buffer, frame, reduce
   context.beginPath()
   context.arc(center.x - radius * 0.08, center.y - radius * 0.1, radius, 0, Math.PI * 2)
   context.fill()
-  if (!reducedMotion) {
+  if (!reducedMotion && shouldAnimateOrb(status)) {
     context.globalAlpha = 0.7
     context.fillStyle = visual.color.particle
     PARTICLES.forEach(particle => {
@@ -61,6 +61,7 @@ export function VoiceOrb({ status = 'idle', analyser = null, onClick, disabled =
     if (!context) return undefined
     const buffer = new Uint8Array(analyserRef.current?.fftSize || 256)
     let animationFrame = 0
+    const animate = shouldAnimateOrb(status) && !reducedMotion
     const render = timestamp => {
       const ratio = Math.max(1, Math.min(2, window.devicePixelRatio || 1))
       const rect = canvas.getBoundingClientRect()
@@ -71,8 +72,10 @@ export function VoiceOrb({ status = 'idle', analyser = null, onClick, disabled =
       context.scale(ratio, ratio)
       drawOrb(context, rect.width, rect.height, status, analyserRef.current, buffer, timestamp, reducedMotion)
       context.restore()
-      animationFrame = window.requestAnimationFrame(render)
-      frameRef.current = animationFrame
+      if (animate) {
+        animationFrame = window.requestAnimationFrame(render)
+        frameRef.current = animationFrame
+      }
     }
     animationFrame = window.requestAnimationFrame(render)
     return () => window.cancelAnimationFrame(animationFrame)

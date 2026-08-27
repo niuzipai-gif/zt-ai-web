@@ -1,6 +1,32 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createVoiceState, transitionVoiceState } from './voice-mode.js'
+import { createVoiceState, startVoiceCapture, transitionVoiceState } from './voice-mode.js'
+
+test('voice capture starts recognition before awaiting microphone permission', async () => {
+  const calls = []
+  const result = await startVoiceCapture({
+    recognition: {
+      start: () => { calls.push('recognition'); return { status: 'listening' } },
+      stop: () => calls.push('stop-recognition'),
+    },
+    recorder: { start: async () => { calls.push('recorder'); return { status: 'recording' } } },
+  })
+  assert.deepEqual(calls, ['recognition', 'recorder'])
+  assert.equal(result.status, 'recording')
+})
+
+test('voice capture stops recognition when microphone permission fails', async () => {
+  const calls = []
+  const result = await startVoiceCapture({
+    recognition: {
+      start: () => { calls.push('recognition'); return { status: 'listening' } },
+      stop: () => calls.push('stop-recognition'),
+    },
+    recorder: { start: async () => { calls.push('recorder'); return { status: 'unavailable', error: '麦克风权限未开启' } } },
+  })
+  assert.deepEqual(calls, ['recognition', 'recorder', 'stop-recognition'])
+  assert.equal(result.status, 'unavailable')
+})
 
 test('voice lifecycle moves from idle through listening, processing and speaking', () => {
   let state = createVoiceState()

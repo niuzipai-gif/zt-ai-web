@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { clampLevel, orbVisualState, readAnalyserLevel } from './audio-reactivity.js'
+import { clampLevel, orbVisualState, readAnalyserLevel, shouldAnimateOrb } from './audio-reactivity.js'
 
 test('audio level is finite and bounded', () => {
   assert.equal(clampLevel(Number.NaN), 0)
@@ -22,4 +22,12 @@ test('orb maps lifecycle states to stable visual states', () => {
   assert.equal(orbVisualState('processing').motion, 'breathing')
   assert.equal(orbVisualState('speaking').motion, 'output')
   assert.equal(orbVisualState('error').motion, 'error')
+})
+
+test('orb only animates while listening, processing or speaking', () => {
+  assert.equal(shouldAnimateOrb('idle'), false)
+  assert.equal(shouldAnimateOrb('error'), false)
+  assert.equal(shouldAnimateOrb('listening'), true)
+  assert.equal(shouldAnimateOrb('processing'), true)
+  assert.equal(shouldAnimateOrb('speaking'), true)
 })

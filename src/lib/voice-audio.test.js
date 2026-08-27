@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chooseRecorderMime, createVoiceAudioController, createVoicePlayback, createVoiceRecognition, mergeVoiceTranscript } from './voice-audio.js'
+import { chooseRecorderMime, createVoiceAudioController, createVoicePlayback, createVoiceRecognition, formatVoiceRecognitionError, mergeVoiceTranscript } from './voice-audio.js'
 
 test('recorder chooses a supported audio MIME and reports unavailable capability', () => {
   assert.equal(chooseRecorderMime(type => type === 'audio/webm;codecs=opus'), 'audio/webm;codecs=opus')
@@ -54,4 +54,28 @@ test('voice transcript does not duplicate an interim phrase when the final resul
   assert.equal(interim.display, '你好 ZT.AI')
   assert.equal(final.stable, '你好 ZT.AI')
   assert.equal(final.display, '你好 ZT.AI')
+})
+
+test('voice recognition errors are translated into actionable messages', () => {
+  const copy = { voiceBrowserUnsupported: '请改用 Safari', voicePermissionDenied: '请开启麦克风', voiceNetworkError: '请检查网络' }
+  assert.equal(formatVoiceRecognitionError('service-not-allowed', copy), '请改用 Safari')
+  assert.equal(formatVoiceRecognitionError('not-allowed', copy), '请开启麦克风')
+  assert.equal(formatVoiceRecognitionError('network', copy), '请检查网络')
+})
+
+test('speech recognition resets after a service error so the next tap can retry', () => {
+  const instances = []
+  class FakeRecognition {
+    start() { this.started = true }
+    stop() { this.stopped = true }
+  }
+  const recognition = createVoiceRecognition({
+    recognitionFactory: () => { const instance = new FakeRecognition(); instances.push(instance); return instance },
+    onError: () => {},
+  })
+  assert.equal(recognition.start().status, 'listening')
+  instances[0].onerror({ error: 'service-not-allowed' })
+  assert.equal(recognition.isListening(), false)
+  assert.equal(recognition.start().status, 'listening')
+  assert.equal(instances.length, 2)
 })
