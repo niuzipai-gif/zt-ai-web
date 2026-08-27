@@ -209,6 +209,12 @@ function secureAudioUrl(url) {
   return parsed.href
 }
 
+function canUseAudioAnalyser(url) {
+  const pageOrigin = String(globalThis.location?.origin || '').trim()
+  if (!pageOrigin || pageOrigin === 'null') return false
+  try { return new URL(url).origin === pageOrigin } catch { return false }
+}
+
 export function createVoicePlayback({ audioFactory = () => new Audio(), audioContextFactory = globalThis.AudioContext || globalThis.webkitAudioContext, onStateChange = () => {} } = {}) {
   let audio = null
   let context = null
@@ -239,7 +245,7 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), audioCon
     audio.addEventListener?.('error', onError)
     audio.addEventListener?.('pause', onPause)
     audio.addEventListener?.('play', onPlay)
-    if (audioContextFactory && audioContextFactory.prototype) {
+    if (audioContextFactory && audioContextFactory.prototype && canUseAudioAnalyser(safeUrl)) {
       try {
         context = context || new audioContextFactory()
         analyser = context.createAnalyser()

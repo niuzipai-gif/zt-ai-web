@@ -13,6 +13,34 @@ test('desktop voice audio exposes recognition and playback controllers', () => {
   assert.equal(typeof createVoicePlayback, 'function')
 })
 
+test('desktop playback keeps cross-origin audio on native output', async () => {
+  const sourceCalls = []
+  const audio = {
+    preload: '', src: '', currentTime: 0, paused: true,
+    addEventListener() {}, removeEventListener() {}, pause() { this.paused = true },
+    async play() { this.paused = false },
+  }
+  class FakeAudioContext {
+    constructor() { this.destination = {} }
+    createAnalyser() { return { connect() {} } }
+    createMediaElementSource() { sourceCalls.push('createMediaElementSource'); return { connect() {} } }
+    resume() {}
+    close() {}
+  }
+  const previousLocation = globalThis.location
+  globalThis.location = { href: 'https://zt-ai.invalid/', origin: 'https://zt-ai.invalid' }
+  try {
+    const playback = createVoicePlayback({ audioFactory: () => audio, audioContextFactory: FakeAudioContext })
+    playback.load('https://minimax-algeng-chat-tts.oss-cn-wulanchabu.aliyuncs.com/greeting.mp3')
+    assert.equal((await playback.play()).status, 'speaking')
+    assert.deepEqual(sourceCalls, [])
+    playback.dispose()
+  } finally {
+    if (previousLocation === undefined) delete globalThis.location
+    else globalThis.location = previousLocation
+  }
+})
+
 test('desktop speech recognition leaves the language unset in auto mode', () => {
   const instances = []
   class FakeRecognition { start() {} stop() {} }

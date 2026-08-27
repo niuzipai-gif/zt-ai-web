@@ -29,6 +29,34 @@ test('playback rejects non-https URLs and reports autoplay blocks', async () => 
   playback.dispose()
 })
 
+test('cross-origin audio keeps native output instead of routing through a CORS-less analyser', async () => {
+  const sourceCalls = []
+  const audio = {
+    preload: '', src: '', currentTime: 0, paused: true,
+    addEventListener() {}, removeEventListener() {}, pause() { this.paused = true },
+    async play() { this.paused = false },
+  }
+  class FakeAudioContext {
+    constructor() { this.destination = {} }
+    createAnalyser() { return { connect() {} } }
+    createMediaElementSource() { sourceCalls.push('createMediaElementSource'); return { connect() {} } }
+    resume() {}
+    close() {}
+  }
+  const previousLocation = globalThis.location
+  globalThis.location = { href: 'https://niuzipai-gif.github.io/zt-ai-web/', origin: 'https://niuzipai-gif.github.io' }
+  try {
+    const playback = createVoicePlayback({ audioFactory: () => audio, audioContextFactory: FakeAudioContext })
+    playback.load('https://minimax-algeng-chat-tts.oss-cn-wulanchabu.aliyuncs.com/greeting.mp3')
+    assert.equal((await playback.play()).status, 'speaking')
+    assert.deepEqual(sourceCalls, [])
+    playback.dispose()
+  } finally {
+    if (previousLocation === undefined) delete globalThis.location
+    else globalThis.location = previousLocation
+  }
+})
+
 test('speech recognition reports interim text and can be stopped safely', () => {
   const events = []
   const instances = []
