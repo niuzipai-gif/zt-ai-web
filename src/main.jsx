@@ -481,7 +481,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     <div className="chat-footer"><ModelSwitch model={model} setModel={setModel} /><span className="chat-note"><MessageCircle size={14} /> {copy.publicNote}</span></div>
     {historyOpen && <ChatHistoryDrawer visitorId={visitorId} sessions={sessions} activeSessionId={session.id} copy={copy} language={language} onSelectSession={id => { onSelectSession(id); setHistoryOpen(false) }} onNewChat={() => { onNewChat(); setHistoryOpen(false) }} onClose={() => setHistoryOpen(false)} />}
     {previewAttachment && <div className="attachment-lightbox" role="dialog" aria-modal="true" aria-label={`预览 ${previewAttachment.name}`} onClick={() => setPreviewAttachment(null)}><button type="button" onClick={() => setPreviewAttachment(null)} aria-label="关闭预览"><X size={18} /></button><img src={previewAttachment.preview} alt={previewAttachment.name} onClick={event => event.stopPropagation()} /></div>}
-    {voiceOpen && <VoiceMode copy={copy} language={language} preview={isVoicePreview} capability={voiceCapability} onGreeting={async text => synthesizeVoice(text, language)} onSubmit={async (text, detectedLanguage) => ({ audioUrl: (await synthesizeVoice(await send({ value: text, language: detectedLanguage }), detectedLanguage)).url })} onClose={() => setVoiceOpen(false)} />}
+    {voiceOpen && <VoiceMode copy={copy} language={language} preview={isVoicePreview} capability={voiceCapability} onGreeting={async text => ({ audioUrl: (await synthesizeVoice(text, language)).url })} onSubmit={async (text, detectedLanguage) => ({ audioUrl: (await synthesizeVoice(await send({ value: text, language: detectedLanguage }), detectedLanguage)).url })} onClose={() => setVoiceOpen(false)} />}
   </section>
 }
 
