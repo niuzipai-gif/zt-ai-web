@@ -8,7 +8,7 @@ function browserReducedMotion() {
   return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
 }
 
-export function VoiceMode({ copy, preview = false, capability, language = 'zh', onSubmit, onGreeting, onClose }) {
+export function VoiceMode({ copy, preview = false, capability, language = 'zh', audioElement = null, onSubmit, onGreeting, onClose }) {
   const [state, setState] = useState(() => createVoiceState())
   const [greeting, setGreeting] = useState(() => createVoiceGreetingState(copy.voiceGreeting))
   const [inputText, setInputText] = useState('')
@@ -65,6 +65,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
       },
     })
     playbackRef.current = createVoicePlayback({
+      audioElement,
       onStateChange: event => {
         setPlaybackStatus(event.status)
         if (event.status === 'speaking') {
@@ -84,7 +85,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
       recognitionRef.current?.dispose?.()
       playbackRef.current?.dispose?.()
     }
-  }, [language])
+  }, [audioElement, language])
 
   const playGreeting = async () => {
     if (!greetingAudioRef.current) return { status: 'unavailable' }

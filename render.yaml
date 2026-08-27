@@ -78,6 +78,18 @@ services:
         value: speech-2.8-hd
       - key: MINIMAX_TTS_SPEED
         value: "1"
+      - key: MINIMAX_TTS_MODEL_EN
+        value: speech-2.8-hd
+      - key: MINIMAX_TTS_MODEL_JA
+        value: speech-2.8-hd
+      - key: MINIMAX_TTS_SPEED_EN
+        value: "0.92"
+      - key: MINIMAX_TTS_SPEED_JA
+        value: "0.90"
+      - key: MINIMAX_TTS_EMOTION_EN
+        value: calm
+      - key: MINIMAX_TTS_EMOTION_JA
+        value: calm
       - key: ASR_PROVIDER
         value: browser
       - key: VOICE_BROWSER_ASR

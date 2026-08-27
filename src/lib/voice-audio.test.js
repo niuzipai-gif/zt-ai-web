@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chooseRecorderMime, createVoiceAudioController, createVoicePlayback, createVoiceRecognition, formatVoiceRecognitionError, mergeVoiceTranscript } from './voice-audio.js'
+import { chooseRecorderMime, createVoiceAudioController, createVoicePlayback, createVoiceRecognition, formatVoiceRecognitionError, mergeVoiceTranscript, prepareVoicePlayback } from './voice-audio.js'
 
 test('recorder chooses a supported audio MIME and reports unavailable capability', () => {
   assert.equal(chooseRecorderMime(type => type === 'audio/webm;codecs=opus'), 'audio/webm;codecs=opus')
@@ -77,6 +77,27 @@ test('replaying a completed voice answer starts from the beginning', async () =>
   playback.dispose()
 })
 
+test('voice assistant unlocks one audio element before async synthesis and reuses it for playback', async () => {
+  const calls = []
+  const audio = {
+    preload: '', src: '', currentTime: 0, paused: true, ended: false, muted: false,
+    addEventListener() {}, removeEventListener() {},
+    pause() { this.paused = true },
+    load() {},
+    play() { calls.push(this.src); this.paused = false; return Promise.resolve() },
+  }
+  const prepared = prepareVoicePlayback({ audioFactory: () => audio })
+  assert.equal(prepared, audio)
+  assert.equal(calls.length, 1)
+  assert.match(calls[0], /^data:audio\/wav;base64,/)
+
+  const playback = createVoicePlayback({ audioElement: prepared, audioFactory: () => { throw new Error('created a second audio element') } })
+  playback.load('https://safe.test/greeting.mp3')
+  await playback.play()
+  assert.deepEqual(calls, [calls[0], 'https://safe.test/greeting.mp3'])
+  playback.dispose()
+})
+
 test('speech recognition reports interim text and can be stopped safely', () => {
   const events = []
   const instances = []
@@ -109,6 +130,22 @@ test('speech recognition exposes the native end event for final transcript hando
   assert.equal(recognition.start().status, 'listening')
   recognition.stop()
   assert.equal(ended, 1)
+})
+
+test('speech recognition can start again after the browser ends a session naturally', () => {
+  const instances = []
+  class FakeRecognition {
+    start() { this.started = true }
+    stop() { this.stopped = true }
+  }
+  const recognition = createVoiceRecognition({
+    recognitionFactory: () => { const instance = new FakeRecognition(); instances.push(instance); return instance },
+  })
+  assert.equal(recognition.start().status, 'listening')
+  instances[0].onend()
+  assert.equal(recognition.isListening(), false)
+  assert.equal(recognition.start().status, 'listening')
+  assert.equal(instances.length, 2)
 })
 
 test('speech recognition leaves the language unset in auto mode', () => {

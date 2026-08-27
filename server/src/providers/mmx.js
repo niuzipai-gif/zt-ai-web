@@ -14,6 +14,47 @@ function voiceIdForLanguage(language) {
   return String(process.env[`MINIMAX_VOICE_ID_${suffix}`] || process.env.MINIMAX_VOICE_ID || '').trim()
 }
 
+function ttsModelForLanguage(language) {
+  const suffix = voiceLanguage(language).toUpperCase()
+  return process.env[`MINIMAX_TTS_MODEL_${suffix}`] || process.env.MINIMAX_TTS_MODEL || 'speech-2.8-hd'
+}
+
+function ttsSpeedForLanguage(language) {
+  const normalized = voiceLanguage(language)
+  if (normalized === 'zh') return Number(process.env.MINIMAX_TTS_SPEED || 1)
+  const suffix = normalized.toUpperCase()
+  const fallback = normalized === 'en' ? 0.92 : 0.90
+  const value = Number(process.env[`MINIMAX_TTS_SPEED_${suffix}`] || fallback)
+  return Number.isFinite(value) && value > 0 ? Math.min(1.5, Math.max(0.5, value)) : fallback
+}
+
+function ttsEmotionForLanguage(language) {
+  const normalized = voiceLanguage(language)
+  if (normalized === 'zh') return ''
+  return String(process.env[`MINIMAX_TTS_EMOTION_${normalized.toUpperCase()}`] || 'calm').trim() || 'calm'
+}
+
+function pronunciationDictForLanguage(language) {
+  const normalized = voiceLanguage(language)
+  if (normalized === 'zh') return undefined
+  const raw = String(process.env[`MINIMAX_TTS_PRONUNCIATION_${normalized.toUpperCase()}_JSON`] || '').trim()
+  if (!raw) return undefined
+  try {
+    const parsed = JSON.parse(raw)
+    const entries = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.tone) ? parsed.tone : Object.entries(parsed || {}).map(([word, pronunciation]) => `${word}/${pronunciation}`)
+    const tone = entries.map(value => String(value || '').trim()).filter(Boolean).slice(0, 100)
+    return tone.length ? { tone } : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function cleanVoiceText(text, language) {
+  const raw = String(text || '').replace(/```[\s\S]*?```/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[*_#>`~-]/g, '')
+  if (voiceLanguage(language) === 'zh') return raw.replace(/\s+/g, ' ').trim().slice(0, 10_000)
+  return raw.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, 10_000)
+}
+
 async function minimaxRequest(path, options = {}) {
   const response = await fetch(`${API_ROOT()}${path}`, {
     ...options,
@@ -94,16 +135,20 @@ export async function synthesizeVoice({ text, language = 'zh' } = {}) {
   const normalizedLanguage = voiceLanguage(language)
   const voiceId = voiceIdForLanguage(normalizedLanguage)
   if (!voiceId) throw new Error('MMX 自定义音色未配置')
-  const value = String(text || '').replace(/```[\s\S]*?```/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[*_#>`~-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 10_000)
+  const value = cleanVoiceText(text, normalizedLanguage)
   if (!value) throw new Error('没有可合成的回答内容')
+  const voiceSetting = { voice_id: voiceId, speed: ttsSpeedForLanguage(normalizedLanguage), vol: 1, pitch: 0 }
+  if (normalizedLanguage !== 'zh') voiceSetting.emotion = ttsEmotionForLanguage(normalizedLanguage)
+  const pronunciationDict = pronunciationDictForLanguage(normalizedLanguage)
   const body = await minimaxRequest('/v1/t2a_v2', {
     method: 'POST',
     body: JSON.stringify({
-      model: process.env.MINIMAX_TTS_MODEL || 'speech-2.8-hd',
+      model: ttsModelForLanguage(normalizedLanguage),
       text: value,
       stream: false,
       language_boost: normalizedLanguage === 'en' ? 'English' : normalizedLanguage === 'ja' ? 'Japanese' : 'Chinese',
-      voice_setting: { voice_id: voiceId, speed: Number(process.env.MINIMAX_TTS_SPEED || 1), vol: 1, pitch: 0 },
+      voice_setting: voiceSetting,
+      ...(pronunciationDict ? { pronunciation_dict: pronunciationDict } : {}),
       audio_setting: { sample_rate: 32_000, bitrate: 128_000, format: 'mp3', channel: 1 },
       output_format: 'url',
       aigc_watermark: false,

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   ArrowUpRight, BriefcaseBusiness, Check, ChevronDown, Download, FileText, GitBranch, History, Home,
-  LockKeyhole, Menu, MessageCircle, Mic, MoreHorizontal, MoveUpRight, Orbit,
+  AudioLines, LockKeyhole, Menu, MessageCircle, Mic, MoreHorizontal, MoveUpRight, Orbit,
   Paperclip, Plus, Send, ShieldCheck, Sparkles, UserRound, X
 } from 'lucide-react'
 import avatar from './assets/resume-avatar.png'
@@ -17,6 +17,7 @@ import { attachmentStatusLabel, buildAttachmentContext } from './lib/attachment-
 import { renderMarkdown } from './lib/markdown.js'
 import { getStreamBatchSize } from './lib/streaming.js'
 import { evidenceLabel, researchSummary } from './lib/research-sources.js'
+import { createVoiceRecognition, formatVoiceRecognitionError, mergeVoiceTranscript, prepareVoicePlayback } from './lib/voice-audio.js'
 import { VoiceMode } from './components/VoiceMode.jsx'
 import './styles.css'
 import './research-sources.css'
@@ -284,10 +285,15 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
   const [retryPayload, setRetryPayload] = useState(null)
   const [voiceOpen, setVoiceOpen] = useState(false)
   const [voiceCapability, setVoiceCapability] = useState({ enabled: false, input: false, output: false, reason: 'voice-disabled' })
+  const [dictationStatus, setDictationStatus] = useState('idle')
+  const [dictationError, setDictationError] = useState('')
   const inputRef = useRef(null)
   const messagesRef = useRef(null)
   const streamQueueRef = useRef([])
   const streamFinishedRef = useRef(false)
+  const dictationRef = useRef(null)
+  const dictationBaseRef = useRef('')
+  const voiceAudioRef = useRef(null)
 
   const model = session.model || 'MINIMAX'
   const updateMessages = updater => onSessionChange(session.id, current => {
@@ -306,6 +312,28 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     streamQueueRef.current = []
     streamFinishedRef.current = false
   }, [session.id])
+
+  useEffect(() => {
+    const recognition = createVoiceRecognition({
+      language: 'auto',
+      onTranscript: (value, isFinal) => {
+        if (!value) return
+        const merged = mergeVoiceTranscript(dictationBaseRef.current, value, isFinal)
+        if (isFinal) dictationBaseRef.current = merged.stable
+        setInput(merged.display)
+      },
+      onError: error => {
+        setDictationStatus('error')
+        setDictationError(formatVoiceRecognitionError(error, copy))
+      },
+      onEnd: () => setDictationStatus('idle'),
+    })
+    dictationRef.current = recognition
+    return () => {
+      recognition.dispose?.()
+      if (dictationRef.current === recognition) dictationRef.current = null
+    }
+  }, [copy])
 
   useEffect(() => {
     let cancelled = false
@@ -472,16 +500,43 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
   }
   const starterPrompts = buildStarterPrompts(copy)
   const voiceAvailable = isVoicePreview || voiceCapability.enabled
+  const dictationAvailable = isVoicePreview || voiceCapability.input || Boolean(globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition || globalThis.ztaiAndroidVoice?.start)
+  const primeVoiceAssistant = () => { voiceAudioRef.current = prepareVoicePlayback() }
+  const openVoiceAssistant = () => {
+    if (!voiceAvailable) return
+    if (!voiceAudioRef.current) primeVoiceAssistant()
+    setVoiceOpen(true)
+  }
+  const toggleDictation = () => {
+    if (dictationStatus === 'listening') {
+      dictationRef.current?.stop?.()
+      setDictationStatus('idle')
+      return
+    }
+    if (!dictationAvailable || !dictationRef.current) {
+      setDictationStatus('error')
+      setDictationError(copy.voiceNeedInput || copy.voiceUnavailable)
+      return
+    }
+    dictationBaseRef.current = input.trim()
+    setDictationError('')
+    const result = dictationRef.current.start?.()
+    if (result?.status === 'listening') setDictationStatus('listening')
+    else {
+      setDictationStatus('error')
+      setDictationError(formatVoiceRecognitionError(result?.error || copy.voiceUnavailable, copy))
+    }
+  }
   return <section className="chat-card">
     <div className="chat-topline"><div><span className="eyebrow">{copy.eyebrow} · {visitorShortId(visitorId)}</span><h2>{copy.title}</h2></div><div className="chat-top-actions"><button className="chat-history-button" onClick={() => setHistoryOpen(true)}><History size={14} />{copy.history}</button><button className="chat-new-button" onClick={onNewChat}><Plus size={14} />{copy.newChat}</button><a className="resume-inline-download" href={resumeDocument.url} download={resumeDocument.name}><FileText size={13} />{copy.resume}</a><span className="free-pill"><span />{copy.free}</span></div></div>
     {messages.length ? <div className="messages" ref={messagesRef}>{messages.map((message, index) => <div key={message.id ?? `${message.role}-${index}`} className={`message-row ${message.role === 'user' ? 'from-user' : ''}`}><div className={`message-bubble ${message.status === 'thinking' ? 'is-thinking' : ''}`}><span className="message-label">{message.role === 'zt' ? 'ZT.AI' : copy.visitor}</span>{renderMessage(message)}{renderMedia(message.media)}</div></div>)}</div> : <div className="empty-chat" ref={messagesRef}><span className="empty-chat-mark"><MessageCircle size={20} /></span><span className="eyebrow">{copy.emptyEyebrow}</span><h3>{copy.emptyTitle}</h3><p>{copy.emptyBody}</p><div className="starter-prompts starter-prompt-group"><span>{copy.starterLabel}</span><div>{starterPrompts.map(prompt => <button key={prompt} onClick={() => { setInput(prompt); window.setTimeout(() => inputRef.current?.focus(), 0) }}>{prompt}<ArrowUpRight size={13} /></button>)}</div></div><button className="empty-chat-action" onClick={() => { setInput(copy.startPrompt); window.setTimeout(() => inputRef.current?.focus(), 0) }}>{copy.emptyAction} <ArrowUpRight size={14} /></button></div>}
     {retryPayload && <div className="chat-retry" role="status"><span>{copy.retryHint}</span><button onClick={restoreRetry}>{copy.retry}</button></div>}
     {attachments.length > 0 && <div className="pending-attachments"><AttachmentList attachments={attachments} copy={copy} compact onPreview={setPreviewAttachment} />{attachments.map(file => <button key={file.id} onClick={() => removeAttachment(file.id)} aria-label={`移除 ${file.name}`}><X size={13} /></button>)}</div>}
-    <div className={`chat-compose ${dragOver ? 'is-dragging' : ''}`} onPaste={handlePaste} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}><label className="attach-button" title={copy.upload}><Paperclip size={16} /><input type="file" multiple onChange={handleFiles} disabled={Boolean(activeMessageId)} /></label><button type="button" className="voice-entry" onClick={() => setVoiceOpen(true)} disabled={Boolean(activeMessageId) || !voiceAvailable} aria-label={copy.voiceInput} title={voiceAvailable ? copy.voiceInput : copy.voiceNeedProvider}><Mic size={16} /></button><input ref={inputRef} value={input} disabled={Boolean(activeMessageId)} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); send() } }} placeholder={activeMessageId ? copy.generating : copy.placeholder} /><button onClick={send} disabled={Boolean(activeMessageId) || (!input.trim() && !attachments.length)} aria-label={copy.send}><Send size={16} /></button></div>
+    <div className={`chat-compose ${dragOver ? 'is-dragging' : ''}`} onPaste={handlePaste} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}><button type="button" className={`voice-assistant-entry ${voiceOpen ? 'is-active' : ''}`} onPointerDown={primeVoiceAssistant} onClick={openVoiceAssistant} disabled={Boolean(activeMessageId) || !voiceAvailable} aria-label={copy.voiceAssistant} aria-pressed={voiceOpen} title={voiceAvailable ? copy.voiceAssistant : copy.voiceNeedProvider}><AudioLines size={16} /></button><label className="attach-button" title={copy.upload}><Paperclip size={16} /><input type="file" multiple onChange={handleFiles} disabled={Boolean(activeMessageId)} /></label><button type="button" className={`voice-entry ${dictationStatus === 'listening' ? 'is-listening' : ''}`} onClick={toggleDictation} disabled={Boolean(activeMessageId)} aria-label={dictationStatus === 'listening' ? copy.voiceDictating : copy.voiceDictate} title={dictationError || (dictationAvailable ? (dictationStatus === 'listening' ? copy.voiceDictating : copy.voiceDictate) : copy.voiceNeedInput)}><Mic size={16} /></button><input ref={inputRef} value={input} disabled={Boolean(activeMessageId)} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); send() } }} placeholder={activeMessageId ? copy.generating : copy.placeholder} /><button onClick={send} disabled={Boolean(activeMessageId) || (!input.trim() && !attachments.length)} aria-label={copy.send}><Send size={16} /></button></div>
     <div className="chat-footer"><ModelSwitch model={model} setModel={setModel} /><span className="chat-note"><MessageCircle size={14} /> {copy.publicNote}</span></div>
     {historyOpen && <ChatHistoryDrawer visitorId={visitorId} sessions={sessions} activeSessionId={session.id} copy={copy} language={language} onSelectSession={id => { onSelectSession(id); setHistoryOpen(false) }} onNewChat={() => { onNewChat(); setHistoryOpen(false) }} onClose={() => setHistoryOpen(false)} />}
     {previewAttachment && <div className="attachment-lightbox" role="dialog" aria-modal="true" aria-label={`预览 ${previewAttachment.name}`} onClick={() => setPreviewAttachment(null)}><button type="button" onClick={() => setPreviewAttachment(null)} aria-label="关闭预览"><X size={18} /></button><img src={previewAttachment.preview} alt={previewAttachment.name} onClick={event => event.stopPropagation()} /></div>}
-    {voiceOpen && <VoiceMode copy={copy} language={language} preview={isVoicePreview} capability={voiceCapability} onGreeting={async text => ({ audioUrl: (await synthesizeVoice(text, language)).url })} onSubmit={async (text, detectedLanguage) => ({ audioUrl: (await synthesizeVoice(await send({ value: text, language: detectedLanguage }), detectedLanguage)).url })} onClose={() => setVoiceOpen(false)} />}
+    {voiceOpen && <VoiceMode copy={copy} language={language} preview={isVoicePreview} capability={voiceCapability} audioElement={voiceAudioRef.current} onGreeting={async text => ({ audioUrl: (await synthesizeVoice(text, language)).url })} onSubmit={async (text, detectedLanguage) => ({ audioUrl: (await synthesizeVoice(await send({ value: text, language: detectedLanguage }), detectedLanguage)).url })} onClose={() => setVoiceOpen(false)} />}
   </section>
 }
 

@@ -29,6 +29,25 @@ function recognitionLanguage(language) {
   return 'zh-CN'
 }
 
+// A silent, one-sample WAV gives the browser a real media play initiated by
+// the user's tap. The same HTMLAudioElement is then reused for the async TTS
+// response, which is the most reliable best-effort path on mobile Safari.
+export const VOICE_UNLOCK_AUDIO_URL = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQIAAAAAAA=='
+
+export function prepareVoicePlayback({ audioFactory = () => new Audio() } = {}) {
+  let audio
+  try { audio = audioFactory() } catch { return null }
+  if (!audio) return null
+  audio.preload = 'auto'
+  audio.src = VOICE_UNLOCK_AUDIO_URL
+  audio.currentTime = 0
+  try {
+    const promise = audio.play?.()
+    promise?.catch?.(() => {})
+  } catch {}
+  return audio
+}
+
 export function mergeVoiceTranscript(stableText = '', nextText = '', isFinal = false) {
   const stable = String(stableText || '').trim()
   const next = String(nextText || '').trim()
@@ -181,7 +200,11 @@ export function createVoiceRecognition({ language = 'zh', recognitionFactory = d
         if (text.trim()) onTranscript(text.trim(), final)
       }
       recognition.onerror = event => handleError(event?.error || '语音识别暂时不可用')
-      recognition.onend = () => onEnd()
+      recognition.onend = () => {
+        listening = false
+        recognition = null
+        onEnd()
+      }
       recognition.start()
       listening = true
       return { status: 'listening', mode: 'browser' }
@@ -216,8 +239,8 @@ function canUseAudioAnalyser(url) {
   try { return new URL(url).origin === pageOrigin } catch { return false }
 }
 
-export function createVoicePlayback({ audioFactory = () => new Audio(), audioContextFactory = globalThis.AudioContext || globalThis.webkitAudioContext, onStateChange = () => {} } = {}) {
-  let audio = null
+export function createVoicePlayback({ audioFactory = () => new Audio(), audioElement = null, audioContextFactory = globalThis.AudioContext || globalThis.webkitAudioContext, onStateChange = () => {} } = {}) {
+  let audio = audioElement
   let context = null
   let analyser = null
   let source = null
@@ -239,7 +262,7 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), audioCon
   function load(url) {
     const safeUrl = secureAudioUrl(url)
     detach()
-    audio = audioFactory()
+    audio = audio || audioFactory()
     audio.preload = 'auto'
     audio.src = safeUrl
     audio.currentTime = 0
