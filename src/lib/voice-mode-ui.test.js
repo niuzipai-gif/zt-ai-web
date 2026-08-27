@@ -28,7 +28,7 @@ test('public voice mode is wired to submit recognized text and play a synthesize
   assert.match(source, /createVoiceRecognition/)
   assert.match(chat, /api\/voice\/synthesize/)
   assert.match(chat, /onGreeting=/)
-  assert.match(chat, /onGreeting=\{async text => \(\{ audioUrl: \(await synthesizeVoice\(text, language, \{ leadingPause: true \}\)\)\.url \}\)\}/)
+  assert.match(chat, /onGreeting=\{async text => \(\{ audioUrl: \(await synthesizeVoice\(text, language, \{ leadingPause: true \}\)\)\.url, preRollMs: VOICE_GREETING_PREROLL_MS \}\)\}/)
   assert.match(chat, /leadingPause: true/)
 })
 

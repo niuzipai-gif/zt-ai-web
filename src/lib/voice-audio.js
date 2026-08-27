@@ -29,18 +29,64 @@ function recognitionLanguage(language) {
   return 'zh-CN'
 }
 
-// A silent, one-sample WAV gives the browser a real media play initiated by
-// the user's tap. The same HTMLAudioElement is then reused for the async TTS
-// response, which is the most reliable best-effort path on mobile Safari.
-export const VOICE_UNLOCK_AUDIO_URL = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQIAAAAAAA=='
+const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+function encodeBase64(bytes) {
+  let output = ''
+  for (let index = 0; index < bytes.length; index += 3) {
+    const first = bytes[index]
+    const second = index + 1 < bytes.length ? bytes[index + 1] : 0
+    const third = index + 2 < bytes.length ? bytes[index + 2] : 0
+    const value = (first << 16) | (second << 8) | third
+    output += BASE64_CHARS[(value >> 18) & 63]
+    output += BASE64_CHARS[(value >> 12) & 63]
+    output += index + 1 < bytes.length ? BASE64_CHARS[(value >> 6) & 63] : '='
+    output += index + 2 < bytes.length ? BASE64_CHARS[value & 63] : '='
+  }
+  return output
+}
+
+function createSilentWavDataUrl(durationMs = 1_200) {
+  const sampleRate = 8_000
+  const sampleCount = Math.max(1, Math.round(sampleRate * durationMs / 1_000))
+  const dataSize = sampleCount
+  const buffer = new ArrayBuffer(44 + dataSize)
+  const bytes = new Uint8Array(buffer)
+  const view = new DataView(buffer)
+  const writeAscii = (offset, value) => [...value].forEach((character, index) => { bytes[offset + index] = character.charCodeAt(0) })
+  writeAscii(0, 'RIFF')
+  view.setUint32(4, 36 + dataSize, true)
+  writeAscii(8, 'WAVE')
+  writeAscii(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true)
+  view.setUint16(22, 1, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate, true)
+  view.setUint16(32, 1, true)
+  view.setUint16(34, 8, true)
+  writeAscii(36, 'data')
+  view.setUint32(40, dataSize, true)
+  bytes.fill(128, 44)
+  return `data:audio/wav;base64,${encodeBase64(bytes)}`
+}
+
+// Keep the output route alive while the remote TTS request is in flight. A
+// one-sample unlock ends immediately on mobile browsers and cannot protect a
+// greeting that takes seconds to synthesize.
+export const VOICE_UNLOCK_AUDIO_URL = createSilentWavDataUrl()
+export const VOICE_GREETING_PREROLL_MS = 900
 
 export function prepareVoicePlayback({ audioFactory = () => new Audio() } = {}) {
   let audio
   try { audio = audioFactory() } catch { return null }
   if (!audio) return null
   audio.preload = 'auto'
+  audio.loop = true
   audio.src = VOICE_UNLOCK_AUDIO_URL
   audio.currentTime = 0
+  audio.__ztaiVoicePrimed = true
+  audio.load?.()
   try {
     const promise = audio.play?.()
     promise?.catch?.(() => {})
@@ -239,17 +285,25 @@ function canUseAudioAnalyser(url) {
   try { return new URL(url).origin === pageOrigin } catch { return false }
 }
 
-export function createVoicePlayback({ audioFactory = () => new Audio(), audioElement = null, audioContextFactory = globalThis.AudioContext || globalThis.webkitAudioContext, onStateChange = () => {} } = {}) {
+export function createVoicePlayback({ audioFactory = () => new Audio(), preloadAudioFactory = () => globalThis.Audio ? new globalThis.Audio() : audioFactory(), audioElement = null, audioContextFactory = globalThis.AudioContext || globalThis.webkitAudioContext, onStateChange = () => {}, sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)) } = {}) {
   let audio = audioElement
   let context = null
   let analyser = null
   let source = null
   let playbackVersion = 0
+  let pendingPreRoll = null
+  let preloader = null
 
   const notify = status => onStateChange({ status, analyser })
-  const detach = () => {
+  const isUnlockAudio = target => Boolean(target?.__ztaiVoicePrimed && target.src === VOICE_UNLOCK_AUDIO_URL)
+  const clearPreload = () => {
+    preloader?.pause?.()
+    preloader = null
+    pendingPreRoll = null
+  }
+  const detach = ({ pause = true } = {}) => {
     if (!audio) return
-    audio.pause?.()
+    if (pause) audio.pause?.()
     audio.removeEventListener?.('ended', onEnded)
     audio.removeEventListener?.('error', onError)
     audio.removeEventListener?.('pause', onPause)
@@ -258,50 +312,87 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), audioEle
   const onEnded = () => notify('idle')
   const onError = () => notify('error')
   const onPause = () => notify('paused')
-  const onPlay = () => notify('speaking')
+  const onPlay = () => { if (!isUnlockAudio(audio)) notify('speaking') }
+
+  const attach = () => {
+    audio.addEventListener?.('ended', onEnded)
+    audio.addEventListener?.('error', onError)
+    audio.addEventListener?.('pause', onPause)
+    audio.addEventListener?.('play', onPlay)
+  }
 
   function waitForPlayableAudio(target) {
     if (!target || target.readyState === undefined || target.readyState >= 3) return Promise.resolve()
     return new Promise(resolve => {
       let settled = false
-      const events = ['loadeddata', 'canplay', 'canplaythrough', 'error', 'abort']
-      const finish = () => {
+      const readyEvents = ['loadeddata', 'canplay', 'canplaythrough']
+      const terminalEvents = ['error', 'abort']
+      const finish = force => {
         if (settled) return
+        if (!force && target.readyState !== undefined && target.readyState < 3) return
         settled = true
         clearTimeout(timer)
-        events.forEach(event => target.removeEventListener?.(event, finish))
+        readyEvents.forEach(event => target.removeEventListener?.(event, onReady))
+        terminalEvents.forEach(event => target.removeEventListener?.(event, onTerminal))
         resolve()
       }
-      const timer = setTimeout(finish, 4000)
-      events.forEach(event => target.addEventListener?.(event, finish))
+      const onReady = () => finish(false)
+      const onTerminal = () => finish(true)
+      const timer = setTimeout(() => finish(true), 5_000)
+      readyEvents.forEach(event => target.addEventListener?.(event, onReady))
+      terminalEvents.forEach(event => target.addEventListener?.(event, onTerminal))
     })
   }
 
-  function load(url) {
+  function load(url, { preRollMs = 0 } = {}) {
     const safeUrl = secureAudioUrl(url)
+    const requestedPreRollMs = Number.isFinite(Number(preRollMs)) ? Math.max(0, Number(preRollMs)) : 0
+    const wasPrimed = isUnlockAudio(audio)
     playbackVersion += 1
-    detach()
+    clearPreload()
+    detach({ pause: !wasPrimed })
     audio = audio || audioFactory()
-    audio.preload = 'auto'
-    audio.src = safeUrl
-    audio.currentTime = 0
-    audio.load?.()
-    audio.addEventListener?.('ended', onEnded)
-    audio.addEventListener?.('error', onError)
-    audio.addEventListener?.('pause', onPause)
-    audio.addEventListener?.('play', onPlay)
-    if (audioContextFactory && audioContextFactory.prototype && canUseAudioAnalyser(safeUrl)) {
-      try {
-        context = context || new audioContextFactory()
-        analyser = context.createAnalyser()
-        analyser.fftSize = 256
-        source = context.createMediaElementSource(audio)
-        source.connect(analyser)
-        analyser.connect(context.destination)
-      } catch { analyser = null; source = null }
+    const usePreRoll = requestedPreRollMs > 0 && wasPrimed
+    if (usePreRoll) {
+      audio.preload = 'auto'
+      audio.loop = true
+      audio.src = VOICE_UNLOCK_AUDIO_URL
+      audio.currentTime = 0
+      audio.load?.()
+      try { preloader = preloadAudioFactory() } catch { preloader = null }
+      if (preloader) {
+        preloader.preload = 'auto'
+        preloader.src = safeUrl
+        preloader.load?.()
+      }
+      pendingPreRoll = { url: safeUrl, preRollMs: requestedPreRollMs }
+      attach()
+      if (audio.paused) {
+        try {
+          const promise = audio.play?.()
+          promise?.catch?.(() => {})
+        } catch {}
+      }
+    } else {
+      audio.preload = 'auto'
+      audio.loop = false
+      audio.src = safeUrl
+      audio.currentTime = 0
+      audio.load?.()
+      attach()
+      if (audioContextFactory && audioContextFactory.prototype && canUseAudioAnalyser(safeUrl)) {
+        try {
+          context = context || new audioContextFactory()
+          analyser = context.createAnalyser()
+          analyser.fftSize = 256
+          source = context.createMediaElementSource(audio)
+          source.connect(analyser)
+          analyser.connect(context.destination)
+        } catch { analyser = null; source = null }
+      }
     }
     notify('ready')
-    return { status: 'ready', audio, analyser }
+    return { status: 'ready', audio, analyser, preRollMs: requestedPreRollMs }
   }
 
   async function play() {
@@ -309,6 +400,23 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), audioEle
     const version = playbackVersion
     const target = audio
     try {
+      if (pendingPreRoll) {
+        await waitForPlayableAudio(preloader)
+        if (version !== playbackVersion || target !== audio) return { status: 'idle' }
+        if (audio.paused) {
+          const warmupPromise = audio.play?.()
+          if (warmupPromise) await warmupPromise
+        }
+        await sleep(pendingPreRoll.preRollMs)
+        if (version !== playbackVersion || target !== audio) return { status: 'idle' }
+        const nextUrl = pendingPreRoll.url
+        clearPreload()
+        audio.pause?.()
+        audio.loop = false
+        audio.src = nextUrl
+        audio.currentTime = 0
+        audio.load?.()
+      }
       await waitForPlayableAudio(target)
       if (version !== playbackVersion || target !== audio) return { status: 'idle' }
       if (audio.ended) audio.currentTime = 0
@@ -321,8 +429,8 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), audioEle
     catch (error) { notify('blocked'); return { status: 'blocked', error: error.message || '需要点击播放' } }
   }
 
-  function pause() { playbackVersion += 1; audio?.pause?.(); notify('paused'); return { status: 'paused' } }
-  function stop() { playbackVersion += 1; if (audio) { audio.pause?.(); audio.currentTime = 0 }; notify('idle'); return { status: 'idle' } }
-  function dispose() { playbackVersion += 1; detach(); source?.disconnect?.(); if (context?.close) void context.close(); audio = null; context = null; source = null; analyser = null }
+  function pause() { playbackVersion += 1; clearPreload(); audio?.pause?.(); notify('paused'); return { status: 'paused' } }
+  function stop() { playbackVersion += 1; clearPreload(); if (audio) { audio.pause?.(); audio.currentTime = 0 }; notify('idle'); return { status: 'idle' } }
+  function dispose() { playbackVersion += 1; clearPreload(); detach(); source?.disconnect?.(); if (context?.close) void context.close(); audio = null; context = null; source = null; analyser = null }
   return { load, play, pause, stop, attachAnalyser: () => analyser, dispose }
 }

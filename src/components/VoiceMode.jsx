@@ -115,7 +115,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
         if (!active || requestId !== greetingRequestRef.current) return
         if (!reply?.audioUrl) throw new Error('开场问候没有可播放的音频。')
         greetingAudioRef.current = reply.audioUrl
-        playbackRef.current?.load(reply.audioUrl)
+        playbackRef.current?.load(reply.audioUrl, { preRollMs: reply.preRollMs })
         setGreeting(current => transitionVoiceGreeting(current, { type: 'ready', audioUrl: reply.audioUrl }))
         await playGreeting()
       } catch (error) {

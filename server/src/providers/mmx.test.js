@@ -136,7 +136,7 @@ test('keeps personal voice IDs while applying multilingual pronunciation default
   }
 })
 
-test('adds a short natural pre-roll to greetings so mobile output devices do not swallow the first words', async () => {
+test('keeps greeting synthesis text intact because mobile pre-roll is handled by the client player', async () => {
   const originalFetch = globalThis.fetch
   const calls = []
   globalThis.fetch = async (url, options) => {
@@ -151,7 +151,7 @@ test('adds a short natural pre-roll to greetings so mobile output devices do not
       MINIMAX_VOICE_ID: 'CaiZhouTingZh20260827',
     }, () => synthesizeVoice({ text: '你好，我是蔡宙廷。', language: 'zh', leadingPause: true }))
     const body = JSON.parse(calls[0].options.body)
-    assert.equal(body.text, '(breath)<#0.80#>你好，我是蔡宙廷。')
+    assert.equal(body.text, '你好，我是蔡宙廷。')
   } finally {
     globalThis.fetch = originalFetch
   }

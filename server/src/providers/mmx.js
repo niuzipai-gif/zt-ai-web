@@ -1,7 +1,6 @@
 const MEDIA_API_KEY = () => process.env.MMX_API_KEY || process.env.MINIMAX_API_KEY || ''
 const API_ROOT = () => (process.env.MMX_BASE_URL || process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1').replace(/\/v1\/?$/, '')
 const mediaTimeout = () => Number(process.env.MMX_HTTP_TIMEOUT_MS || 45_000)
-const GREETING_LEADING_PAUSE_SECONDS = '0.80'
 const DEFAULT_PRONUNCIATION_TONES = Object.freeze({
   en: Object.freeze([
     'ZT.AI/zee tee eye',
@@ -167,11 +166,11 @@ export async function synthesizeVoice({ text, language = 'zh', leadingPause = fa
   if (!voiceId) throw new Error('MMX 自定义音色未配置')
   const value = cleanVoiceText(text, normalizedLanguage)
   if (!value) throw new Error('没有可合成的回答内容')
-  // Mobile speakers and Bluetooth routes can become audible a fraction after
-  // HTMLAudioElement.play() resolves. A natural breath plus MiniMax's official
-  // pause marker gives the output device a short pre-roll without changing the
-  // visible greeting text.
-  const synthesisText = leadingPause ? `(breath)<#${GREETING_LEADING_PAUSE_SECONDS}#>${value}` : value
+  // Greeting pre-roll is handled by the already-unlocked client audio element.
+  // MiniMax pause markers are only reliable between pronounceable text segments;
+  // placing one at the beginning can be ignored or cause the first syllables to
+  // be swallowed by the provider/mobile audio path.
+  const synthesisText = value
   const voiceSetting = { voice_id: voiceId, speed: ttsSpeedForLanguage(normalizedLanguage), vol: 1, pitch: 0 }
   if (normalizedLanguage !== 'zh') voiceSetting.emotion = ttsEmotionForLanguage(normalizedLanguage)
   const pronunciationDict = pronunciationDictForLanguage(normalizedLanguage)

@@ -111,6 +111,7 @@ test('voice assistant unlocks one audio element before async synthesis and reuse
   }
   const prepared = prepareVoicePlayback({ audioFactory: () => audio })
   assert.equal(prepared, audio)
+  assert.equal(audio.loop, true)
   assert.equal(calls.length, 1)
   assert.match(calls[0], /^data:audio\/wav;base64,/)
 
@@ -118,6 +119,38 @@ test('voice assistant unlocks one audio element before async synthesis and reuse
   playback.load('https://safe.test/greeting.mp3')
   await playback.play()
   assert.deepEqual(calls, [calls[0], 'https://safe.test/greeting.mp3'])
+  playback.dispose()
+})
+
+test('keeps the unlocked audio route warm during greeting synthesis and switches after a controlled pre-roll', async () => {
+  const calls = []
+  const makeAudio = () => ({
+    preload: '', src: '', currentTime: 0, paused: true, ended: false, readyState: 3, loop: false,
+    addEventListener() {}, removeEventListener() {},
+    pause() { this.paused = true },
+    load() {},
+    play() { calls.push({ src: this.src, loop: this.loop }); this.paused = false; return Promise.resolve() },
+  })
+  const audio = makeAudio()
+  const preloadAudio = makeAudio()
+  const prepared = prepareVoicePlayback({ audioFactory: () => audio })
+  const sleeps = []
+  const playback = createVoicePlayback({
+    audioElement: prepared,
+    audioFactory: () => { throw new Error('created a second playback element') },
+    preloadAudioFactory: () => preloadAudio,
+    sleep: async milliseconds => { sleeps.push(milliseconds) },
+  })
+
+  playback.load('https://safe.test/greeting.mp3', { preRollMs: 900 })
+  const result = await playback.play()
+
+  assert.equal(result.status, 'speaking')
+  assert.equal(preloadAudio.src, 'https://safe.test/greeting.mp3')
+  assert.deepEqual(sleeps, [900])
+  assert.deepEqual(calls.map(call => call.src), [calls[0].src, 'https://safe.test/greeting.mp3'])
+  assert.match(calls[0].src, /^data:audio\/wav;base64,/)
+  assert.equal(audio.loop, false)
   playback.dispose()
 })
 
