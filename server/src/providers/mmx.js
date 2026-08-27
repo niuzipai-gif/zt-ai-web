@@ -1,6 +1,7 @@
 const MEDIA_API_KEY = () => process.env.MMX_API_KEY || process.env.MINIMAX_API_KEY || ''
 const API_ROOT = () => (process.env.MMX_BASE_URL || process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1').replace(/\/v1\/?$/, '')
 const mediaTimeout = () => Number(process.env.MMX_HTTP_TIMEOUT_MS || 45_000)
+const GREETING_LEADING_PAUSE_SECONDS = '0.80'
 
 function voiceLanguage(language) {
   const value = String(language || 'zh').toLowerCase()
@@ -50,7 +51,14 @@ function pronunciationDictForLanguage(language) {
 }
 
 function cleanVoiceText(text, language) {
-  const raw = String(text || '').replace(/```[\s\S]*?```/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[*_#>`~-]/g, '')
+  let raw = String(text || '').replace(/```[\s\S]*?```/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[*_#>`~-]/g, '')
+  if (voiceLanguage(language) === 'ja') {
+    // Keep the visible answer clean and prevent common Han-character + kana/romaji
+    // reading annotations from being spoken as part of a Japanese reply.
+    raw = raw
+      .replace(/([\p{Script=Han}]{1,12})[（(][\p{Script=Hiragana}\p{Script=Katakana}ー・\s]+[）)]/gu, '$1')
+      .replace(/([\p{Script=Han}]{1,12})[（(][A-Za-z][A-Za-z .・'\-]{0,40}[）)]/gu, '$1')
+  }
   if (voiceLanguage(language) === 'zh') return raw.replace(/\s+/g, ' ').trim().slice(0, 10_000)
   return raw.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, 10_000)
 }
@@ -141,7 +149,7 @@ export async function synthesizeVoice({ text, language = 'zh', leadingPause = fa
   // HTMLAudioElement.play() resolves. A natural breath plus MiniMax's official
   // pause marker gives the output device a short pre-roll without changing the
   // visible greeting text.
-  const synthesisText = leadingPause ? `(breath)<#0.30#>${value}` : value
+  const synthesisText = leadingPause ? `(breath)<#${GREETING_LEADING_PAUSE_SECONDS}#>${value}` : value
   const voiceSetting = { voice_id: voiceId, speed: ttsSpeedForLanguage(normalizedLanguage), vol: 1, pitch: 0 }
   if (normalizedLanguage !== 'zh') voiceSetting.emotion = ttsEmotionForLanguage(normalizedLanguage)
   const pronunciationDict = pronunciationDictForLanguage(normalizedLanguage)

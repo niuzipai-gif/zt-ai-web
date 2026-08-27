@@ -14,12 +14,18 @@ test('profile keeps the configured digital-twin facts', () => {
   assert.match(ZT_SYSTEM_PROMPT, /附件.*解析|解析.*附件/)
   assert.match(ZT_SYSTEM_PROMPT, /不能.*猜测|禁止.*编造/)
   assert.match(ZT_SYSTEM_PROMPT, /摘要.*未包含|文件.*不足/)
+  assert.match(ZT_SYSTEM_PROMPT, /闲聊.*生活.*玩笑.*吐槽.*挑衅/)
+  assert.match(ZT_SYSTEM_PROMPT, /不要主动.*自我介绍|不要.*强行.*介绍/)
+  assert.match(ZT_SYSTEM_PROMPT, /轻微幽默|接住话题/)
+  assert.match(ZT_SYSTEM_PROMPT, /屏幕阅读和口头朗读|适合阅读和口述|适合朗读/)
+  assert.match(ZT_SYSTEM_PROMPT, /注音.*ふりがな.*罗马音.*拼音/)
 })
 
 test('chat language prompts are explicit for every supported locale', () => {
   assert.match(CHAT_LANGUAGE_PROMPTS.zh, /简体中文/)
   assert.match(CHAT_LANGUAGE_PROMPTS.en, /English/)
   assert.match(CHAT_LANGUAGE_PROMPTS.ja, /日本語/)
+  assert.match(CHAT_LANGUAGE_PROMPTS.ja, /注音|ふりがな|読み仮名/)
 })
 
 test('desktop agent prompt is execution-first and permission-aware', () => {

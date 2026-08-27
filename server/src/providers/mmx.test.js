@@ -114,7 +114,28 @@ test('adds a short natural pre-roll to greetings so mobile output devices do not
       MINIMAX_VOICE_ID: 'CaiZhouTingZh20260827',
     }, () => synthesizeVoice({ text: '你好，我是蔡宙廷。', language: 'zh', leadingPause: true }))
     const body = JSON.parse(calls[0].options.body)
-    assert.equal(body.text, '(breath)<#0.30#>你好，我是蔡宙廷。')
+    assert.equal(body.text, '(breath)<#0.80#>你好，我是蔡宙廷。')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('removes Japanese reading annotations from spoken text while preserving the visible answer contract', async () => {
+  const originalFetch = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), options })
+    return new Response(JSON.stringify({ data: { audio: 'https://cdn.example.test/japanese.mp3', status: 2 }, base_resp: { status_code: 0 } }), { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+  try {
+    await withEnv({
+      MMX_API_KEY: 'fixture-key',
+      MMX_BASE_URL: 'https://fixture.example.test/v1',
+      MINIMAX_VOICE_ID: undefined,
+      MINIMAX_VOICE_ID_JA: 'CaiZhouTingJa20260827',
+    }, () => synthesizeVoice({ text: '蔡宙廷（さい・ちょうてい）です。', language: 'ja' }))
+    const body = JSON.parse(calls[0].options.body)
+    assert.equal(body.text, '蔡宙廷です。')
   } finally {
     globalThis.fetch = originalFetch
   }
