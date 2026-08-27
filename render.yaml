@@ -83,13 +83,17 @@ services:
       - key: MINIMAX_TTS_MODEL_JA
         value: speech-2.8-hd
       - key: MINIMAX_TTS_SPEED_EN
-        value: "0.92"
-      - key: MINIMAX_TTS_SPEED_JA
         value: "0.90"
+      - key: MINIMAX_TTS_SPEED_JA
+        value: "0.88"
       - key: MINIMAX_TTS_EMOTION_EN
         value: calm
       - key: MINIMAX_TTS_EMOTION_JA
         value: calm
+      - key: MINIMAX_TTS_PRONUNCIATION_EN_JSON
+        value: '{"ZT.AI":"zee tee eye","AI":"A I","API":"A P I","FDE":"eff dee ee","ASIN":"A S I N","SKU":"S K U","蔡宙廷":"Zhouting Cai"}'
+      - key: MINIMAX_TTS_PRONUNCIATION_JA_JSON
+        value: '{"蔡宙廷":"さい・ちょうてい","ZT.AI":"ゼットエーアイ","AI":"エーアイ","API":"エーピーアイ","FDE":"エフディーイー","Amazon":"アマゾン","MiniMax":"ミニマックス","LinkFox":"リンクフォックス","GitHub":"ギットハブ"}'
       - key: ASR_PROVIDER
         value: browser
       - key: VOICE_BROWSER_ASR

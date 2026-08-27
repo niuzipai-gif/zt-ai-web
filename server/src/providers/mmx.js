@@ -2,6 +2,28 @@ const MEDIA_API_KEY = () => process.env.MMX_API_KEY || process.env.MINIMAX_API_K
 const API_ROOT = () => (process.env.MMX_BASE_URL || process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1').replace(/\/v1\/?$/, '')
 const mediaTimeout = () => Number(process.env.MMX_HTTP_TIMEOUT_MS || 45_000)
 const GREETING_LEADING_PAUSE_SECONDS = '0.80'
+const DEFAULT_PRONUNCIATION_TONES = Object.freeze({
+  en: Object.freeze([
+    'ZT.AI/zee tee eye',
+    'AI/A I',
+    'API/A P I',
+    'FDE/eff dee ee',
+    'ASIN/A S I N',
+    'SKU/S K U',
+    '蔡宙廷/Zhouting Cai',
+  ]),
+  ja: Object.freeze([
+    '蔡宙廷/さい・ちょうてい',
+    'ZT.AI/ゼットエーアイ',
+    'AI/エーアイ',
+    'API/エーピーアイ',
+    'FDE/エフディーイー',
+    'Amazon/アマゾン',
+    'MiniMax/ミニマックス',
+    'LinkFox/リンクフォックス',
+    'GitHub/ギットハブ',
+  ]),
+})
 
 function voiceLanguage(language) {
   const value = String(language || 'zh').toLowerCase()
@@ -24,7 +46,7 @@ function ttsSpeedForLanguage(language) {
   const normalized = voiceLanguage(language)
   if (normalized === 'zh') return Number(process.env.MINIMAX_TTS_SPEED || 1)
   const suffix = normalized.toUpperCase()
-  const fallback = normalized === 'en' ? 0.92 : 0.90
+  const fallback = normalized === 'en' ? 0.90 : 0.88
   const value = Number(process.env[`MINIMAX_TTS_SPEED_${suffix}`] || fallback)
   return Number.isFinite(value) && value > 0 ? Math.min(1.5, Math.max(0.5, value)) : fallback
 }
@@ -39,14 +61,14 @@ function pronunciationDictForLanguage(language) {
   const normalized = voiceLanguage(language)
   if (normalized === 'zh') return undefined
   const raw = String(process.env[`MINIMAX_TTS_PRONUNCIATION_${normalized.toUpperCase()}_JSON`] || '').trim()
-  if (!raw) return undefined
+  if (!raw) return { tone: [...(DEFAULT_PRONUNCIATION_TONES[normalized] || [])] }
   try {
     const parsed = JSON.parse(raw)
     const entries = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.tone) ? parsed.tone : Object.entries(parsed || {}).map(([word, pronunciation]) => `${word}/${pronunciation}`)
     const tone = entries.map(value => String(value || '').trim()).filter(Boolean).slice(0, 100)
-    return tone.length ? { tone } : undefined
+    return tone.length ? { tone } : { tone: [...(DEFAULT_PRONUNCIATION_TONES[normalized] || [])] }
   } catch {
-    return undefined
+    return { tone: [...(DEFAULT_PRONUNCIATION_TONES[normalized] || [])] }
   }
 }
 
