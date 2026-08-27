@@ -227,9 +227,9 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
 
   const handleOrb = () => {
     if (greeting.status === 'loading') return
-    if (greeting.status === 'speaking') { playbackRef.current?.stop?.(); setGreeting(current => transitionVoiceGreeting(current, { type: 'reset' })); greetingAudioRef.current = ''; return }
+    if (greeting.status === 'speaking') { playbackRef.current?.stop?.(); setGreeting(current => transitionVoiceGreeting(current, { type: 'reset' })); greetingAudioRef.current = '' }
     if (state.status === 'listening') { void stopListening(); return }
-    if (state.status === 'speaking') { playbackRef.current?.stop?.(); return }
+    if (state.status === 'speaking') playbackRef.current?.stop?.()
     if (state.status === 'processing') return
     void startListening()
   }

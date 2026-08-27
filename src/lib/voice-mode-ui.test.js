@@ -30,3 +30,14 @@ test('public voice mode is wired to submit recognized text and play a synthesize
   assert.match(chat, /onGreeting=/)
   assert.match(chat, /onGreeting=\{async text => \(\{ audioUrl: \(await synthesizeVoice\(text, language\)\)\.url \}\)\}/)
 })
+
+test('public voice mode can interrupt speaking and the mobile composer has a second input row', async () => {
+  const source = await fs.readFile('src/components/VoiceMode.jsx', 'utf8')
+  const chat = await fs.readFile('src/main.jsx', 'utf8')
+  const styles = await fs.readFile('src/styles.css', 'utf8')
+  assert.match(source, /state\.status === 'speaking'.*playbackRef\.current\?\.stop\?\.\(\).*startListening/s)
+  assert.match(source, /greeting\.status === 'speaking'.*playbackRef\.current\?\.stop\?\.\(\).*startListening/s)
+  assert.match(chat, /chat-compose-controls/)
+  assert.match(chat, /chat-compose-input-row/)
+  assert.match(styles, /chat-compose-input-row/)
+})

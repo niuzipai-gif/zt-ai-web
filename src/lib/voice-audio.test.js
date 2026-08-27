@@ -77,6 +77,29 @@ test('replaying a completed voice answer starts from the beginning', async () =>
   playback.dispose()
 })
 
+test('waits for remote audio readiness before starting playback', async () => {
+  const calls = []
+  const listeners = new Map()
+  const audio = {
+    preload: '', src: '', currentTime: 0, paused: true, ended: false, readyState: 0,
+    addEventListener(name, callback) { listeners.set(name, callback) },
+    removeEventListener(name) { listeners.delete(name) },
+    pause() { this.paused = true },
+    load() {},
+    play() { calls.push('play'); this.paused = false; return Promise.resolve() },
+  }
+  const playback = createVoicePlayback({ audioFactory: () => audio })
+  playback.load('https://safe.test/greeting.mp3')
+  const pending = playback.play()
+  await Promise.resolve()
+  assert.deepEqual(calls, [])
+  audio.readyState = 3
+  listeners.get('loadeddata')?.()
+  assert.equal((await pending).status, 'speaking')
+  assert.deepEqual(calls, ['play'])
+  playback.dispose()
+})
+
 test('voice assistant unlocks one audio element before async synthesis and reuses it for playback', async () => {
   const calls = []
   const audio = {

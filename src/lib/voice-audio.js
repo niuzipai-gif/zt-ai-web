@@ -244,6 +244,7 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), audioEle
   let context = null
   let analyser = null
   let source = null
+  let playbackVersion = 0
 
   const notify = status => onStateChange({ status, analyser })
   const detach = () => {
@@ -259,8 +260,26 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), audioEle
   const onPause = () => notify('paused')
   const onPlay = () => notify('speaking')
 
+  function waitForPlayableAudio(target) {
+    if (!target || target.readyState === undefined || target.readyState >= 3) return Promise.resolve()
+    return new Promise(resolve => {
+      let settled = false
+      const events = ['loadeddata', 'canplay', 'canplaythrough', 'error', 'abort']
+      const finish = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        events.forEach(event => target.removeEventListener?.(event, finish))
+        resolve()
+      }
+      const timer = setTimeout(finish, 4000)
+      events.forEach(event => target.addEventListener?.(event, finish))
+    })
+  }
+
   function load(url) {
     const safeUrl = secureAudioUrl(url)
+    playbackVersion += 1
     detach()
     audio = audio || audioFactory()
     audio.preload = 'auto'
@@ -287,12 +306,23 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), audioEle
 
   async function play() {
     if (!audio) return { status: 'unavailable', error: '还没有可播放的语音' }
-    try { if (audio.ended) audio.currentTime = 0; const playPromise = audio.play(); if (context?.resume) await context.resume(); await playPromise; notify('speaking'); return { status: 'speaking' } }
+    const version = playbackVersion
+    const target = audio
+    try {
+      await waitForPlayableAudio(target)
+      if (version !== playbackVersion || target !== audio) return { status: 'idle' }
+      if (audio.ended) audio.currentTime = 0
+      const playPromise = audio.play()
+      if (context?.resume) await context.resume()
+      await playPromise
+      notify('speaking')
+      return { status: 'speaking' }
+    }
     catch (error) { notify('blocked'); return { status: 'blocked', error: error.message || '需要点击播放' } }
   }
 
-  function pause() { audio?.pause?.(); notify('paused'); return { status: 'paused' } }
-  function stop() { if (audio) { audio.pause?.(); audio.currentTime = 0 }; notify('idle'); return { status: 'idle' } }
-  function dispose() { detach(); source?.disconnect?.(); if (context?.close) void context.close(); audio = null; context = null; source = null; analyser = null }
+  function pause() { playbackVersion += 1; audio?.pause?.(); notify('paused'); return { status: 'paused' } }
+  function stop() { playbackVersion += 1; if (audio) { audio.pause?.(); audio.currentTime = 0 }; notify('idle'); return { status: 'idle' } }
+  function dispose() { playbackVersion += 1; detach(); source?.disconnect?.(); if (context?.close) void context.close(); audio = null; context = null; source = null; analyser = null }
   return { load, play, pause, stop, attachAnalyser: () => analyser, dispose }
 }
