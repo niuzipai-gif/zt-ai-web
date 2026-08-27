@@ -536,7 +536,7 @@ export function createServer() {
         if (!rateLimit(request)) return sendJson(request, response, 429, { error: '语音请求过于频繁，请稍后再试' })
         const body = await readBody(request)
         try {
-          return sendJson(request, response, 200, await synthesizeVoice({ text: body.text, language: body.language }))
+          return sendJson(request, response, 200, await synthesizeVoice({ text: body.text, language: body.language, leadingPause: body.leadingPause === true }))
         } catch (error) {
           return sendJson(request, response, 502, { error: error.message || '语音合成暂时不可用' })
         }

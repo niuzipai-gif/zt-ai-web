@@ -420,8 +420,8 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
 
   const removeAttachment = id => setAttachments(current => current.filter(file => file.id !== id))
 
-  const synthesizeVoice = async (text, requestedLanguage = language) => {
-    const response = await fetch(`${API_BASE}/api/voice/synthesize`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, language: requestedLanguage }) })
+  const synthesizeVoice = async (text, requestedLanguage = language, options = {}) => {
+    const response = await fetch(`${API_BASE}/api/voice/synthesize`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, language: requestedLanguage, ...options }) })
     const body = await response.json().catch(() => ({}))
     if (!response.ok || !body.url) throw new Error(body.error || copy.voiceUnavailable)
     return body
@@ -536,7 +536,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     <div className="chat-footer"><ModelSwitch model={model} setModel={setModel} /><span className="chat-note"><MessageCircle size={14} /> {copy.publicNote}</span></div>
     {historyOpen && <ChatHistoryDrawer visitorId={visitorId} sessions={sessions} activeSessionId={session.id} copy={copy} language={language} onSelectSession={id => { onSelectSession(id); setHistoryOpen(false) }} onNewChat={() => { onNewChat(); setHistoryOpen(false) }} onClose={() => setHistoryOpen(false)} />}
     {previewAttachment && <div className="attachment-lightbox" role="dialog" aria-modal="true" aria-label={`预览 ${previewAttachment.name}`} onClick={() => setPreviewAttachment(null)}><button type="button" onClick={() => setPreviewAttachment(null)} aria-label="关闭预览"><X size={18} /></button><img src={previewAttachment.preview} alt={previewAttachment.name} onClick={event => event.stopPropagation()} /></div>}
-    {voiceOpen && <VoiceMode copy={copy} language={language} preview={isVoicePreview} capability={voiceCapability} audioElement={voiceAudioRef.current} onGreeting={async text => ({ audioUrl: (await synthesizeVoice(text, language)).url })} onSubmit={async (text, detectedLanguage) => ({ audioUrl: (await synthesizeVoice(await send({ value: text, language: detectedLanguage }), detectedLanguage)).url })} onClose={() => setVoiceOpen(false)} />}
+    {voiceOpen && <VoiceMode copy={copy} language={language} preview={isVoicePreview} capability={voiceCapability} audioElement={voiceAudioRef.current} onGreeting={async text => ({ audioUrl: (await synthesizeVoice(text, language, { leadingPause: true })).url })} onSubmit={async (text, detectedLanguage) => ({ audioUrl: (await synthesizeVoice(await send({ value: text, language: detectedLanguage }), detectedLanguage)).url })} onClose={() => setVoiceOpen(false)} />}
   </section>
 }
 

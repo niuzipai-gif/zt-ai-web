@@ -130,13 +130,18 @@ async function generateVideo(prompt) {
   return { kind: 'video', status: 'processing', taskId }
 }
 
-export async function synthesizeVoice({ text, language = 'zh' } = {}) {
+export async function synthesizeVoice({ text, language = 'zh', leadingPause = false } = {}) {
   if (!MEDIA_API_KEY()) throw new Error('MMX 语音服务未配置')
   const normalizedLanguage = voiceLanguage(language)
   const voiceId = voiceIdForLanguage(normalizedLanguage)
   if (!voiceId) throw new Error('MMX 自定义音色未配置')
   const value = cleanVoiceText(text, normalizedLanguage)
   if (!value) throw new Error('没有可合成的回答内容')
+  // Mobile speakers and Bluetooth routes can become audible a fraction after
+  // HTMLAudioElement.play() resolves. A natural breath plus MiniMax's official
+  // pause marker gives the output device a short pre-roll without changing the
+  // visible greeting text.
+  const synthesisText = leadingPause ? `(breath)<#0.30#>${value}` : value
   const voiceSetting = { voice_id: voiceId, speed: ttsSpeedForLanguage(normalizedLanguage), vol: 1, pitch: 0 }
   if (normalizedLanguage !== 'zh') voiceSetting.emotion = ttsEmotionForLanguage(normalizedLanguage)
   const pronunciationDict = pronunciationDictForLanguage(normalizedLanguage)
@@ -144,7 +149,7 @@ export async function synthesizeVoice({ text, language = 'zh' } = {}) {
     method: 'POST',
     body: JSON.stringify({
       model: ttsModelForLanguage(normalizedLanguage),
-      text: value,
+      text: synthesisText,
       stream: false,
       language_boost: normalizedLanguage === 'en' ? 'English' : normalizedLanguage === 'ja' ? 'Japanese' : 'Chinese',
       voice_setting: voiceSetting,
