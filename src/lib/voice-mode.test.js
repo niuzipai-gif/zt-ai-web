@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createVoiceState, startVoiceCapture, transitionVoiceState } from './voice-mode.js'
+import { createVoiceGreetingState, createVoiceState, detectVoiceLanguage, startVoiceCapture, transitionVoiceGreeting, transitionVoiceState } from './voice-mode.js'
 
 test('voice capture starts recognition before awaiting microphone permission', async () => {
   const calls = []
@@ -56,4 +56,26 @@ test('voice lifecycle keeps interim recognition text while listening', () => {
   )
   assert.equal(state.status, 'listening')
   assert.equal(state.transcript, '正在说话')
+})
+
+test('voice greeting is prepared on open and remains manually replayable when autoplay is blocked', () => {
+  let greeting = createVoiceGreetingState('你好，我是 ZT.AI。')
+  assert.deepEqual(greeting, { status: 'idle', text: '你好，我是 ZT.AI。', audioUrl: '', error: '' })
+  greeting = transitionVoiceGreeting(greeting, { type: 'start' })
+  assert.equal(greeting.status, 'loading')
+  greeting = transitionVoiceGreeting(greeting, { type: 'ready', audioUrl: 'https://example.test/greeting.mp3' })
+  assert.equal(greeting.status, 'ready')
+  greeting = transitionVoiceGreeting(greeting, { type: 'blocked', error: '需要点击播放' })
+  assert.equal(greeting.status, 'blocked')
+  greeting = transitionVoiceGreeting(greeting, { type: 'start-speaking' })
+  assert.equal(greeting.status, 'speaking')
+  greeting = transitionVoiceGreeting(greeting, { type: 'finish-speaking' })
+  assert.equal(greeting.status, 'idle')
+})
+
+test('voice language follows the recognized speech instead of the selected interface language', () => {
+  assert.equal(detectVoiceLanguage('请介绍一下你的项目', 'en'), 'zh')
+  assert.equal(detectVoiceLanguage('Please introduce your current project', 'zh'), 'en')
+  assert.equal(detectVoiceLanguage('現在のプロジェクトを紹介してください', 'zh'), 'ja')
+  assert.equal(detectVoiceLanguage('12345', 'ja'), 'ja')
 })

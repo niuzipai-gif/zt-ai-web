@@ -392,13 +392,14 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
 
   const removeAttachment = id => setAttachments(current => current.filter(file => file.id !== id))
 
-  const synthesizeVoice = async text => {
-    const response = await fetch(`${API_BASE}/api/voice/synthesize`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, language }) })
+  const synthesizeVoice = async (text, requestedLanguage = language) => {
+    const response = await fetch(`${API_BASE}/api/voice/synthesize`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, language: requestedLanguage }) })
     const body = await response.json().catch(() => ({}))
     if (!response.ok || !body.url) throw new Error(body.error || copy.voiceUnavailable)
     return body
   }
   const send = (draft = null) => {
+    const responseLanguage = ['zh', 'en', 'ja'].includes(draft?.language) ? draft.language : language
     const nextAttachments = draft?.attachments || attachments
     const value = (draft?.value ?? input).trim()
     if ((!value && !nextAttachments.length) || activeMessageId) return Promise.resolve('')
@@ -421,7 +422,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     return new Promise(resolve => { void (async () => {
       let outputText = ''
       try {
-        const response = await fetch(`${API_BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, language, visitorId, conversationId: session.id, messages: history, attachments: userMessage.attachments.map(({ name, type, size }) => ({ name, type, size })) }) })
+        const response = await fetch(`${API_BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, language: responseLanguage, visitorId, conversationId: session.id, messages: history, attachments: userMessage.attachments.map(({ name, type, size }) => ({ name, type, size })) }) })
         await consumeSse(response, (event, data) => {
           if (event === 'research.started') updateMessages(items => items.map(message => message.id === responseId ? { ...message, researching: true, researchStatus: copy.researching || '正在核验公开资料' } : message))
           if (event === 'research.progress') updateMessages(items => items.map(message => message.id === responseId ? { ...message, researching: true, researchStatus: String(data.message || copy.researching || '正在核验公开资料') } : message))
@@ -480,7 +481,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     <div className="chat-footer"><ModelSwitch model={model} setModel={setModel} /><span className="chat-note"><MessageCircle size={14} /> {copy.publicNote}</span></div>
     {historyOpen && <ChatHistoryDrawer visitorId={visitorId} sessions={sessions} activeSessionId={session.id} copy={copy} language={language} onSelectSession={id => { onSelectSession(id); setHistoryOpen(false) }} onNewChat={() => { onNewChat(); setHistoryOpen(false) }} onClose={() => setHistoryOpen(false)} />}
     {previewAttachment && <div className="attachment-lightbox" role="dialog" aria-modal="true" aria-label={`预览 ${previewAttachment.name}`} onClick={() => setPreviewAttachment(null)}><button type="button" onClick={() => setPreviewAttachment(null)} aria-label="关闭预览"><X size={18} /></button><img src={previewAttachment.preview} alt={previewAttachment.name} onClick={event => event.stopPropagation()} /></div>}
-    {voiceOpen && <VoiceMode copy={copy} language={language} preview={isVoicePreview} capability={voiceCapability} onSubmit={async text => ({ audioUrl: (await synthesizeVoice(await send({ value: text }))).url })} onClose={() => setVoiceOpen(false)} />}
+    {voiceOpen && <VoiceMode copy={copy} language={language} preview={isVoicePreview} capability={voiceCapability} onGreeting={async text => synthesizeVoice(text, language)} onSubmit={async (text, detectedLanguage) => ({ audioUrl: (await synthesizeVoice(await send({ value: text, language: detectedLanguage }), detectedLanguage)).url })} onClose={() => setVoiceOpen(false)} />}
   </section>
 }
 

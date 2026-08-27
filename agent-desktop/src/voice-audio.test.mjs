@@ -13,6 +13,17 @@ test('desktop voice audio exposes recognition and playback controllers', () => {
   assert.equal(typeof createVoicePlayback, 'function')
 })
 
+test('desktop speech recognition leaves the language unset in auto mode', () => {
+  const instances = []
+  class FakeRecognition { start() {} stop() {} }
+  const recognition = createVoiceRecognition({
+    language: 'auto',
+    recognitionFactory: () => { const instance = new FakeRecognition(); instances.push(instance); return instance },
+  })
+  assert.equal(recognition.start().status, 'listening')
+  assert.notEqual(instances[0].lang, 'zh-CN')
+})
+
 test('desktop voice recognition errors are actionable', () => {
   assert.match(formatVoiceRecognitionError('service-not-allowed'), /不提供语音识别服务/)
   assert.match(formatVoiceRecognitionError('not-allowed'), /权限未开启/)

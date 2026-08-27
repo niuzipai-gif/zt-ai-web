@@ -8,7 +8,7 @@ import { authPresentation, shouldSubmitComposer } from './interaction-state.mjs'
 import { attachmentReadFailure, extractDocxText, extractPdfText, extractSpreadsheetText, filesFromDataTransfer, hasFilePayload, isDocxAttachment, isPdfAttachment, isSpreadsheetAttachment, isTextAttachment } from './attachment-reader.mjs'
 import { createNavigationState, goBack, goForward, pushNavigationState } from './navigation-state.mjs'
 import { createTaskRunRegistry } from './task-runs.mjs'
-import { createVoiceState, startVoiceCapture, transitionVoiceState } from './voice-mode.mjs'
+import { createVoiceGreetingState, createVoiceState, detectVoiceLanguage, startVoiceCapture, transitionVoiceGreeting, transitionVoiceState } from './voice-mode.mjs'
 import { createVoiceAudioController, createVoicePlayback, createVoiceRecognition, formatVoiceRecognitionError } from './voice-audio.mjs'
 import { clampLevel, orbVisualState, readAnalyserLevel, shouldAnimateOrb } from './voice-orb.mjs'
 
@@ -45,9 +45,12 @@ const state = {
   taskRuns: createTaskRunRegistry(),
   voice: {
     lifecycle: createVoiceState(),
+    greeting: createVoiceGreetingState('你好，我是蔡宙廷的 ZT.AI。现在可以直接点击光球和我说话。'),
     controller: null,
     recognition: null,
     playback: null,
+    playbackPurpose: 'reply',
+    greetingRequestId: 0,
     analyser: null,
     animationFrame: 0,
   },
@@ -58,7 +61,7 @@ const els = {
   conversationEyebrow: $('#conversation-eyebrow'), conversationTitle: $('#conversation-title'), conversationSubtitle: $('#conversation-subtitle'),
   messages: $('#messages'), taskInput: $('#task-input'), composer: $('#composer'), attachmentPreview: $('#attachment-preview'), fileInput: $('#file-input'), run: $('#run-task'), newTask: $('#new-task'), refresh: $('#app-refresh'), history: $('#history'), sidebarToggle: $('#sidebar-toggle'), appBack: $('#app-back'), appForward: $('#app-forward'),
   toolTrigger: $('#tool-trigger'), toolDrawer: $('#tool-drawer'), permissionDrawer: $('#permission-drawer'), permissionTrigger: $('#permission-trigger'), voice: $('#voice-button'), modelSelect: $('#model-select'),
-  voiceMode: $('#voice-mode'), voiceOrb: $('#voice-orb'), voiceStatus: $('#voice-status'), voiceTranscript: $('#voice-transcript'), voiceClose: $('#voice-close'), voiceStop: $('#voice-stop'),
+  voiceMode: $('#voice-mode'), voiceOrb: $('#voice-orb'), voiceStatus: $('#voice-status'), voiceTranscript: $('#voice-transcript'), voiceClose: $('#voice-close'), voiceStop: $('#voice-stop'), voicePlay: $('#voice-play'),
   inspectorToggle: $('#inspector-toggle'), executionSummary: $('#execution-summary'),
   contextRing: $('#context-ring'), contextRingLarge: $('#context-ring-large'), contextPercent: $('#context-percent'), contextPercentLarge: $('#context-percent-large'), contextModel: $('#context-model'), contextUsed: $('#context-used'), contextUsedLarge: $('#context-used-large'), contextRemaining: $('#context-remaining'),
   plan: $('#plan'), log: $('#activity-log'), logCount: $('#log-count'), title: $('#execution-title'), status: $('#execution-status'),
@@ -559,11 +562,11 @@ function setAccount(user) {
 }
 function describeNetworkError(error, action = '连接 ZT.AI 网关') { const message = String(error?.message || error || ''); return /failed to fetch|networkerror|load failed/i.test(message) ? `${action}失败：当前无法访问 ${state.gatewayUrl || 'ZT.AI 网关'}，请确认网络正常或稍后重试。` : message || `${action}失败` }
 
-async function synthesizeVoice(text) {
+async function synthesizeVoice(text, language = 'zh') {
   const response = await fetch(`${state.gatewayUrl}/api/voice/synthesize`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...(state.authToken ? { authorization: `Bearer ${state.authToken}` } : {}) },
-    body: JSON.stringify({ text: String(text || '').trim(), language: 'zh' }),
+    body: JSON.stringify({ text: String(text || '').trim(), language }),
   })
   const body = await readJson(response)
   if (!response.ok || !body.url) throw new Error(body.error || '语音合成没有返回音频')
@@ -621,7 +624,7 @@ function buddyCapabilityAnswer(input) {
   return 'ZT.buddy 是 ZT.AI 的桌面执行型协作 Agent，不只是聊天。它可以在你授权的当前工作区里：\n\n- 检查项目文件、定位问题并解释结果；\n- 修改代码、整理文件、运行测试或构建；\n- 检索公开资料并返回来源；\n- 把重复工作整理成可复用的流程和工具。\n\n涉及读取、写入、命令或联网时，我会先按权限执行；高风险操作会在执行前请求你的确认。你可以直接告诉我目标，例如“检查这个项目并找出启动问题”或“整理工作区里的安装包”。'
 }
 
-async function runChat({ agent = false, localAnswer = '', taskOverride = '' } = {}) {
+async function runChat({ agent = false, localAnswer = '', taskOverride = '', language = 'zh' } = {}) {
   if (state.pendingAttachments.some(attachment => attachment.loading)) { setNotice('附件仍在读取，完成后再发送。'); return '' }
   const task = String(taskOverride || els.taskInput.value).trim(); if (!task || (!taskOverride && els.run.disabled)) return ''
   const attachments = state.pendingAttachments.slice()
@@ -659,7 +662,7 @@ async function runChat({ agent = false, localAnswer = '', taskOverride = '' } = 
     if (localAnswer) {
       smooth.push(localAnswer)
     } else {
-      const payload = { task, model: state.model === 'DEEPSEEK' ? 'deepseek' : 'minimax', language: 'zh', skills: state.activeSkills.map(skill => skill.name), visitorId: `desktop-${state.accountId || 'guest'}`, conversationId: chatId, messages }
+      const payload = { task, model: state.model === 'DEEPSEEK' ? 'deepseek' : 'minimax', language, skills: state.activeSkills.map(skill => skill.name), visitorId: `desktop-${state.accountId || 'guest'}`, conversationId: chatId, messages }
       let response
       if (requiresResearch) {
         setNotice('正在联网核验公开信息…')
@@ -943,7 +946,7 @@ function setNotice(text) { const body = appendMessage('assistant', text); body.c
 
 function voiceMessage(status, error = '') {
   if (status === 'listening') return '正在听你说话。再次点击光球结束录音。'
-  if (status === 'processing') return '已经听到了，正在整理问题并生成回答。'
+  if (status === 'processing') return '正在准备开场问候或整理你的问题。'
   if (status === 'speaking') return 'ZT.AI 正在说话。'
   if (status === 'error') return error || '语音服务暂时不可用，请稍后重试。'
   return '点击光球开始说话。'
@@ -952,21 +955,26 @@ function voiceMessage(status, error = '') {
 function renderDesktopVoiceState() {
   const lifecycle = state.voice.lifecycle
   const status = lifecycle.status
+  const greeting = state.voice.greeting
+  const visualStatus = status !== 'idle' ? status : greeting.status === 'speaking' ? 'speaking' : 'idle'
   if (!els.voiceMode) return
-  els.voiceMode.dataset.voiceStatus = status
+  els.voiceMode.dataset.voiceStatus = visualStatus
   els.voiceMode.setAttribute('aria-hidden', String(els.voiceMode.classList.contains('hidden')))
-  els.voiceOrb?.setAttribute('data-voice-status', status)
-  els.voiceOrb?.setAttribute('aria-label', status === 'listening' || status === 'speaking' ? '停止语音' : '开始录音')
+  els.voiceOrb?.setAttribute('data-voice-status', visualStatus)
+  els.voiceOrb?.setAttribute('aria-label', visualStatus === 'listening' || visualStatus === 'speaking' ? '停止语音' : '开始录音')
   if (els.voiceStatus) {
-    els.voiceStatus.dataset.status = status
-    els.voiceStatus.textContent = voiceMessage(status, lifecycle.error)
+    els.voiceStatus.dataset.status = visualStatus
+    els.voiceStatus.textContent = greeting.status === 'loading' ? '正在准备开场问候…' : greeting.status === 'blocked' || greeting.status === 'error' ? greeting.error : voiceMessage(visualStatus, lifecycle.error)
   }
-  if (els.voiceTranscript) els.voiceTranscript.textContent = lifecycle.transcript || (status === 'error' ? lifecycle.error : status === 'idle' ? '点击光球开始说话' : '')
-  if (els.voiceStop) els.voiceStop.disabled = status !== 'listening'
+  if (els.voiceTranscript) els.voiceTranscript.textContent = lifecycle.transcript || (status === 'error' ? lifecycle.error : greeting.status === 'blocked' || greeting.status === 'error' ? greeting.error : greeting.status !== 'idle' ? greeting.text : status === 'idle' ? '点击光球开始说话' : '')
+  if (els.voiceStop) els.voiceStop.disabled = status !== 'listening' && greeting.status !== 'speaking'
+  if (els.voicePlay) els.voicePlay.disabled = greeting.status === 'loading' || !greeting.audioUrl
 }
 
 function renderDesktopVoiceOrb(timestamp = 0) {
   if (!els.voiceMode || els.voiceMode.classList.contains('hidden') || !els.voiceOrb) return
+  const lifecycleStatus = state.voice.lifecycle.status
+  const status = lifecycleStatus !== 'idle' ? lifecycleStatus : state.voice.greeting.status === 'speaking' ? 'speaking' : 'idle'
   const canvas = els.voiceOrb.querySelector('canvas')
   if (canvas) {
     const rect = els.voiceOrb.getBoundingClientRect()
@@ -979,7 +987,6 @@ function renderDesktopVoiceOrb(timestamp = 0) {
       context.setTransform(ratio, 0, 0, ratio, 0, 0)
       const size = Math.min(rect.width, rect.height)
       const center = size / 2
-      const status = state.voice.lifecycle.status
       const visual = orbVisualState(status)
       const analyserLevel = readAnalyserLevel(state.voice.analyser)
       const animate = shouldAnimateOrb(status) && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -1009,7 +1016,7 @@ function renderDesktopVoiceOrb(timestamp = 0) {
       context.globalAlpha = 1
     }
   }
-  if (shouldAnimateOrb(state.voice.lifecycle.status)) state.voice.animationFrame = window.requestAnimationFrame(renderDesktopVoiceOrb)
+  if (shouldAnimateOrb(status)) state.voice.animationFrame = window.requestAnimationFrame(renderDesktopVoiceOrb)
   else state.voice.animationFrame = 0
 }
 
@@ -1024,6 +1031,39 @@ function setVoiceLifecycle(event) {
   requestVoiceOrbRender()
 }
 
+async function replayVoiceGreeting() {
+  if (!state.voice.greeting.audioUrl || !state.voice.playback) return { status: 'unavailable' }
+  state.voice.playbackPurpose = 'greeting'
+  const result = await state.voice.playback.play()
+  if (result?.status === 'speaking') state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'start-speaking' })
+  else if (result?.status === 'blocked') state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'blocked', error: '开场问候已准备好，请点击播放按钮重试。' })
+  else if (result?.status !== 'speaking') state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'fail', error: '开场问候暂时无法播放，请稍后重试。' })
+  renderDesktopVoiceState()
+  requestVoiceOrbRender()
+  return result
+}
+
+async function prepareVoiceGreeting() {
+  const requestId = state.voice.greetingRequestId
+  const greetingText = state.voice.greeting.text
+  state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'start', text: greetingText })
+  renderDesktopVoiceState()
+  try {
+    const audio = await synthesizeVoice(greetingText, 'zh')
+    if (requestId !== state.voice.greetingRequestId || !state.voice.playback) return
+    state.voice.playbackPurpose = 'greeting'
+    state.voice.playback?.load(audio.url)
+    state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'ready', audioUrl: audio.url })
+    renderDesktopVoiceState()
+    await replayVoiceGreeting()
+  } catch (error) {
+    if (requestId !== state.voice.greetingRequestId) return
+    state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'fail', error: error?.message || '开场问候暂时无法播放，请稍后重试。' })
+    renderDesktopVoiceState()
+    requestVoiceOrbRender()
+  }
+}
+
 function openVoiceMode() {
   if (!els.voiceMode) return
   els.voiceMode.classList.remove('hidden')
@@ -1032,10 +1072,13 @@ function openVoiceMode() {
   state.voice.playback?.dispose?.()
   state.voice.recognition?.dispose?.()
   state.voice.lifecycle = createVoiceState()
+  state.voice.greetingRequestId += 1
+  state.voice.greeting = createVoiceGreetingState('你好，我是蔡宙廷的 ZT.AI。现在可以直接点击光球和我说话。')
+  state.voice.playbackPurpose = 'reply'
   state.voice.finalTranscript = ''
   state.voice.controller = createVoiceAudioController()
   state.voice.recognition = createVoiceRecognition({
-    language: 'zh',
+    language: 'auto',
     onTranscript: (value, isFinal) => {
       if (!value || state.voice.lifecycle.status !== 'listening') return
       if (isFinal) state.voice.finalTranscript = `${state.voice.finalTranscript} ${value}`.trim()
@@ -1052,19 +1095,24 @@ function openVoiceMode() {
     onStateChange: event => {
       if (event.status === 'speaking') {
         state.voice.analyser = event.analyser || null
-        if (state.voice.lifecycle.status === 'processing') setVoiceLifecycle({ type: 'start-speaking', audioUrl: state.voice.lifecycle.audioUrl })
+        if (state.voice.playbackPurpose === 'greeting') state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'start-speaking' })
+        else if (state.voice.lifecycle.status === 'processing') setVoiceLifecycle({ type: 'start-speaking', audioUrl: state.voice.lifecycle.audioUrl })
       } else if (event.status === 'idle') {
         state.voice.analyser = null
-        if (state.voice.lifecycle.status === 'speaking') setVoiceLifecycle({ type: 'finish-speaking' })
+        if (state.voice.playbackPurpose === 'greeting') state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'finish-speaking' })
+        else if (state.voice.lifecycle.status === 'speaking') setVoiceLifecycle({ type: 'finish-speaking' })
       } else if (event.status === 'error') {
         state.voice.analyser = null
-        if (state.voice.lifecycle.status !== 'error') setVoiceLifecycle({ type: 'fail', error: '语音播放失败，请检查网络后重试。' })
+        if (state.voice.playbackPurpose === 'greeting') state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'fail', error: '开场问候暂时无法播放，请稍后重试。' })
+        else if (state.voice.lifecycle.status !== 'error') setVoiceLifecycle({ type: 'fail', error: '语音播放失败，请检查网络后重试。' })
       }
       renderDesktopVoiceState()
+      requestVoiceOrbRender()
     },
   })
   renderDesktopVoiceState()
   requestVoiceOrbRender()
+  void prepareVoiceGreeting()
   els.voiceClose?.focus()
 }
 
@@ -1080,6 +1128,9 @@ function closeVoiceMode() {
   state.voice.analyser = null
   state.voice.finalTranscript = ''
   state.voice.lifecycle = createVoiceState()
+  state.voice.greetingRequestId += 1
+  state.voice.greeting = createVoiceGreetingState('你好，我是蔡宙廷的 ZT.AI。现在可以直接点击光球和我说话。')
+  state.voice.playbackPurpose = 'reply'
   renderDesktopVoiceState()
   els.voiceMode.classList.add('hidden')
   els.voiceMode.setAttribute('aria-hidden', 'true')
@@ -1088,6 +1139,15 @@ function closeVoiceMode() {
 
 async function toggleVoiceInput() {
   const status = state.voice.lifecycle.status
+  if (state.voice.greeting.status === 'loading') return
+  if (state.voice.greeting.status === 'speaking') {
+    state.voice.playback?.stop?.()
+    state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'reset' })
+    state.voice.playbackPurpose = 'reply'
+    renderDesktopVoiceState()
+    requestVoiceOrbRender()
+    return
+  }
   if (status === 'speaking') {
     state.voice.playback?.stop?.()
     return
@@ -1100,9 +1160,11 @@ async function toggleVoiceInput() {
     if (!transcript) { setVoiceLifecycle({ type: 'fail', error: '没有听清你的话，请再说一次。' }); return }
     setVoiceLifecycle({ type: 'finish-listening', transcript })
     try {
-      const output = await runChat({ taskOverride: transcript })
+      const detectedLanguage = detectVoiceLanguage(transcript, 'zh')
+      const output = await runChat({ taskOverride: transcript, language: detectedLanguage })
       if (!output) throw new Error('没有生成可播放的回答')
-      const audio = await synthesizeVoice(output)
+      const audio = await synthesizeVoice(output, detectedLanguage)
+      state.voice.playbackPurpose = 'reply'
       state.voice.playback?.load(audio.url)
       setVoiceLifecycle({ type: 'start-speaking', audioUrl: audio.url })
       const playback = await state.voice.playback?.play?.()
@@ -1113,6 +1175,11 @@ async function toggleVoiceInput() {
     return
   }
   if (!['idle', 'error'].includes(status)) return
+  if (state.voice.greeting.status !== 'idle') {
+    state.voice.playback?.stop?.()
+    state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'reset' })
+    state.voice.playbackPurpose = 'reply'
+  }
   setVoiceLifecycle({ type: 'start-listening' })
   state.voice.finalTranscript = ''
   const result = await startVoiceCapture({ recognition: state.voice.recognition, recorder: state.voice.controller })
@@ -1128,7 +1195,7 @@ els.sidebarToggle?.addEventListener('click', () => setRailCollapsed(!state.railC
 els.appBack?.addEventListener('click', () => { state.navigation = goBack(state.navigation); applyNavigationSnapshot(state.navigation.current) })
 els.appForward?.addEventListener('click', () => { state.navigation = goForward(state.navigation); applyNavigationSnapshot(state.navigation.current) })
 els.modelSelect.addEventListener('change', () => { state.model = normalizeModel(els.modelSelect.value); localStorage.setItem('zt-ai:agent-model', state.model); renderContext() })
-els.toolTrigger.addEventListener('click', toggleDrawer); $('#drawer-close')?.addEventListener('click', () => closeDrawer(els.toolDrawer)); $('#permission-drawer-close')?.addEventListener('click', () => closeDrawer(els.permissionDrawer)); els.permissionTrigger.addEventListener('click', () => { isDrawerVisible(els.permissionDrawer) ? closeDrawer(els.permissionDrawer) : openPermissionDrawer() }); document.addEventListener('keydown', event => { if (event.key === 'Escape' && (isDrawerVisible(els.toolDrawer) || isDrawerVisible(els.permissionDrawer))) closeDrawer(); else if (event.key === 'Escape' && els.voiceMode && !els.voiceMode.classList.contains('hidden')) closeVoiceMode() }); document.addEventListener('click', event => { const inDrawer = els.toolDrawer.contains(event.target) || els.permissionDrawer.contains(event.target); const onTrigger = els.toolTrigger.contains(event.target) || els.permissionTrigger.contains(event.target); if (!inDrawer && !onTrigger && (isDrawerVisible(els.toolDrawer) || isDrawerVisible(els.permissionDrawer))) closeDrawer() }); els.inspectorToggle?.addEventListener('click', () => setInspectorOpen(!state.inspectorOpen)); els.voice?.addEventListener('click', openVoiceMode); els.voiceClose?.addEventListener('click', closeVoiceMode); els.voiceOrb?.addEventListener('click', () => { void toggleVoiceInput() }); els.voiceStop?.addEventListener('click', () => { if (state.voice.lifecycle.status === 'listening' || state.voice.lifecycle.status === 'speaking') void toggleVoiceInput() })
+els.toolTrigger.addEventListener('click', toggleDrawer); $('#drawer-close')?.addEventListener('click', () => closeDrawer(els.toolDrawer)); $('#permission-drawer-close')?.addEventListener('click', () => closeDrawer(els.permissionDrawer)); els.permissionTrigger.addEventListener('click', () => { isDrawerVisible(els.permissionDrawer) ? closeDrawer(els.permissionDrawer) : openPermissionDrawer() }); document.addEventListener('keydown', event => { if (event.key === 'Escape' && (isDrawerVisible(els.toolDrawer) || isDrawerVisible(els.permissionDrawer))) closeDrawer(); else if (event.key === 'Escape' && els.voiceMode && !els.voiceMode.classList.contains('hidden')) closeVoiceMode() }); document.addEventListener('click', event => { const inDrawer = els.toolDrawer.contains(event.target) || els.permissionDrawer.contains(event.target); const onTrigger = els.toolTrigger.contains(event.target) || els.permissionTrigger.contains(event.target); if (!inDrawer && !onTrigger && (isDrawerVisible(els.toolDrawer) || isDrawerVisible(els.permissionDrawer))) closeDrawer() }); els.inspectorToggle?.addEventListener('click', () => setInspectorOpen(!state.inspectorOpen)); els.voice?.addEventListener('click', openVoiceMode); els.voiceClose?.addEventListener('click', closeVoiceMode); els.voiceOrb?.addEventListener('click', () => { void toggleVoiceInput() }); els.voicePlay?.addEventListener('click', () => { void replayVoiceGreeting() }); els.voiceStop?.addEventListener('click', () => { if (state.voice.lifecycle.status === 'listening' || state.voice.lifecycle.status === 'speaking' || state.voice.greeting.status === 'speaking') void toggleVoiceInput() })
 document.querySelectorAll('.drawer-option').forEach(button => button.addEventListener('click', async () => { if (button.dataset.tool === 'skills') { await showSkillBrowser(); return } toolAction(button.dataset.tool); toggleDrawer() }))
 document.querySelectorAll('[data-capability]').forEach(input => input.addEventListener('change', () => updatePermission(input.dataset.capability, input.checked)))
 els.taskInput.addEventListener('paste', handleComposerPaste)

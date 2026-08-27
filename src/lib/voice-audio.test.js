@@ -48,6 +48,17 @@ test('speech recognition reports interim text and can be stopped safely', () => 
   assert.equal(instances[0].stopped, true)
 })
 
+test('speech recognition leaves the language unset in auto mode', () => {
+  const instances = []
+  class FakeRecognition { start() {} stop() {} }
+  const recognition = createVoiceRecognition({
+    language: 'auto',
+    recognitionFactory: () => { const instance = new FakeRecognition(); instances.push(instance); return instance },
+  })
+  assert.equal(recognition.start().status, 'listening')
+  assert.notEqual(instances[0].lang, 'zh-CN')
+})
+
 test('voice transcript does not duplicate an interim phrase when the final result arrives', () => {
   const interim = mergeVoiceTranscript('', '你好 ZT.AI', false)
   const final = mergeVoiceTranscript(interim.stable, '你好 ZT.AI', true)

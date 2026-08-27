@@ -65,7 +65,7 @@ test('desktop renderer exposes an accessible tool drawer for execution context',
   for (const id of ['execution-summary', 'context-ring', 'tool-trigger', 'voice-button', 'authorize-device']) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`)
   }
-  for (const id of ['voice-mode', 'voice-orb', 'voice-status', 'voice-transcript', 'voice-close', 'voice-stop']) {
+  for (const id of ['voice-mode', 'voice-orb', 'voice-status', 'voice-transcript', 'voice-close', 'voice-stop', 'voice-play']) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`)
   }
   assert.match(html, /id="voice-mode"[^>]*class="[^"]*hidden/)
@@ -74,6 +74,7 @@ test('desktop renderer exposes an accessible tool drawer for execution context',
   assert.match(app, /createVoiceRecognition/)
   assert.match(app, /createVoicePlayback/)
   assert.match(app, /api\/voice\/synthesize/)
+  assert.match(app, /playVoiceGreeting|voiceGreeting/)
   assert.doesNotMatch(app, /语音入口已准备；接入声音模型后可开始语音输入/)
   assert.match(html, /data-drawer-section="context"/)
   assert.match(html, /data-drawer-section="permissions"/)

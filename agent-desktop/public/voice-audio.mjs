@@ -13,6 +13,7 @@ function defaultRecognitionFactory() {
 
 function recognitionLanguage(language) {
   const value = String(language || 'zh').toLowerCase()
+  if (value === 'auto' || value === 'und' || value === 'automatic') return ''
   if (value.startsWith('en')) return 'en-US'
   if (value.startsWith('ja') || value.startsWith('jp')) return 'ja-JP'
   return 'zh-CN'
@@ -90,7 +91,8 @@ export function createVoiceRecognition({ language = 'zh', recognitionFactory = d
     if (!recognitionFactory) return unavailable('当前设备没有可用的语音识别服务')
     try {
       recognition = recognitionFactory()
-      recognition.lang = recognitionLanguage(language)
+      const locale = recognitionLanguage(language)
+      if (locale) recognition.lang = locale
       recognition.continuous = true
       recognition.interimResults = true
       recognition.maxAlternatives = 1
@@ -179,7 +181,7 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), audioCon
   }
   async function play() {
     if (!audio) return { status: 'unavailable', error: '还没有可播放的语音' }
-    try { if (context?.resume) await context.resume(); await audio.play(); notify('speaking'); return { status: 'speaking' } }
+    try { const playPromise = audio.play(); if (context?.resume) await context.resume(); await playPromise; notify('speaking'); return { status: 'speaking' } }
     catch (error) { notify('blocked'); return { status: 'blocked', error: error.message || '需要点击播放' } }
   }
   function pause() { audio?.pause?.(); notify('paused'); return { status: 'paused' } }

@@ -1,7 +1,43 @@
 const STATUSES = new Set(['idle', 'listening', 'processing', 'speaking', 'error'])
+const GREETING_STATUSES = new Set(['idle', 'loading', 'ready', 'speaking', 'blocked', 'error'])
 
 export function createVoiceState() {
   return { status: 'idle', transcript: '', error: '', audioUrl: '' }
+}
+
+export function createVoiceGreetingState(text = '') {
+  return { status: 'idle', text: String(text || '').trim(), audioUrl: '', error: '' }
+}
+
+export function transitionVoiceGreeting(current, event = {}) {
+  const state = { ...createVoiceGreetingState(), ...(current || {}) }
+  if (!GREETING_STATUSES.has(state.status)) return createVoiceGreetingState(state.text)
+  const type = String(event.type || '')
+  if (type === 'reset') return createVoiceGreetingState(state.text)
+  if (type === 'start') return { ...state, status: 'loading', text: String(event.text || state.text).trim(), audioUrl: '', error: '' }
+  if (type === 'ready') {
+    const audioUrl = String(event.audioUrl || '').trim()
+    if (!/^https:\/\//i.test(audioUrl)) return { ...state, status: 'error', error: '开场问候没有可播放的音频。', audioUrl: '' }
+    return { ...state, status: 'ready', audioUrl, error: '' }
+  }
+  if (type === 'start-speaking' && (state.status === 'ready' || state.status === 'blocked')) return { ...state, status: 'speaking', error: '' }
+  if (type === 'finish-speaking' && state.status === 'speaking') return createVoiceGreetingState(state.text)
+  if (type === 'pause' && state.status === 'speaking') return { ...state, status: 'ready' }
+  if (type === 'blocked' && (state.status === 'ready' || state.status === 'blocked')) return { ...state, status: 'blocked', error: String(event.error || '请点击播放按钮重试。').trim() }
+  if (type === 'fail') return { ...state, status: 'error', error: String(event.error || '开场问候暂时无法播放。').trim(), audioUrl: state.audioUrl }
+  return state
+}
+
+export function detectVoiceLanguage(text, fallback = 'zh') {
+  const value = String(text || '').trim()
+  const normalizedFallback = ['zh', 'en', 'ja'].includes(String(fallback || '').toLowerCase()) ? String(fallback).toLowerCase() : 'zh'
+  if (!value) return normalizedFallback
+  if (/[\u3040-\u30ff]/u.test(value)) return 'ja'
+  const latin = (value.match(/[A-Za-z]/g) || []).length
+  const han = (value.match(/[\u3400-\u9fff]/g) || []).length
+  if (latin >= 2 && latin >= han) return 'en'
+  if (han > 0) return 'zh'
+  return normalizedFallback
 }
 
 export async function startVoiceCapture({ recognition, recorder }) {

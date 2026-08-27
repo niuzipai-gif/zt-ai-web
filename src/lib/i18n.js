@@ -143,9 +143,9 @@ export const siteCopy = {
 }
 
 Object.assign(siteCopy.zh.chat, { attachmentFallback: '请分析我上传的附件。', attachmentReady: '已读取', attachmentTruncated: '已截断', attachmentError: '未解析', attachmentPreviewOnly: '图片预览' })
-Object.assign(siteCopy.zh.chat, { voiceBrowserUnsupported: '当前浏览器不提供语音识别，请改用 Safari、安卓 App 或桌面端。', voiceNetworkError: '语音识别网络连接失败，请检查网络后重试。' })
-Object.assign(siteCopy.en.chat, { voiceBrowserUnsupported: 'This browser does not provide speech recognition. Use Safari, the Android app or desktop app.', voiceNetworkError: 'Speech recognition network connection failed. Check the network and try again.' })
-Object.assign(siteCopy.ja.chat, { voiceBrowserUnsupported: 'このブラウザは音声認識に対応していません。Safari、Androidアプリ、またはデスクトップ版をご利用ください。', voiceNetworkError: '音声認識のネットワーク接続に失敗しました。ネットワークを確認して再試行してください。' })
+Object.assign(siteCopy.zh.chat, { voiceBrowserUnsupported: '当前浏览器不提供语音识别，请改用 Safari、安卓 App 或桌面端。', voiceNetworkError: '语音识别网络连接失败，请检查网络后重试。', voiceGreeting: '你好，我是蔡宙廷的 ZT.AI。现在可以直接点击光球和我说话。', voiceGreetingLoading: '正在准备开场问候…', voiceGreetingUnavailable: '开场问候已准备好，请点击播放按钮重试。', voiceGreetingError: '开场问候暂时无法播放，请检查网络后重试。' })
+Object.assign(siteCopy.en.chat, { voiceBrowserUnsupported: 'This browser does not provide speech recognition. Use Safari, the Android app or desktop app.', voiceNetworkError: 'Speech recognition network connection failed. Check the network and try again.', voiceGreeting: 'Hi, I’m ZT.AI, Cai Zhouting’s digital twin. Tap the orb whenever you’re ready to talk.', voiceGreetingLoading: 'Preparing the greeting…', voiceGreetingUnavailable: 'The greeting is ready. Tap play to try again.', voiceGreetingError: 'The greeting could not be played. Check the network and try again.' })
+Object.assign(siteCopy.ja.chat, { voiceBrowserUnsupported: 'このブラウザは音声認識に対応していません。Safari、Androidアプリ、またはデスクトップ版をご利用ください。', voiceNetworkError: '音声認識のネットワーク接続に失敗しました。ネットワークを確認して再試行してください。', voiceGreeting: 'こんにちは、蔡宙廷のZT.AIです。準備ができたらオーブをタップして話しかけてください。', voiceGreetingLoading: '挨拶を準備しています…', voiceGreetingUnavailable: '挨拶の音声を準備しました。再生ボタンをタップしてもう一度お試しください。', voiceGreetingError: '挨拶を再生できませんでした。ネットワークを確認して再試行してください。' })
 Object.assign(siteCopy.en.chat, { attachmentFallback: 'Please analyze the attachment I uploaded.', attachmentReady: 'Read', attachmentTruncated: 'Truncated', attachmentError: 'Unread', attachmentPreviewOnly: 'Image preview' })
 Object.assign(siteCopy.ja.chat, { attachmentFallback: 'アップロードした添付ファイルを分析してください。', attachmentReady: '読み取り済み', attachmentTruncated: '一部表示', attachmentError: '未解析', attachmentPreviewOnly: '画像プレビュー' })
 
