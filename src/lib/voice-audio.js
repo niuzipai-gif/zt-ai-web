@@ -28,6 +28,14 @@ function recognitionLanguage(language) {
   return 'zh-CN'
 }
 
+export function mergeVoiceTranscript(stableText = '', nextText = '', isFinal = false) {
+  const stable = String(stableText || '').trim()
+  const next = String(nextText || '').trim()
+  if (!next) return { stable, display: stable }
+  const display = `${stable} ${next}`.trim()
+  return { stable: isFinal ? display : stable, display }
+}
+
 function stopTracks(stream) {
   stream?.getTracks?.().forEach(track => track.stop?.())
 }

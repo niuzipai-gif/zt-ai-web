@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Mic, Pause, Play, Square, X } from 'lucide-react'
 import { VoiceOrb } from './VoiceOrb.jsx'
 import { createVoiceState, transitionVoiceState } from '../lib/voice-mode.js'
-import { createVoiceAudioController, createVoicePlayback, createVoiceRecognition } from '../lib/voice-audio.js'
+import { createVoiceAudioController, createVoicePlayback, createVoiceRecognition, mergeVoiceTranscript } from '../lib/voice-audio.js'
 
 function browserReducedMotion() {
   return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
@@ -18,6 +18,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
   const recognitionRef = useRef(null)
   const playbackRef = useRef(null)
   const transcriptRef = useRef('')
+  const finalTranscriptRef = useRef('')
 
   const statusText = useMemo(() => {
     if (state.status === 'listening') return copy.voiceListening
@@ -33,8 +34,10 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
       language,
       onTranscript: (value, isFinal) => {
         if (!value) return
-        transcriptRef.current = isFinal ? `${transcriptRef.current} ${value}`.trim() : value
-        setTranscript(transcriptRef.current)
+        const merged = mergeVoiceTranscript(finalTranscriptRef.current, value, isFinal)
+        finalTranscriptRef.current = merged.stable
+        transcriptRef.current = merged.display
+        setTranscript(merged.display)
       },
       onError: error => setState(current => transitionVoiceState(current, { type: 'fail', error })),
     })
@@ -61,6 +64,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
       return
     }
     transcriptRef.current = ''
+    finalTranscriptRef.current = ''
     setTranscript('')
     setState(current => transitionVoiceState(current, { type: 'start-listening' }))
     const result = await controllerRef.current?.start?.()
@@ -85,7 +89,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
       setState(current => transitionVoiceState(current, { type: 'fail', error: result?.error || copy.voiceUnavailable }))
       return
     }
-    const value = transcriptRef.current.trim()
+    const value = (finalTranscriptRef.current || transcriptRef.current).trim()
     if (!value) {
       setState(current => transitionVoiceState(current, { type: 'fail', error: copy.voiceNoTranscript || copy.voiceUnavailable }))
       return

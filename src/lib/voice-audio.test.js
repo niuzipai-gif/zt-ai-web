@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chooseRecorderMime, createVoiceAudioController, createVoicePlayback, createVoiceRecognition } from './voice-audio.js'
+import { chooseRecorderMime, createVoiceAudioController, createVoicePlayback, createVoiceRecognition, mergeVoiceTranscript } from './voice-audio.js'
 
 test('recorder chooses a supported audio MIME and reports unavailable capability', () => {
   assert.equal(chooseRecorderMime(type => type === 'audio/webm;codecs=opus'), 'audio/webm;codecs=opus')
@@ -46,4 +46,12 @@ test('speech recognition reports interim text and can be stopped safely', () => 
   assert.deepEqual(events, [{ text: 'Hello ZT.AI', isFinal: true }])
   assert.deepEqual(recognition.stop(), { status: 'stopped' })
   assert.equal(instances[0].stopped, true)
+})
+
+test('voice transcript does not duplicate an interim phrase when the final result arrives', () => {
+  const interim = mergeVoiceTranscript('', '你好 ZT.AI', false)
+  const final = mergeVoiceTranscript(interim.stable, '你好 ZT.AI', true)
+  assert.equal(interim.display, '你好 ZT.AI')
+  assert.equal(final.stable, '你好 ZT.AI')
+  assert.equal(final.display, '你好 ZT.AI')
 })
