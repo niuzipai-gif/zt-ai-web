@@ -17,6 +17,8 @@ test('public voice mode is wired to submit recognized text and play a synthesize
   assert.match(source, /voiceGreeting/)
   assert.match(source, /blocked/)
   assert.match(source, /<textarea/)
+  assert.match(source, /voice-mode-greeting/)
+  assert.match(source, /greetingText/)
   assert.match(source, /voiceTextPlaceholder/)
   assert.match(source, /start-processing/)
   assert.match(source, /replyPlayable/)

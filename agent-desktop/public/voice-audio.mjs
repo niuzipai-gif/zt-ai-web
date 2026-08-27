@@ -190,7 +190,7 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), audioCon
   }
   async function play() {
     if (!audio) return { status: 'unavailable', error: '还没有可播放的语音' }
-    try { const playPromise = audio.play(); if (context?.resume) await context.resume(); await playPromise; notify('speaking'); return { status: 'speaking' } }
+    try { if (audio.ended) audio.currentTime = 0; const playPromise = audio.play(); if (context?.resume) await context.resume(); await playPromise; notify('speaking'); return { status: 'speaking' } }
     catch (error) { notify('blocked'); return { status: 'blocked', error: error.message || '需要点击播放' } }
   }
   function pause() { audio?.pause?.(); notify('paused'); return { status: 'paused' } }

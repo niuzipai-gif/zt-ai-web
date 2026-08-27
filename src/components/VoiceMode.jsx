@@ -241,7 +241,8 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
     onClose?.()
   }
 
-  const transcriptText = inputText || (state.status === 'listening' ? copy.voiceTranscriptPlaceholder : greeting.status !== 'idle' ? greeting.text : '')
+  const greetingText = String(greeting.text || copy.voiceGreeting || '').trim()
+  const transcriptText = inputText || (state.status === 'listening' ? copy.voiceTranscriptPlaceholder : greeting.status !== 'idle' ? greetingText : '')
   const greetingPlayable = ['ready', 'blocked'].includes(greeting.status) && Boolean(greeting.audioUrl)
   const replyPlayable = ['ready', 'blocked'].includes(state.status) && Boolean(state.audioUrl)
 
@@ -249,6 +250,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
     <div className="voice-mode-panel">
       <div className="voice-mode-head"><div><span className="eyebrow">ZT.AI · VOICE MODE</span><h2>{copy.voiceModeTitle}</h2></div><button className="voice-mode-close" type="button" onClick={close} aria-label={copy.voiceClose}><X size={18} /></button></div>
       <div className="voice-mode-status" data-status={visualStatus} aria-live="polite">{statusText}</div>
+      <div className="voice-mode-greeting" aria-live="polite">{greeting.status !== 'idle' ? greetingText : ''}</div>
       <VoiceOrb status={visualStatus} analyser={analyser} onClick={handleOrb} disabled={greeting.status === 'loading'} reducedMotion={reducedMotion} />
       <div className="voice-mode-input-row">
         <textarea className="voice-mode-input" value={inputText} onChange={event => setInputText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); void submitText() } }} placeholder={copy.voiceTextPlaceholder || copy.voiceTranscriptPlaceholder} aria-label={copy.voiceTextInput || copy.voiceTextPlaceholder || copy.voiceTranscriptPlaceholder} disabled={['processing', 'speaking'].includes(state.status)} />

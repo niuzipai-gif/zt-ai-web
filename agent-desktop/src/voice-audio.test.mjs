@@ -41,6 +41,26 @@ test('desktop playback keeps cross-origin audio on native output', async () => {
   }
 })
 
+test('desktop replay of a completed voice answer starts from the beginning', async () => {
+  const audio = {
+    preload: '', src: '', currentTime: 0, paused: true, ended: false,
+    listeners: new Map(),
+    addEventListener(name, callback) { this.listeners.set(name, callback) },
+    removeEventListener(name) { this.listeners.delete(name) },
+    pause() { this.paused = true },
+    load() {},
+    async play() { this.paused = false; this.ended = false },
+  }
+  const playback = createVoicePlayback({ audioFactory: () => audio })
+  playback.load('https://safe.test/reply.mp3')
+  audio.currentTime = 8
+  audio.ended = true
+  audio.listeners.get('ended')?.()
+  await playback.play()
+  assert.equal(audio.currentTime, 0)
+  playback.dispose()
+})
+
 test('desktop speech recognition leaves the language unset in auto mode', () => {
   const instances = []
   class FakeRecognition { start() {} stop() {} }

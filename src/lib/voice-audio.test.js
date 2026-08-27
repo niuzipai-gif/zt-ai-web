@@ -57,6 +57,26 @@ test('cross-origin audio keeps native output instead of routing through a CORS-l
   }
 })
 
+test('replaying a completed voice answer starts from the beginning', async () => {
+  const audio = {
+    preload: '', src: '', currentTime: 0, paused: true, ended: false,
+    listeners: new Map(),
+    addEventListener(name, callback) { this.listeners.set(name, callback) },
+    removeEventListener(name) { this.listeners.delete(name) },
+    pause() { this.paused = true },
+    load() {},
+    async play() { this.paused = false; this.ended = false },
+  }
+  const playback = createVoicePlayback({ audioFactory: () => audio })
+  playback.load('https://safe.test/reply.mp3')
+  audio.currentTime = 8
+  audio.ended = true
+  audio.listeners.get('ended')?.()
+  await playback.play()
+  assert.equal(audio.currentTime, 0)
+  playback.dispose()
+})
+
 test('speech recognition reports interim text and can be stopped safely', () => {
   const events = []
   const instances = []
