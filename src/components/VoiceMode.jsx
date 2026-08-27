@@ -28,7 +28,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
   greetingStateRef.current = greeting
   onGreetingRef.current = onGreeting
 
-  const visualStatus = state.status !== 'idle' ? state.status : greeting.status === 'speaking' ? 'speaking' : 'idle'
+  const visualStatus = state.status !== 'idle' ? state.status : ['speaking', 'ready', 'blocked', 'error'].includes(greeting.status) ? greeting.status : 'idle'
 
   const statusText = useMemo(() => {
     if (state.status === 'listening') return copy.voiceListening
@@ -241,7 +241,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
     onClose?.()
   }
 
-  const transcriptText = inputText || (state.status === 'listening' ? copy.voiceTranscriptPlaceholder : greeting.status === 'blocked' || greeting.status === 'error' ? greeting.error : greeting.status !== 'idle' ? greeting.text : '')
+  const transcriptText = inputText || (state.status === 'listening' ? copy.voiceTranscriptPlaceholder : greeting.status !== 'idle' ? greeting.text : '')
   const greetingPlayable = ['ready', 'blocked'].includes(greeting.status) && Boolean(greeting.audioUrl)
   const replyPlayable = ['ready', 'blocked'].includes(state.status) && Boolean(state.audioUrl)
 

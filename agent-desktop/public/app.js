@@ -959,7 +959,7 @@ function renderDesktopVoiceState() {
   const lifecycle = state.voice.lifecycle
   const status = lifecycle.status
   const greeting = state.voice.greeting
-  const visualStatus = status !== 'idle' ? status : greeting.status === 'speaking' ? 'speaking' : 'idle'
+  const visualStatus = status !== 'idle' ? status : ['speaking', 'ready', 'blocked', 'error'].includes(greeting.status) ? greeting.status : 'idle'
   if (!els.voiceMode) return
   els.voiceMode.dataset.voiceStatus = visualStatus
   els.voiceMode.setAttribute('aria-hidden', String(els.voiceMode.classList.contains('hidden')))
@@ -980,7 +980,7 @@ function renderDesktopVoiceState() {
 function renderDesktopVoiceOrb(timestamp = 0) {
   if (!els.voiceMode || els.voiceMode.classList.contains('hidden') || !els.voiceOrb) return
   const lifecycleStatus = state.voice.lifecycle.status
-  const status = lifecycleStatus !== 'idle' ? lifecycleStatus : state.voice.greeting.status === 'speaking' ? 'speaking' : 'idle'
+  const status = lifecycleStatus !== 'idle' ? lifecycleStatus : ['speaking', 'ready', 'blocked', 'error'].includes(state.voice.greeting.status) ? state.voice.greeting.status : 'idle'
   const canvas = els.voiceOrb.querySelector('canvas')
   if (canvas) {
     const rect = els.voiceOrb.getBoundingClientRect()
