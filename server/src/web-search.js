@@ -256,6 +256,7 @@ async function zhihuRequest(query, { limit, fetchImpl, timeoutMs, config }) {
     headers: {
       authorization: `Bearer ${config.apiKey}`,
       'x-request-timestamp': String(Math.floor(Date.now() / 1000)),
+      'content-type': 'application/json',
       accept: 'application/json',
       'user-agent': 'ZT.AI Public Research/0.2.26',
     },

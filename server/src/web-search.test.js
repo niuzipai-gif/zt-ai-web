@@ -121,6 +121,7 @@ test('uses the configured Zhihu API for Chinese knowledge research', async () =>
   assert.equal(result.results[0].title, '知乎回答')
   assert.match(calls[1].url, /\/api\/v1\/content\/zhihu_search\?Query=/u)
   assert.equal(calls[1].options.headers.authorization, 'Bearer zhihu-secret')
+  assert.equal(calls[1].options.headers['content-type'], 'application/json')
   assert.match(calls[1].options.headers['x-request-timestamp'], /^\d+$/u)
 })
 
