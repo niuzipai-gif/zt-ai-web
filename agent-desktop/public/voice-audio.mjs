@@ -154,7 +154,8 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), audioCon
   const onEnded = () => notify('idle')
   const onError = () => notify('error')
   const onPause = () => notify('paused')
-  const onPlay = () => notify('speaking')
+  const onPlay = () => {}
+  const onPlaying = () => notify('speaking')
   const detach = () => {
     if (!audio) return
     audio.pause?.()
@@ -162,6 +163,29 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), audioCon
     audio.removeEventListener?.('error', onError)
     audio.removeEventListener?.('pause', onPause)
     audio.removeEventListener?.('play', onPlay)
+    audio.removeEventListener?.('playing', onPlaying)
+  }
+  const waitForPlayableAudio = target => {
+    if (!target || target.readyState === undefined || target.readyState >= 3) return Promise.resolve()
+    return new Promise(resolve => {
+      let settled = false
+      const readyEvents = ['loadeddata', 'canplay', 'canplaythrough']
+      const terminalEvents = ['error', 'abort']
+      const finish = force => {
+        if (settled) return
+        if (!force && target.readyState !== undefined && target.readyState < 3) return
+        settled = true
+        clearTimeout(timer)
+        readyEvents.forEach(event => target.removeEventListener?.(event, onReady))
+        terminalEvents.forEach(event => target.removeEventListener?.(event, onTerminal))
+        resolve()
+      }
+      const onReady = () => finish(false)
+      const onTerminal = () => finish(true)
+      const timer = setTimeout(() => finish(true), 5_000)
+      readyEvents.forEach(event => target.addEventListener?.(event, onReady))
+      terminalEvents.forEach(event => target.addEventListener?.(event, onTerminal))
+    })
   }
   function load(url) {
     const safeUrl = secureAudioUrl(url)
@@ -175,6 +199,7 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), audioCon
     audio.addEventListener?.('error', onError)
     audio.addEventListener?.('pause', onPause)
     audio.addEventListener?.('play', onPlay)
+    audio.addEventListener?.('playing', onPlaying)
     if (audioContextFactory && audioContextFactory.prototype && canUseAudioAnalyser(safeUrl)) {
       try {
         context = context || new audioContextFactory()
@@ -190,7 +215,17 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), audioCon
   }
   async function play() {
     if (!audio) return { status: 'unavailable', error: '还没有可播放的语音' }
-    try { if (audio.ended) audio.currentTime = 0; const playPromise = audio.play(); if (context?.resume) await context.resume(); await playPromise; notify('speaking'); return { status: 'speaking' } }
+    const target = audio
+    try {
+      await waitForPlayableAudio(target)
+      if (target !== audio) return { status: 'idle' }
+      if (audio.ended) audio.currentTime = 0
+      const playPromise = audio.play()
+      if (context?.resume) await context.resume()
+      await playPromise
+      notify('speaking')
+      return { status: 'speaking' }
+    }
     catch (error) { notify('blocked'); return { status: 'blocked', error: error.message || '需要点击播放' } }
   }
   function pause() { audio?.pause?.(); notify('paused'); return { status: 'paused' } }

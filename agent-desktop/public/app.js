@@ -51,6 +51,7 @@ const state = {
     playback: null,
     playbackPurpose: 'reply',
     greetingRequestId: 0,
+    turnId: 0,
     draft: '',
     analyser: null,
     animationFrame: 0,
@@ -973,8 +974,8 @@ function renderDesktopVoiceState() {
   if (els.voiceTextInput && document.activeElement !== els.voiceTextInput) els.voiceTextInput.value = state.voice.draft || lifecycle.transcript || ''
   if (els.voiceStop) els.voiceStop.disabled = status !== 'listening' && greeting.status !== 'speaking'
   if (els.voicePlay) els.voicePlay.disabled = greeting.status === 'loading' || (!greeting.audioUrl && !lifecycle.audioUrl)
-  if (els.voiceTextInput) els.voiceTextInput.disabled = ['processing', 'speaking'].includes(status)
-  if (els.voiceTextSubmit) els.voiceTextSubmit.disabled = !String(state.voice.draft || '').trim() || ['processing', 'listening', 'speaking'].includes(status)
+  if (els.voiceTextInput) els.voiceTextInput.disabled = ['processing'].includes(status)
+  if (els.voiceTextSubmit) els.voiceTextSubmit.disabled = !String(state.voice.draft || '').trim() || ['processing'].includes(status)
 }
 
 function renderDesktopVoiceOrb(timestamp = 0) {
@@ -1037,10 +1038,11 @@ function setVoiceLifecycle(event) {
   requestVoiceOrbRender()
 }
 
-async function replayVoiceGreeting() {
+async function replayVoiceGreeting(requestId = state.voice.greetingRequestId) {
   if (!state.voice.greeting.audioUrl || !state.voice.playback) return { status: 'unavailable' }
   state.voice.playbackPurpose = 'greeting'
   const result = await state.voice.playback.play()
+  if (requestId !== state.voice.greetingRequestId) return result
   if (result?.status === 'speaking') state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'start-speaking' })
   else if (result?.status === 'blocked') state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'blocked', error: '开场问候已准备好，请点击播放按钮重试。' })
   else if (result?.status !== 'speaking') state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'fail', error: '开场问候暂时无法播放，请稍后重试。' })
@@ -1077,7 +1079,7 @@ async function prepareVoiceGreeting() {
     state.voice.playback?.load(audio.url)
     state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'ready', audioUrl: audio.url })
     renderDesktopVoiceState()
-    await replayVoiceGreeting()
+    await replayVoiceGreeting(requestId)
   } catch (error) {
     if (requestId !== state.voice.greetingRequestId) return
     state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'fail', error: error?.message || '开场问候暂时无法播放，请稍后重试。' })
@@ -1095,6 +1097,7 @@ function openVoiceMode() {
   state.voice.recognition?.dispose?.()
   state.voice.lifecycle = createVoiceState()
   state.voice.greetingRequestId += 1
+  state.voice.turnId += 1
   state.voice.greeting = createVoiceGreetingState('你好，我是蔡宙廷的 ZT.AI。现在可以直接点击光球和我说话。')
   state.voice.playbackPurpose = 'reply'
   state.voice.finalTranscript = ''
@@ -1153,6 +1156,7 @@ function closeVoiceMode() {
   state.voice.finalTranscript = ''
   state.voice.lifecycle = createVoiceState()
   state.voice.greetingRequestId += 1
+  state.voice.turnId += 1
   state.voice.greeting = createVoiceGreetingState('你好，我是蔡宙廷的 ZT.AI。现在可以直接点击光球和我说话。')
   state.voice.playbackPurpose = 'reply'
   state.voice.draft = ''
@@ -1166,16 +1170,17 @@ async function toggleVoiceInput() {
   const status = state.voice.lifecycle.status
   if (state.voice.greeting.status === 'loading') return
   if (state.voice.greeting.status === 'speaking') {
+    state.voice.greetingRequestId += 1
     state.voice.playback?.stop?.()
     state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'reset' })
     state.voice.playbackPurpose = 'reply'
     renderDesktopVoiceState()
     requestVoiceOrbRender()
-    return
   }
   if (status === 'speaking') {
+    state.voice.turnId += 1
     state.voice.playback?.stop?.()
-    return
+    setVoiceLifecycle({ type: 'reset' })
   }
   if (status === 'listening') {
     state.voice.recognition?.stop?.()
@@ -1184,11 +1189,14 @@ async function toggleVoiceInput() {
     const transcript = String(state.voice.finalTranscript || state.voice.lifecycle.transcript || '').trim()
     if (!transcript) { setVoiceLifecycle({ type: 'fail', error: '没有听清你的话，请再说一次。' }); return }
     setVoiceLifecycle({ type: 'finish-listening', transcript })
+    const turnId = ++state.voice.turnId
     try {
       const detectedLanguage = detectVoiceLanguage(transcript, 'zh')
       const output = await runChat({ taskOverride: transcript, language: detectedLanguage })
+      if (turnId !== state.voice.turnId) return
       if (!output) throw new Error('没有生成可播放的回答')
       const audio = await synthesizeVoice(output, detectedLanguage)
+      if (turnId !== state.voice.turnId) return
       state.voice.playbackPurpose = 'reply'
       state.voice.playback?.load(audio.url)
       setVoiceLifecycle({ type: 'ready', audioUrl: audio.url })
@@ -1196,20 +1204,23 @@ async function toggleVoiceInput() {
       if (playback?.status === 'blocked') setVoiceLifecycle({ type: 'blocked', error: '回答已准备好，但自动播放被拦截，请点击播放按钮。' })
       else if (playback?.status !== 'speaking') throw new Error(playback?.error || '语音播放失败，请检查网络后重试。')
     } catch (error) {
+      if (turnId !== state.voice.turnId) return
       setVoiceLifecycle({ type: 'fail', error: error?.message || '语音回答生成失败，请稍后重试。' })
     }
     return
   }
-  if (!['idle', 'error', 'ready', 'blocked'].includes(status)) return
+  if (!['idle', 'error', 'ready', 'blocked', 'speaking'].includes(status)) return
   if (['ready', 'blocked'].includes(status)) {
     state.voice.playback?.stop?.()
     setVoiceLifecycle({ type: 'reset' })
   }
   if (state.voice.greeting.status !== 'idle') {
+    state.voice.greetingRequestId += 1
     state.voice.playback?.stop?.()
     state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'reset' })
     state.voice.playbackPurpose = 'reply'
   }
+  state.voice.turnId += 1
   setVoiceLifecycle({ type: 'start-listening' })
   state.voice.finalTranscript = ''
   const result = await startVoiceCapture({ recognition: state.voice.recognition, recorder: state.voice.controller })
@@ -1224,19 +1235,26 @@ async function toggleVoiceInput() {
 async function submitDesktopVoiceText() {
   const text = String(els.voiceTextInput?.value || state.voice.draft || '').trim()
   if (!text) return
-  if (state.voice.lifecycle.status === 'speaking') state.voice.playback?.stop?.()
+  if (state.voice.lifecycle.status === 'speaking') {
+    state.voice.playback?.stop?.()
+    setVoiceLifecycle({ type: 'reset' })
+  }
   if (state.voice.greeting.status !== 'idle') {
+    state.voice.greetingRequestId += 1
     state.voice.playback?.stop?.()
     state.voice.greeting = transitionVoiceGreeting(state.voice.greeting, { type: 'reset' })
     state.voice.playbackPurpose = 'reply'
   }
   state.voice.draft = text
   const language = detectVoiceLanguage(text, 'zh')
+  const turnId = ++state.voice.turnId
   setVoiceLifecycle({ type: 'start-processing', transcript: text })
   try {
     const output = await runChat({ taskOverride: text, language })
+    if (turnId !== state.voice.turnId) return
     if (!output) throw new Error('没有生成可播放的回答')
     const audio = await synthesizeVoice(output, language)
+    if (turnId !== state.voice.turnId) return
     state.voice.playbackPurpose = 'reply'
     state.voice.playback?.load(audio.url)
     setVoiceLifecycle({ type: 'ready', audioUrl: audio.url })
@@ -1244,6 +1262,7 @@ async function submitDesktopVoiceText() {
     if (playback?.status === 'blocked') setVoiceLifecycle({ type: 'blocked', error: '回答已准备好，但自动播放被拦截，请点击播放按钮。' })
     else if (playback?.status !== 'speaking') throw new Error(playback?.error || '语音播放失败，请检查网络后重试。')
   } catch (error) {
+    if (turnId !== state.voice.turnId) return
     setVoiceLifecycle({ type: 'fail', error: error?.message || '语音回答生成失败，请稍后重试。' })
   }
 }

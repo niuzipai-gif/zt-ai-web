@@ -36,3 +36,9 @@ test('desktop voice reply language follows recognized speech', () => {
   assert.equal(detectVoiceLanguage('この機能を説明してください', 'zh'), 'ja')
   assert.equal(detectVoiceLanguage('请解释这个流程', 'en'), 'zh')
 })
+
+test('desktop voice text submission can replace a speaking answer after interruption', () => {
+  const speaking = transitionVoiceState(createVoiceState(), { type: 'start-speaking', audioUrl: 'https://example.test/old-answer.mp3' })
+  const next = transitionVoiceState(speaking, { type: 'start-processing', transcript: '打断后输入的新问题' })
+  assert.deepEqual(next, { status: 'processing', transcript: '打断后输入的新问题', error: '', audioUrl: '' })
+})

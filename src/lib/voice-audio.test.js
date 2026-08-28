@@ -125,7 +125,7 @@ test('voice assistant unlocks one audio element before async synthesis and reuse
 test('keeps the unlocked audio route warm during greeting synthesis and switches after a controlled pre-roll', async () => {
   const calls = []
   const makeAudio = () => ({
-    preload: '', src: '', currentTime: 0, paused: true, ended: false, readyState: 3, loop: false,
+    preload: '', src: '', currentTime: 0, paused: true, ended: false, readyState: 4, loop: false,
     addEventListener() {}, removeEventListener() {},
     pause() { this.paused = true },
     load() {},
@@ -151,6 +151,39 @@ test('keeps the unlocked audio route warm during greeting synthesis and switches
   assert.deepEqual(calls.map(call => call.src), [calls[0].src, 'https://safe.test/greeting.mp3'])
   assert.match(calls[0].src, /^data:audio\/wav;base64,/)
   assert.equal(audio.loop, false)
+  playback.dispose()
+})
+
+test('greeting playback waits for enough decoded audio before leaving the silent pre-roll', async () => {
+  const calls = []
+  let sleepCalled = false
+  const listeners = new Map()
+  const makeAudio = readyState => ({
+    preload: '', src: '', currentTime: 0, paused: true, ended: false, readyState, loop: false,
+    addEventListener(name, callback) { listeners.set(`${this.src}:${name}`, callback) },
+    removeEventListener() {},
+    pause() { this.paused = true },
+    load() {},
+    play() { calls.push(this.src); this.paused = false; return Promise.resolve() },
+  })
+  const audio = makeAudio(4)
+  const preloader = makeAudio(3)
+  const prepared = prepareVoicePlayback({ audioFactory: () => audio })
+  const playback = createVoicePlayback({
+    audioElement: prepared,
+    audioFactory: () => { throw new Error('created a second playback element') },
+    preloadAudioFactory: () => preloader,
+    sleep: async () => { sleepCalled = true },
+  })
+  playback.load('https://safe.test/greeting.mp3', { preRollMs: 1_400 })
+  const pending = playback.play()
+  await Promise.resolve()
+  assert.deepEqual(calls, [calls[0]])
+  assert.equal(sleepCalled, false)
+  preloader.readyState = 4
+  listeners.get('https://safe.test/greeting.mp3:canplaythrough')?.()
+  assert.equal((await pending).status, 'speaking')
+  assert.deepEqual(calls, [calls[0], 'https://safe.test/greeting.mp3'])
   playback.dispose()
 })
 

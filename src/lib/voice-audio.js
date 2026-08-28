@@ -75,7 +75,7 @@ function createSilentWavDataUrl(durationMs = 1_200) {
 // one-sample unlock ends immediately on mobile browsers and cannot protect a
 // greeting that takes seconds to synthesize.
 export const VOICE_UNLOCK_AUDIO_URL = createSilentWavDataUrl()
-export const VOICE_GREETING_PREROLL_MS = 900
+export const VOICE_GREETING_PREROLL_MS = 1_400
 
 export function prepareVoicePlayback({ audioFactory = () => new Audio() } = {}) {
   let audio
@@ -308,28 +308,31 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), preloadA
     audio.removeEventListener?.('error', onError)
     audio.removeEventListener?.('pause', onPause)
     audio.removeEventListener?.('play', onPlay)
+    audio.removeEventListener?.('playing', onPlaying)
   }
   const onEnded = () => notify('idle')
   const onError = () => notify('error')
   const onPause = () => notify('paused')
-  const onPlay = () => { if (!isUnlockAudio(audio)) notify('speaking') }
+  const onPlay = () => {}
+  const onPlaying = () => { if (!isUnlockAudio(audio)) notify('speaking') }
 
   const attach = () => {
     audio.addEventListener?.('ended', onEnded)
     audio.addEventListener?.('error', onError)
     audio.addEventListener?.('pause', onPause)
     audio.addEventListener?.('play', onPlay)
+    audio.addEventListener?.('playing', onPlaying)
   }
 
-  function waitForPlayableAudio(target) {
-    if (!target || target.readyState === undefined || target.readyState >= 3) return Promise.resolve()
+  function waitForPlayableAudio(target, minimumReadyState = 3) {
+    if (!target || target.readyState === undefined || target.readyState >= minimumReadyState) return Promise.resolve()
     return new Promise(resolve => {
       let settled = false
       const readyEvents = ['loadeddata', 'canplay', 'canplaythrough']
       const terminalEvents = ['error', 'abort']
       const finish = force => {
         if (settled) return
-        if (!force && target.readyState !== undefined && target.readyState < 3) return
+        if (!force && target.readyState !== undefined && target.readyState < minimumReadyState) return
         settled = true
         clearTimeout(timer)
         readyEvents.forEach(event => target.removeEventListener?.(event, onReady))
@@ -401,7 +404,7 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), preloadA
     const target = audio
     try {
       if (pendingPreRoll) {
-        await waitForPlayableAudio(preloader)
+        await waitForPlayableAudio(preloader, 4)
         if (version !== playbackVersion || target !== audio) return { status: 'idle' }
         if (audio.paused) {
           const warmupPromise = audio.play?.()
@@ -410,6 +413,35 @@ export function createVoicePlayback({ audioFactory = () => new Audio(), preloadA
         await sleep(pendingPreRoll.preRollMs)
         if (version !== playbackVersion || target !== audio) return { status: 'idle' }
         const nextUrl = pendingPreRoll.url
+        const warmedAudio = preloader
+        if (warmedAudio) {
+          try {
+            warmedAudio.loop = false
+            const warmedPlay = warmedAudio.play?.()
+            if (warmedPlay) await warmedPlay
+            if (version !== playbackVersion || target !== audio) {
+              warmedAudio.pause?.()
+              return { status: 'idle' }
+            }
+            const previousAudio = audio
+            previousAudio?.removeEventListener?.('ended', onEnded)
+            previousAudio?.removeEventListener?.('error', onError)
+            previousAudio?.removeEventListener?.('pause', onPause)
+            previousAudio?.removeEventListener?.('play', onPlay)
+            previousAudio?.removeEventListener?.('playing', onPlaying)
+            previousAudio.loop = false
+            previousAudio?.pause?.()
+            audio = warmedAudio
+            preloader = null
+            pendingPreRoll = null
+            attach()
+            notify('speaking')
+            return { status: 'speaking' }
+          } catch {
+            // Some mobile browsers reject play() on the preloader. Fall back to
+            // the already-unlocked element while preserving the warm-up delay.
+          }
+        }
         clearPreload()
         audio.pause?.()
         audio.loop = false

@@ -81,7 +81,7 @@ export function transitionVoiceState(current, event = {}) {
   if (type === 'finish-listening' && state.status === 'listening') {
     return { status: 'processing', transcript: String(event.transcript || '').trim(), error: '', audioUrl: '' }
   }
-  if (type === 'start-processing' && ['idle', 'error', 'processing', 'ready', 'blocked'].includes(state.status)) {
+  if (type === 'start-processing' && ['idle', 'error', 'processing', 'ready', 'blocked', 'speaking'].includes(state.status)) {
     return { status: 'processing', transcript: String(event.transcript || '').trim(), error: '', audioUrl: '' }
   }
   if (type === 'ready' && state.status === 'processing') {

@@ -78,6 +78,12 @@ test('voice text submission enters processing from an idle or recoverable state'
   assert.equal(transitionVoiceState(state, { type: 'start-processing', transcript: '第二个问题' }).status, 'processing')
 })
 
+test('voice text submission can replace a speaking answer after it is interrupted', () => {
+  const speaking = transitionVoiceState(createVoiceState(), { type: 'start-speaking', audioUrl: 'https://example.test/old-answer.mp3' })
+  const next = transitionVoiceState(speaking, { type: 'start-processing', transcript: '打断后输入的新问题' })
+  assert.deepEqual(next, { status: 'processing', transcript: '打断后输入的新问题', error: '', audioUrl: '' })
+})
+
 test('voice greeting is prepared on open and remains manually replayable when autoplay is blocked', () => {
   let greeting = createVoiceGreetingState('你好，我是 ZT.AI。')
   assert.deepEqual(greeting, { status: 'idle', text: '你好，我是 ZT.AI。', audioUrl: '', error: '' })

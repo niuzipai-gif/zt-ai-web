@@ -22,6 +22,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
   const finalTranscriptRef = useRef('')
   const greetingAudioRef = useRef('')
   const greetingRequestRef = useRef(0)
+  const voiceTurnRef = useRef(0)
   const recognitionEndRef = useRef(null)
   const greetingStateRef = useRef(greeting)
   const onGreetingRef = useRef(onGreeting)
@@ -87,17 +88,19 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
     }
   }, [audioElement, language])
 
-  const playGreeting = async () => {
+  const playGreeting = async (requestId = greetingRequestRef.current) => {
     if (!greetingAudioRef.current) return { status: 'unavailable' }
     const result = await playbackRef.current?.play?.()
+    if (requestId !== greetingRequestRef.current) return result
     if (result?.status === 'speaking') setGreeting(current => transitionVoiceGreeting(current, { type: 'start-speaking' }))
     else if (result?.status === 'blocked') setGreeting(current => transitionVoiceGreeting(current, { type: 'blocked', error: copy.voiceGreetingUnavailable || copy.voicePlay }))
     else if (result?.status !== 'speaking') setGreeting(current => transitionVoiceGreeting(current, { type: 'fail', error: copy.voiceGreetingUnavailable || copy.voiceUnavailable }))
     return result
   }
 
-  const playReply = async () => {
+  const playReply = async (requestId = null) => {
     const result = await playbackRef.current?.play?.()
+    if (requestId !== null && requestId !== voiceTurnRef.current) return result
     if (result?.status === 'speaking') setState(current => transitionVoiceState(current, { type: 'start-speaking' }))
     else if (result?.status === 'blocked') setState(current => transitionVoiceState(current, { type: 'blocked', error: copy.voiceReplyUnavailable || copy.voicePlay }))
     else if (result?.status !== 'speaking') setState(current => transitionVoiceState(current, { type: 'fail', error: copy.voiceReplyUnavailable || copy.voiceUnavailable }))
@@ -117,9 +120,9 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
         greetingAudioRef.current = reply.audioUrl
         playbackRef.current?.load(reply.audioUrl, { preRollMs: reply.preRollMs })
         setGreeting(current => transitionVoiceGreeting(current, { type: 'ready', audioUrl: reply.audioUrl }))
-        await playGreeting()
+        await playGreeting(requestId)
       } catch (error) {
-        if (active) setGreeting(current => transitionVoiceGreeting(current, { type: 'fail', error: copy.voiceGreetingError || copy.voiceUnavailable }))
+        if (active && requestId === greetingRequestRef.current) setGreeting(current => transitionVoiceGreeting(current, { type: 'fail', error: copy.voiceGreetingError || copy.voiceUnavailable }))
       }
     })()
     return () => {
@@ -134,6 +137,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
       setState(current => transitionVoiceState(current, { type: 'fail', error: copy.voiceNeedProvider }))
       return
     }
+    voiceTurnRef.current += 1
     transcriptRef.current = ''
     finalTranscriptRef.current = ''
     setInputText('')
@@ -163,16 +167,19 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
       setState(current => transitionVoiceState(current, { type: 'fail', error: copy.voiceNeedProvider }))
       return
     }
+    const requestId = ++voiceTurnRef.current
     setInputText(text)
     setState(current => transitionVoiceState(current, { type: 'start-processing', transcript: text }))
     try {
       const detectedLanguage = detectVoiceLanguage(text, language)
       const reply = await onSubmit(text, detectedLanguage)
+      if (requestId !== voiceTurnRef.current) return
       if (!reply?.audioUrl) throw new Error(copy.voiceUnavailable)
       playbackRef.current?.load(reply.audioUrl)
       setState(current => transitionVoiceState(current, { type: 'ready', audioUrl: reply.audioUrl }))
-      await playReply()
+      await playReply(requestId)
     } catch (error) {
+      if (requestId !== voiceTurnRef.current) return
       setState(current => transitionVoiceState(current, { type: 'fail', error: error?.message || copy.voiceUnavailable }))
     }
   }
@@ -215,7 +222,11 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
       setAnalyser(null)
       setState(current => transitionVoiceState(current, { type: 'reset' }))
     }
-    if (state.status === 'speaking') playbackRef.current?.stop?.()
+    if (state.status === 'speaking') {
+      voiceTurnRef.current += 1
+      playbackRef.current?.stop?.()
+      setState(current => transitionVoiceState(current, { type: 'reset' }))
+    }
     if (greetingStateRef.current.status !== 'idle') {
       greetingRequestRef.current += 1
       playbackRef.current?.stop?.()
@@ -227,15 +238,28 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
 
   const handleOrb = () => {
     if (greeting.status === 'loading') return
-    if (greeting.status === 'speaking') { playbackRef.current?.stop?.(); setGreeting(current => transitionVoiceGreeting(current, { type: 'reset' })); greetingAudioRef.current = '' }
+    if (greeting.status === 'speaking') {
+      playbackRef.current?.stop?.()
+      setGreeting(current => transitionVoiceGreeting(current, { type: 'reset' }))
+      greetingAudioRef.current = ''
+      void startListening()
+      return
+    }
     if (state.status === 'listening') { void stopListening(); return }
-    if (state.status === 'speaking') playbackRef.current?.stop?.()
+    if (state.status === 'speaking') {
+      voiceTurnRef.current += 1
+      playbackRef.current?.stop?.()
+      setState(current => transitionVoiceState(current, { type: 'reset' }))
+      void startListening()
+      return
+    }
     if (state.status === 'processing') return
     void startListening()
   }
 
   const close = () => {
     greetingRequestRef.current += 1
+    voiceTurnRef.current += 1
     controllerRef.current?.cancel?.()
     playbackRef.current?.stop?.()
     greetingAudioRef.current = ''
@@ -254,8 +278,8 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
       <div className="voice-mode-greeting" aria-live="polite">{greeting.status !== 'idle' ? greetingText : ''}</div>
       <VoiceOrb status={visualStatus} analyser={analyser} onClick={handleOrb} disabled={greeting.status === 'loading'} reducedMotion={reducedMotion} />
       <div className="voice-mode-input-row">
-        <textarea className="voice-mode-input" value={inputText} onChange={event => setInputText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); void submitText() } }} placeholder={copy.voiceTextPlaceholder || copy.voiceTranscriptPlaceholder} aria-label={copy.voiceTextInput || copy.voiceTextPlaceholder || copy.voiceTranscriptPlaceholder} disabled={['processing', 'speaking'].includes(state.status)} />
-        <button className="voice-mode-submit" type="button" onClick={() => { void submitText() }} disabled={!inputText.trim() || ['processing', 'listening', 'speaking'].includes(state.status)} aria-label={copy.voiceTextSend || copy.send}><Send size={16} /></button>
+        <textarea className="voice-mode-input" value={inputText} onChange={event => setInputText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); void submitText() } }} placeholder={copy.voiceTextPlaceholder || copy.voiceTranscriptPlaceholder} aria-label={copy.voiceTextInput || copy.voiceTextPlaceholder || copy.voiceTranscriptPlaceholder} disabled={greeting.status === 'loading' || ['processing'].includes(state.status)} />
+        <button className="voice-mode-submit" type="button" onClick={() => { void submitText() }} disabled={!inputText.trim() || greeting.status === 'loading' || ['processing'].includes(state.status)} aria-label={copy.voiceTextSend || copy.send}><Send size={16} /></button>
       </div>
       <div className="voice-mode-transcript-hint" aria-live="polite">{inputText ? copy.voiceTextHint : greeting.status !== 'idle' ? transcriptText : copy.voiceTranscriptPlaceholder}</div>
       <div className="voice-mode-actions">

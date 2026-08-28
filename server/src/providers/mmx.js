@@ -72,7 +72,18 @@ function pronunciationDictForLanguage(language) {
 }
 
 function cleanVoiceText(text, language) {
-  let raw = String(text || '').replace(/```[\s\S]*?```/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[*_#>`~-]/g, '')
+  let raw = String(text || '')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/https?:\/\/\S+|www\.\S+/giu, value => value.match(/[.!?,;:。！？，；：]+$/u)?.[0] || '')
+    .replace(/(^|\n)\s*[-*+]\s+/g, '$1')
+    .replace(/[*_#>`~]/g, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+([,.;:!?。！？、，；：])/gu, '$1')
+    .replace(/\s{2,}/gu, ' ')
+    .replace(/\b(?:and|or|but)\s*([.?!])$/iu, '$1')
+    .replace(/(?:そして|または|もしくは|しかし)\s*([。！？])$/u, '$1')
+    .replace(/\s+([,.;:!?。！？、，；：])/gu, '$1')
   if (voiceLanguage(language) === 'ja') {
     // Keep the visible answer clean and prevent common Han-character + kana/romaji
     // reading annotations from being spoken as part of a Japanese reply.

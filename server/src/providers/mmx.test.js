@@ -177,3 +177,31 @@ test('removes Japanese reading annotations from spoken text while preserving the
     globalThis.fetch = originalFetch
   }
 })
+
+test('prepares English and Japanese answers for speech without reading URLs or markdown debris', async () => {
+  const originalFetch = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), options })
+    return new Response(JSON.stringify({ data: { audio: 'https://cdn.example.test/speech.mp3', status: 2 }, base_resp: { status_code: 0 } }), { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+  try {
+    await withEnv({
+      MMX_API_KEY: 'fixture-key',
+      MMX_BASE_URL: 'https://fixture.example.test/v1',
+      MINIMAX_API_KEY: undefined,
+      MINIMAX_VOICE_ID: undefined,
+      MINIMAX_VOICE_ID_EN: 'CaiZhoutingEnClean20260828',
+      MINIMAX_VOICE_ID_JA: 'CaiZhoutingJaClean20260828',
+    }, async () => {
+      await synthesizeVoice({ text: 'This is a follow-up. See [the official guide](https://example.com/docs) and https://example.com/next.', language: 'en' })
+      await synthesizeVoice({ text: 'これはテストです。詳しくは https://example.jp/docs を確認してください。', language: 'ja' })
+    })
+    const english = JSON.parse(calls[0].options.body)
+    const japanese = JSON.parse(calls[1].options.body)
+    assert.equal(english.text, 'This is a follow-up. See the official guide.')
+    assert.equal(japanese.text, 'これはテストです。詳しくは を確認してください。')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})

@@ -244,7 +244,7 @@ function mergeResearchSources(researches = []) {
   return { results, provider: providers.size > 1 ? 'multi' : [...providers][0] || '公开检索' }
 }
 
-async function runImageWebResearch({ imageDataUrl, inputText, visionHint, onProgress }) {
+async function runImageWebResearch({ imageDataUrl, inputText, visionHint, language = 'zh', onProgress }) {
   const config = resolveImageSearchConfig()
   const reverseResearch = []
   const providerErrors = []
@@ -272,6 +272,8 @@ async function runImageWebResearch({ imageDataUrl, inputText, visionHint, onProg
     textResearch = await runAdaptiveResearch({
       queries: queryList,
       ...plan,
+      language,
+      scenario: inputText,
       onProgress,
     })
   } catch (error) {
@@ -339,12 +341,13 @@ async function handleChat(request, response) {
           imageDataUrl: latestImage(providerMessages)?.image_url?.url || '',
           inputText,
           visionHint,
+          language,
           onProgress,
         })
       } else {
         const queries = researchQueries({ inputText, query, imageRequest: false })
         const plan = buildResearchPlan({ inputText })
-        research = await runAdaptiveResearch({ queries, ...plan, onProgress })
+        research = await runAdaptiveResearch({ queries, ...plan, language, scenario: inputText, onProgress })
       }
       providerMessages.splice(1, 0, { role: 'system', content: `${buildWebVerificationContext(inputText, research)}${imageResearchHintContext(visionHint)}` })
       sse(response, 'research.sources', sourcePayload(research))

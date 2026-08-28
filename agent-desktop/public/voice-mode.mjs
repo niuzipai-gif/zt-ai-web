@@ -67,7 +67,7 @@ export function transitionVoiceState(current, event = {}) {
   if (type === 'fail') return { ...state, status: 'error', error: String(event.error || '语音暂时不可用').trim() || '语音暂时不可用', audioUrl: '' }
   if (type === 'start-listening' && (state.status === 'idle' || state.status === 'error')) return { status: 'listening', transcript: '', error: '', audioUrl: '' }
   if (type === 'finish-listening' && state.status === 'listening') return { status: 'processing', transcript: String(event.transcript || '').trim(), error: '', audioUrl: '' }
-  if (type === 'start-processing' && ['idle', 'error', 'processing', 'ready', 'blocked'].includes(state.status)) {
+  if (type === 'start-processing' && ['idle', 'error', 'processing', 'ready', 'blocked', 'speaking'].includes(state.status)) {
     return { status: 'processing', transcript: String(event.transcript || '').trim(), error: '', audioUrl: '' }
   }
   if (type === 'ready' && state.status === 'processing') {

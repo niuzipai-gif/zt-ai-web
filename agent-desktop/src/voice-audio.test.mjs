@@ -61,6 +61,29 @@ test('desktop replay of a completed voice answer starts from the beginning', asy
   playback.dispose()
 })
 
+test('desktop playback waits for remote audio readiness before starting', async () => {
+  const calls = []
+  const listeners = new Map()
+  const audio = {
+    preload: '', src: '', currentTime: 0, paused: true, ended: false, readyState: 0,
+    addEventListener(name, callback) { listeners.set(name, callback) },
+    removeEventListener(name) { listeners.delete(name) },
+    pause() { this.paused = true },
+    load() {},
+    play() { calls.push('play'); this.paused = false; return Promise.resolve() },
+  }
+  const playback = createVoicePlayback({ audioFactory: () => audio })
+  playback.load('https://safe.test/desktop-greeting.mp3')
+  const pending = playback.play()
+  await Promise.resolve()
+  assert.deepEqual(calls, [])
+  audio.readyState = 3
+  listeners.get('canplaythrough')?.()
+  assert.equal((await pending).status, 'speaking')
+  assert.deepEqual(calls, ['play'])
+  playback.dispose()
+})
+
 test('desktop speech recognition leaves the language unset in auto mode', () => {
   const instances = []
   class FakeRecognition { start() {} stop() {} }

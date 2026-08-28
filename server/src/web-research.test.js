@@ -57,6 +57,26 @@ test('reports source-provider and query counts while keeping source records safe
   ])
 })
 
+test('forwards language and scenario to every adaptive search direction', async () => {
+  const calls = []
+  await runAdaptiveResearch({
+    queries: ['日本語の質問', '追加の確認'],
+    initialLimit: 2,
+    maxLimit: 2,
+    expansionLimit: 2,
+    language: 'ja',
+    scenario: '画像の出典を確認して',
+    searchImpl: async options => {
+      calls.push({ language: options.language, scenario: options.scenario })
+      return { provider: 'tavily', results: [{ title: options.query, url: `https://example.com/${calls.length}`, snippet: 'evidence' }] }
+    },
+  })
+  assert.deepEqual(calls, [
+    { language: 'ja', scenario: '画像の出典を確認して' },
+    { language: 'ja', scenario: '画像の出典を確認して' },
+  ])
+})
+
 test('carries provider failures into adaptive research diagnostics after fallback success', async () => {
   const research = await runAdaptiveResearch({
     queries: ['知乎知识问题'],
