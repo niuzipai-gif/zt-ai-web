@@ -109,7 +109,7 @@ test('uses the configured Zhihu API for Chinese knowledge research', async () =>
     fetchImpl: async (url, options) => {
       calls.push({ url: String(url), options })
       if (String(url).includes('firecrawl.test')) return new Response('no', { status: 503 })
-      return new Response(JSON.stringify({ data: { items: [{ title: '知乎回答', url: 'https://www.zhihu.com/question/1', excerpt: '专业解释' }] } }), { status: 200 })
+      return new Response(JSON.stringify({ Code: 0, Message: 'success', Data: { Items: [{ Title: '知乎回答', Url: 'https://www.zhihu.com/question/1', ContentText: '专业解释' }] } }), { status: 200 })
     },
     config: {
       baseUrl: 'https://firecrawl.test/v2',
@@ -120,6 +120,8 @@ test('uses the configured Zhihu API for Chinese knowledge research', async () =>
   assert.equal(result.provider, 'zhihu')
   assert.equal(result.results[0].title, '知乎回答')
   assert.match(calls[1].url, /\/api\/v1\/content\/zhihu_search\?Query=/u)
+  assert.match(calls[1].url, /[&?]Count=6(?:&|$)/u)
+  assert.doesNotMatch(calls[1].url, /[&?]Limit=/u)
   assert.equal(calls[1].options.headers.authorization, 'Bearer zhihu-secret')
   assert.equal(calls[1].options.headers['content-type'], 'application/json')
   assert.match(calls[1].options.headers['x-request-timestamp'], /^\d+$/u)

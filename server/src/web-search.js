@@ -5,6 +5,7 @@ const DUCKDUCKGO_HTML_URL = 'https://html.duckduckgo.com/html/'
 const DEFAULT_TAVILY_BASE_URL = 'https://api.tavily.com'
 const TAVILY_MAX_RESULTS = 20
 const DEFAULT_ZHIHU_BASE_URL = 'https://developer.zhihu.com'
+const ZHIHU_MAX_RESULTS = 10
 const DEFAULT_TINYFISH_BASE_URL = 'https://api.search.tinyfish.ai'
 
 function readEnv(env, names) {
@@ -174,16 +175,17 @@ export function normalizeTavilySearch(body, limit = DEFAULT_SEARCH_RESULTS) {
 }
 
 export function normalizeZhihuSearch(body, limit = DEFAULT_SEARCH_RESULTS) {
-  const raw = Array.isArray(body?.data) ? body.data
-    : Array.isArray(body?.data?.items) ? body.data.items
-      : Array.isArray(body?.data?.results) ? body.data.results
-        : Array.isArray(body?.items) ? body.items
-          : Array.isArray(body?.results) ? body.results : []
+  const payload = body?.Data || body?.data || body
+  const raw = Array.isArray(payload) ? payload
+    : Array.isArray(payload?.Items) ? payload.Items
+      : Array.isArray(payload?.items) ? payload.items
+        : Array.isArray(payload?.Results) ? payload.Results
+          : Array.isArray(payload?.results) ? payload.results : []
   return raw.slice(0, boundedLimit(limit)).map((item, index) => ({
-    rank: Number(item?.position || item?.rank) || index + 1,
-    title: String(item?.title || item?.name || '').trim(),
-    url: String(item?.url || item?.link || item?.share_url || '').trim(),
-    snippet: String(item?.excerpt || item?.summary || item?.content || item?.description || '').replace(/\s+/g, ' ').trim().slice(0, 420),
+    rank: Number(item?.Position || item?.position || item?.Rank || item?.rank) || index + 1,
+    title: String(item?.Title || item?.title || item?.Name || item?.name || '').trim(),
+    url: String(item?.Url || item?.url || item?.Link || item?.link || item?.ShareUrl || item?.share_url || '').trim(),
+    snippet: String(item?.ContentText || item?.content_text || item?.Excerpt || item?.excerpt || item?.Summary || item?.summary || item?.Content || item?.content || item?.Description || item?.description || '').replace(/\s+/g, ' ').trim().slice(0, 420),
   }))
 }
 
@@ -251,7 +253,7 @@ async function tavilyRequest(query, { limit, language, scenario, fetchImpl, time
 async function zhihuRequest(query, { limit, fetchImpl, timeoutMs, config }) {
   const endpoint = new URL(`${config.baseUrl}${config.searchPath.startsWith('/') ? config.searchPath : `/${config.searchPath}`}`)
   endpoint.searchParams.set('Query', query)
-  endpoint.searchParams.set('Limit', String(boundedLimit(limit)))
+  endpoint.searchParams.set('Count', String(Math.min(ZHIHU_MAX_RESULTS, boundedLimit(limit))))
   const response = await fetchImpl(endpoint, {
     headers: {
       authorization: `Bearer ${config.apiKey}`,
