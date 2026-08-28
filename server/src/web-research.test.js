@@ -33,3 +33,26 @@ test('merges query directions, removes duplicate URLs, and expands only when new
   assert.equal(research.expanded, true)
   assert.equal(research.provider, 'multi')
 })
+
+test('reports source-provider and query counts while keeping source records safe', async () => {
+  const research = await runAdaptiveResearch({
+    queries: ['一个知识问题', '一个英文技术问题'],
+    initialLimit: 2,
+    maxLimit: 2,
+    expansionLimit: 2,
+    searchImpl: async ({ query }) => ({
+      provider: query.includes('英文') ? 'tavily' : 'zhihu',
+      results: [
+        { title: '<b>可信来源</b>', url: `https://example.com/${query.includes('英文') ? 'english' : 'answer'}#section`, snippet: '<script>ignore</script>有效摘要' },
+        { title: '不安全来源', url: 'javascript:alert(1)', snippet: '不要进入' },
+      ],
+    }),
+  })
+  assert.deepEqual(research.providerCounts, { zhihu: 1, tavily: 1 })
+  assert.deepEqual(research.queryCounts, { '一个知识问题': 1, '一个英文技术问题': 1 })
+  assert.equal(research.searchedQueryCount, 2)
+  assert.deepEqual(research.results.map(item => ({ title: item.title, url: item.url, snippet: item.snippet })), [
+    { title: '可信来源', url: 'https://example.com/answer', snippet: '有效摘要' },
+    { title: '可信来源', url: 'https://example.com/english', snippet: '有效摘要' },
+  ])
+})

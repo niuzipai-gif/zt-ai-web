@@ -46,12 +46,12 @@ test('synthesizes speech with the cloned voice for the requested language', asyn
       MMX_BASE_URL: 'https://fixture.example.test/v1',
       MINIMAX_API_KEY: undefined,
       MINIMAX_VOICE_ID: 'CaiZhouTingFallback',
-      MINIMAX_VOICE_ID_ZH: 'CaiZhouTingZh20260827',
+      MINIMAX_VOICE_ID_ZH: 'CaiZhouTingZhClean20260828',
     }, () => synthesizeVoice({ text: '你好，先把问题说清楚。', language: 'zh' }))
     assert.deepEqual(result, { kind: 'audio', status: 'completed', url: 'https://cdn.example.test/cai-voice.mp3', language: 'zh' })
     assert.equal(calls[0].url, 'https://fixture.example.test/v1/t2a_v2')
     const body = JSON.parse(calls[0].options.body)
-    assert.equal(body.voice_setting.voice_id, 'CaiZhouTingZh20260827')
+    assert.equal(body.voice_setting.voice_id, 'CaiZhouTingZhClean20260828')
     assert.equal(body.language_boost, 'Chinese')
     assert.equal(body.output_format, 'url')
   } finally {
@@ -72,8 +72,8 @@ test('uses separate clarity settings for English and Japanese without changing C
       MMX_BASE_URL: 'https://fixture.example.test/v1',
       MINIMAX_API_KEY: undefined,
       MINIMAX_VOICE_ID: undefined,
-      MINIMAX_VOICE_ID_EN: 'CaiZhouTingEn20260827',
-      MINIMAX_VOICE_ID_JA: 'CaiZhouTingJa20260827',
+      MINIMAX_VOICE_ID_EN: 'CaiZhouTingEnClean20260828',
+      MINIMAX_VOICE_ID_JA: 'CaiZhoutingJaClean20260828',
       MINIMAX_TTS_SPEED_EN: '0.90',
       MINIMAX_TTS_SPEED_JA: '0.88',
       MINIMAX_TTS_EMOTION_EN: 'calm',
@@ -111,8 +111,8 @@ test('keeps personal voice IDs while applying multilingual pronunciation default
       MMX_API_KEY: 'fixture-key',
       MMX_BASE_URL: 'https://fixture.example.test/v1',
       MINIMAX_VOICE_ID: undefined,
-      MINIMAX_VOICE_ID_EN: 'CaiZhouTingEn20260827',
-      MINIMAX_VOICE_ID_JA: 'CaiZhouTingJa20260827',
+      MINIMAX_VOICE_ID_EN: 'CaiZhouTingEnClean20260828',
+      MINIMAX_VOICE_ID_JA: 'CaiZhoutingJaClean20260828',
       MINIMAX_TTS_SPEED_EN: undefined,
       MINIMAX_TTS_SPEED_JA: undefined,
       MINIMAX_TTS_PRONUNCIATION_EN_JSON: undefined,
@@ -123,11 +123,11 @@ test('keeps personal voice IDs while applying multilingual pronunciation default
     })
     const english = JSON.parse(calls[0].options.body)
     const japanese = JSON.parse(calls[1].options.body)
-    assert.equal(english.voice_setting.voice_id, 'CaiZhouTingEn20260827')
+    assert.equal(english.voice_setting.voice_id, 'CaiZhouTingEnClean20260828')
     assert.equal(english.voice_setting.speed, 0.90)
     assert.ok(english.pronunciation_dict.tone.includes('ZT.AI/zee tee eye'))
     assert.ok(english.pronunciation_dict.tone.includes('FDE/eff dee ee'))
-    assert.equal(japanese.voice_setting.voice_id, 'CaiZhouTingJa20260827')
+    assert.equal(japanese.voice_setting.voice_id, 'CaiZhoutingJaClean20260828')
     assert.equal(japanese.voice_setting.speed, 0.88)
     assert.ok(japanese.pronunciation_dict.tone.includes('蔡宙廷/さい・ちょうてい'))
     assert.ok(japanese.pronunciation_dict.tone.includes('ZT.AI/ゼットエーアイ'))
@@ -148,7 +148,7 @@ test('keeps greeting synthesis text intact because mobile pre-roll is handled by
       MMX_API_KEY: 'fixture-key',
       MMX_BASE_URL: 'https://fixture.example.test/v1',
       MINIMAX_API_KEY: undefined,
-      MINIMAX_VOICE_ID: 'CaiZhouTingZh20260827',
+      MINIMAX_VOICE_ID: 'CaiZhouTingZhClean20260828',
     }, () => synthesizeVoice({ text: '你好，我是蔡宙廷。', language: 'zh', leadingPause: true }))
     const body = JSON.parse(calls[0].options.body)
     assert.equal(body.text, '你好，我是蔡宙廷。')
@@ -169,7 +169,7 @@ test('removes Japanese reading annotations from spoken text while preserving the
       MMX_API_KEY: 'fixture-key',
       MMX_BASE_URL: 'https://fixture.example.test/v1',
       MINIMAX_VOICE_ID: undefined,
-      MINIMAX_VOICE_ID_JA: 'CaiZhouTingJa20260827',
+      MINIMAX_VOICE_ID_JA: 'CaiZhoutingJaClean20260828',
     }, () => synthesizeVoice({ text: '蔡宙廷（さい・ちょうてい）です。', language: 'ja' }))
     const body = JSON.parse(calls[0].options.body)
     assert.equal(body.text, '蔡宙廷です。')

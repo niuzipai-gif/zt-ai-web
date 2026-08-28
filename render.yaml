@@ -30,6 +30,20 @@ services:
         sync: false
       - key: FIRECRAWL_BASE_URL
         value: https://api.firecrawl.dev/v2
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: TAVILY_BASE_URL
+        value: https://api.tavily.com
+      - key: ZHIHU_API_KEY
+        sync: false
+      - key: ZHIHU_BASE_URL
+        value: https://developer.zhihu.com
+      - key: ZHIHU_SEARCH_PATH
+        value: /api/v1/content/zhihu_search
+      - key: TINYFISH_API_KEY
+        sync: false
+      - key: TINYFISH_BASE_URL
+        value: https://api.search.tinyfish.ai
       - key: GOOGLE_CLOUD_VISION_API_KEY
         sync: false
       - key: TINEYE_API_KEY
@@ -67,13 +81,13 @@ services:
       - key: VOICE_MODE_ENABLED
         value: "true"
       - key: MINIMAX_VOICE_ID
-        value: CaiZhouTingZh20260827
+        value: CaiZhouTingZhClean20260828
       - key: MINIMAX_VOICE_ID_ZH
-        value: CaiZhouTingZh20260827
+        value: CaiZhouTingZhClean20260828
       - key: MINIMAX_VOICE_ID_EN
-        value: CaiZhouTingEn20260827
+        value: CaiZhouTingEnClean20260828
       - key: MINIMAX_VOICE_ID_JA
-        value: CaiZhouTingJa20260827
+        value: CaiZhoutingJaClean20260828
       - key: MINIMAX_TTS_MODEL
         value: speech-2.8-hd
       - key: MINIMAX_TTS_SPEED

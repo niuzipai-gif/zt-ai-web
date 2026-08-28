@@ -78,6 +78,9 @@ export function sourcePayload(research) {
   }
   if (Object.hasOwn(research || {}, 'expanded')) payload.expanded = Boolean(research.expanded)
   if (Object.hasOwn(research || {}, 'searchedQueryCount')) payload.searchedQueryCount = Number(research.searchedQueryCount) || 0
+  if (Object.hasOwn(research || {}, 'queryCount')) payload.queryCount = Number(research.queryCount) || 0
+  if (research?.providerCounts && typeof research.providerCounts === 'object') payload.providerCounts = Object.fromEntries(Object.entries(research.providerCounts).slice(0, 12).map(([provider, count]) => [String(provider).slice(0, 80), Number(count) || 0]))
+  if (research?.queryCounts && typeof research.queryCounts === 'object') payload.queryCounts = Object.fromEntries(Object.entries(research.queryCounts).slice(0, 12).map(([query, count]) => [String(query).slice(0, 240), Number(count) || 0]))
   if (Array.isArray(research?.queries)) payload.queries = research.queries.slice(0, 12).map(item => String(item).slice(0, 240))
   if (Array.isArray(research?.reverseProviders)) payload.reverseProviders = research.reverseProviders.slice(0, 4).map(item => String(item).slice(0, 80))
   if (Array.isArray(research?.providerErrors) && research.providerErrors.length) payload.providerErrors = research.providerErrors.slice(0, 4).map(item => ({ provider: String(item?.provider || 'provider').slice(0, 80), message: String(item?.message || '检索失败').slice(0, 240) }))

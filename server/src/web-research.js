@@ -1,4 +1,4 @@
-import { MAX_SEARCH_RESULTS, searchWeb } from './web-search.js'
+import { MAX_SEARCH_RESULTS, normalizeSourceRecord, searchWeb } from './web-search.js'
 
 const DEFAULT_EXPANSION_LIMIT = 24
 
@@ -12,31 +12,15 @@ function bounded(value, fallback) {
   return Math.min(MAX_SEARCH_RESULTS, Math.max(1, Number(value) || fallback))
 }
 
-function canonicalUrl(value) {
-  const url = String(value || '').trim()
-  if (!/^https?:\/\//iu.test(url)) return ''
-  try {
-    const parsed = new URL(url)
-    parsed.hash = ''
-    parsed.hostname = parsed.hostname.toLowerCase()
-    return parsed.toString().replace(/\/$/u, '')
-  } catch {
-    return ''
-  }
+function normalizeSource(item, provider, query, rank) {
+  const sourceProvider = item?.provider || provider
+  const sourceQuery = item?.query || query
+  return normalizeSourceRecord({ ...item, provider: sourceProvider, query: sourceQuery }, { provider: sourceProvider, query: sourceQuery, rank })
 }
 
-function normalizeSource(item, provider, rank) {
-  const url = canonicalUrl(item?.url)
-  if (!url) return null
-  return {
-    rank,
-    title: String(item?.title || '未命名来源').replace(/\s+/gu, ' ').trim().slice(0, 200),
-    url,
-    snippet: String(item?.snippet || item?.fingerprint || '').replace(/\s+/gu, ' ').trim().slice(0, 420),
-    provider: String(item?.provider || provider || '公开检索'),
-    evidenceType: String(item?.evidenceType || 'text-search'),
-    query: String(item?.query || '').trim().slice(0, 240),
-  }
+function incrementCount(counts, key) {
+  if (!key) return
+  counts[key] = (counts[key] || 0) + 1
 }
 
 export function buildResearchPlan({ inputText = '', imageRequest = false, ambiguous = false, conflict = false } = {}) {
@@ -52,6 +36,8 @@ export async function runAdaptiveResearch({
   initialLimit = 6,
   maxLimit = 12,
   expansionLimit = DEFAULT_EXPANSION_LIMIT,
+  language = '',
+  scenario = '',
   searchImpl = searchWeb,
   onProgress,
 } = {}) {
@@ -63,6 +49,8 @@ export async function runAdaptiveResearch({
   const results = []
   const seen = new Set()
   const providers = new Set()
+  const providerCounts = {}
+  const queryCounts = {}
   const providerErrors = []
   const searchedQueries = []
   let expanded = false
@@ -79,14 +67,16 @@ export async function runAdaptiveResearch({
     const remaining = Math.max(1, budget - results.length)
     try {
       onProgress?.(`正在核验第 ${searchedQueries.length + 1} 个检索方向：${query}`)
-      const research = await searchImpl({ query, limit: remaining, onProgress })
+      const research = await searchImpl({ query, limit: remaining, language, scenario, onProgress })
       searchedQueries.push(query)
       if (research?.provider) providers.add(String(research.provider))
       for (const item of Array.isArray(research?.results) ? research.results : []) {
-        const normalized = normalizeSource({ ...item, query }, research?.provider, results.length + 1)
+        const normalized = normalizeSource(item, research?.provider, query, results.length + 1)
         if (!normalized || seen.has(normalized.url)) continue
         seen.add(normalized.url)
         results.push(normalized)
+        incrementCount(providerCounts, normalized.provider)
+        incrementCount(queryCounts, normalized.query)
         if (results.length >= hardLimit) break
       }
     } catch (error) {
@@ -101,6 +91,9 @@ export async function runAdaptiveResearch({
 
   return {
     provider: providers.size > 1 || queryList.length > 1 ? 'multi' : [...providers][0] || '公开检索',
+    providerCounts,
+    queryCounts,
+    queryCount: searchedQueries.length,
     query: queryList.join(' | ').slice(0, 240),
     queries: searchedQueries,
     results: results.slice(0, hardLimit),
