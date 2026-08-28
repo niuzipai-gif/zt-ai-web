@@ -69,6 +69,13 @@ export async function runAdaptiveResearch({
       onProgress?.(`正在核验第 ${searchedQueries.length + 1} 个检索方向：${query}`)
       const research = await searchImpl({ query, limit: remaining, language, scenario, onProgress })
       searchedQueries.push(query)
+      for (const providerError of Array.isArray(research?.providerErrors) ? research.providerErrors : []) {
+        providerErrors.push({
+          query,
+          provider: String(providerError?.provider || 'provider').slice(0, 80),
+          message: String(providerError?.message || '检索失败').slice(0, 240),
+        })
+      }
       if (research?.provider) providers.add(String(research.provider))
       for (const item of Array.isArray(research?.results) ? research.results : []) {
         const normalized = normalizeSource(item, research?.provider, query, results.length + 1)

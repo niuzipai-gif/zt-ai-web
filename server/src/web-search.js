@@ -317,7 +317,7 @@ export function selectSearchProviders({ query = '', language = '', scenario = ''
   return providers
 }
 
-function providerResult(provider, query, results) {
+function providerResult(provider, query, results, providerErrors = []) {
   const safeResults = attachSourceMetadata(results, provider, query, results.length || DEFAULT_SEARCH_RESULTS)
   return {
     tool: 'web_search',
@@ -329,6 +329,7 @@ function providerResult(provider, query, results) {
     sourceCount: safeResults.length,
     providerCounts: { [provider]: safeResults.length },
     queryCounts: { [query]: safeResults.length },
+    providerErrors,
     results: safeResults,
   }
 }
@@ -367,7 +368,7 @@ export async function searchWeb({ query, limit = DEFAULT_SEARCH_RESULTS, fetchIm
       const results = attachSourceMetadata(rawResults, provider, cleanQueryValue, bounded)
       if (!results.length) throw new Error(`${provider} 未返回可核验来源`)
       onProgress?.(`已获得 ${results.length} 条${provider === 'duckduckgo' ? '备用' : ''}公开来源，正在整理来源…`)
-      return providerResult(provider, cleanQueryValue, results)
+      return providerResult(provider, cleanQueryValue, results, providerErrors)
     } catch (error) {
       const message = safeErrorMessage(error)
       providerErrors.push({ provider, message })

@@ -56,3 +56,21 @@ test('reports source-provider and query counts while keeping source records safe
     { title: '可信来源', url: 'https://example.com/english', snippet: '有效摘要' },
   ])
 })
+
+test('carries provider failures into adaptive research diagnostics after fallback success', async () => {
+  const research = await runAdaptiveResearch({
+    queries: ['知乎知识问题'],
+    searchImpl: async ({ query }) => ({
+      provider: 'duckduckgo',
+      providerErrors: [
+        { provider: 'firecrawl', message: 'Firecrawl 检索服务返回 503' },
+        { provider: 'zhihu', message: '知乎 检索服务返回 401' },
+      ],
+      results: [{ title: '备用来源', url: 'https://example.com/fallback', snippet: '可核验摘要', query }],
+    }),
+  })
+  assert.deepEqual(research.providerErrors, [
+    { query: '知乎知识问题', provider: 'firecrawl', message: 'Firecrawl 检索服务返回 503' },
+    { query: '知乎知识问题', provider: 'zhihu', message: '知乎 检索服务返回 401' },
+  ])
+})

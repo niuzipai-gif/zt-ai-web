@@ -153,6 +153,31 @@ test('uses TinyFish Search for configured social or multimedia research', async 
   assert.equal(calls[1].options.headers['x-api-key'], 'tinyfish-secret')
 })
 
+test('preserves optional provider errors when a later fallback succeeds', async () => {
+  const fallbackHtml = '<a class="result__a" href="https://example.com/fallback">Fallback</a><a class="result__snippet">Fallback summary</a>'
+  const result = await searchWeb({
+    query: '知乎 亚马逊库存管理经验',
+    language: 'zh',
+    scenario: 'knowledge',
+    fetchImpl: async url => {
+      const target = String(url)
+      if (target.includes('firecrawl.test')) return new Response('no', { status: 503 })
+      if (target.includes('developer.zhihu.test')) return new Response('no', { status: 401 })
+      return new Response(fallbackHtml, { status: 200 })
+    },
+    config: {
+      baseUrl: 'https://firecrawl.test/v2',
+      apiKey: 'fixture',
+      zhihu: { baseUrl: 'https://developer.zhihu.test', apiKey: 'zhihu-secret' },
+    },
+  })
+  assert.equal(result.provider, 'duckduckgo')
+  assert.deepEqual(result.providerErrors, [
+    { provider: 'firecrawl', message: 'Firecrawl 检索服务返回 503' },
+    { provider: 'zhihu', message: '知乎 检索服务返回 401' },
+  ])
+})
+
 test('falls through an unavailable optional provider to DuckDuckGo with strict failure semantics', async () => {
   const urls = []
   const fallbackHtml = '<a class="result__a" href="https://example.com/fallback">Fallback</a><a class="result__snippet">Fallback summary</a>'
