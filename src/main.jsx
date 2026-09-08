@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
-  ArrowUpRight, BriefcaseBusiness, Check, ChevronDown, Download, FileText, GitBranch, History, Home,
+  ArrowLeft, ArrowUpRight, BriefcaseBusiness, Check, ChevronDown, Download, FileText, GitBranch, History, Home,
   AudioLines, LockKeyhole, Menu, MessageCircle, Mic, MoreHorizontal, MoveUpRight, Orbit,
   Paperclip, Plus, Send, ShieldCheck, Sparkles, UserRound, X
 } from 'lucide-react'
@@ -19,6 +19,7 @@ import { getStreamBatchSize } from './lib/streaming.js'
 import { evidenceLabel, researchSummary } from './lib/research-sources.js'
 import { createVoiceRecognition, formatVoiceRecognitionError, mergeVoiceTranscript, prepareVoicePlayback, VOICE_GREETING_PREROLL_MS } from './lib/voice-audio.js'
 import { VoiceMode } from './components/VoiceMode.jsx'
+import { PROJECT_DETAIL_IDS, getProjectDetail, getProjectDetailUi } from './lib/project-details.js'
 import './styles.css'
 import './research-sources.css'
 
@@ -551,8 +552,28 @@ function PublicProfile({ copy, compact, onExpand }) {
   </section>
 }
 
-function ProjectsPage({ copy }) {
-  return <section className="page-section projects-page"><div className="section-heading"><div><span className="eyebrow">{copy.eyebrow}</span><h2>{copy.title}</h2></div><span className="section-count">{copy.count}</span></div><div className="project-grid">{copy.cards.map(([title, tag, desc, metric], index) => { const Icon = [Orbit, Sparkles, BriefcaseBusiness][index]; return <article className="project-card" key={title}><div className="project-icon"><Icon size={18} /></div><div className="project-number">0{index + 1}</div><span className="project-tag">{tag}</span><h3>{title}</h3><p>{desc}</p><div className="project-bottom"><strong>{metric}</strong><span>{copy.view} <ArrowUpRight size={14} /></span></div></article> })}</div><a className="github-card" href="https://github.com/niuzipai-gif?tab=repositories" target="_blank" rel="noreferrer"><div className="github-icon"><GitBranch size={22} /></div><div><span className="eyebrow">{copy.githubEyebrow}</span><h3>{copy.githubTitle}</h3><p>{copy.githubBody}</p></div><span className="github-link-icon" aria-label={copy.githubTitle}><ArrowUpRight size={17} /></span></a></section>
+function ProjectDetail({ detail, ui, onBack }) {
+  const listSection = (className, label, items) => <section className={`project-detail-panel ${className || ''}`}><span className="eyebrow">{label}</span><ul>{items.map(item => <li key={item}>{item}</li>)}</ul></section>
+  return <section className="page-section projects-page project-detail-page">
+    <button type="button" className="project-back" onClick={onBack}><ArrowLeft size={15} />{ui.back}</button>
+    <div className="project-detail-hero"><div><span className="eyebrow">{ui.caseEyebrow}</span><h2>{detail.title}</h2><p>{detail.summary}</p></div><strong>{detail.metric}</strong></div>
+    <section className="project-detail-panel project-detail-problem"><span className="eyebrow">{ui.problem}</span><p>{detail.problem}</p></section>
+    <div className="project-detail-grid">
+      {listSection('', ui.contribution, detail.contribution)}
+      {listSection('', ui.workflow, detail.workflow)}
+      {listSection('', ui.stack, detail.stack)}
+      {listSection('', ui.results, detail.results)}
+    </div>
+    <section className="project-detail-panel project-detail-evidence"><span className="eyebrow">{ui.evidence}</span><div className="project-evidence-links">{detail.evidence.map(link => <a key={link.url} href={link.url} target="_blank" rel="noreferrer">{link.label}<ArrowUpRight size={13} /></a>)}</div></section>
+    <section className="project-detail-demo"><span className="eyebrow">{ui.demo}</span><p>“{detail.demoPrompt}”</p></section>
+  </section>
+}
+
+function ProjectsPage({ copy, language, selectedProject, onSelectProject, onBack }) {
+  const ui = getProjectDetailUi(language)
+  const detail = selectedProject ? getProjectDetail(language, selectedProject) : null
+  if (detail) return <ProjectDetail detail={detail} ui={ui} onBack={onBack} />
+  return <section className="page-section projects-page"><div className="section-heading"><div><span className="eyebrow">{copy.eyebrow}</span><h2>{copy.title}</h2></div><span className="section-count">{copy.count}</span></div><div className="project-grid">{copy.cards.map(([title, tag, desc, metric], index) => { const Icon = [Orbit, Sparkles, BriefcaseBusiness][index]; return <button type="button" className="project-card" key={title} onClick={() => onSelectProject(PROJECT_DETAIL_IDS[index])} aria-label={`${copy.view}: ${title}`}><div className="project-icon"><Icon size={18} /></div><div className="project-number">0{index + 1}</div><span className="project-tag">{tag}</span><h3>{title}</h3><p>{desc}</p><div className="project-bottom"><strong>{metric}</strong><span>{copy.view} <ArrowUpRight size={14} /></span></div></button> })}</div><a className="github-card" href="https://github.com/niuzipai-gif?tab=repositories" target="_blank" rel="noreferrer"><div className="github-icon"><GitBranch size={22} /></div><div><span className="eyebrow">{copy.githubEyebrow}</span><h3>{copy.githubTitle}</h3><p>{copy.githubBody}</p></div><span className="github-link-icon" aria-label={copy.githubTitle}><ArrowUpRight size={17} /></span></a></section>
 }
 
 function PlatformIcon({ platform }) {
@@ -585,6 +606,7 @@ function HomePage({ onChat, copy }) {
 
 function App() {
   const [page, setPage] = useState('home')
+  const [selectedProject, setSelectedProject] = useState(null)
   const [visitorState, setVisitorState] = useState(() => loadVisitorState(localStorage))
   const [menuOpen, setMenuOpen] = useState(false)
   const [language, setLanguage] = useState(() => getInitialLanguage(localStorage))
@@ -620,13 +642,13 @@ function App() {
     return { ...current, sessions: current.sessions.map(session => session.id === sessionId ? updater(session) : session) }
   })
   useEffect(() => { const handler = event => setPage(event.detail); document.getElementById('root').addEventListener('navigate', handler); return () => document.getElementById('root').removeEventListener('navigate', handler) }, [])
-  const navigate = value => { setPage(value); setMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  const navigate = value => { setPage(value); setSelectedProject(null); setMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   return <div className={`app-shell ${isAndroidShell ? 'android-shell' : ''} page-${page}`}>
     <header className="topbar"><button className="mobile-menu" onClick={() => setMenuOpen(value => !value)} aria-label={language === 'zh' ? '打开菜单' : 'Open menu'}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button><Brand compact copy={copy} /><nav className={menuOpen ? 'open' : ''}>{Object.entries(pages).map(([key, label]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => navigate(key)}>{label}</button>)}</nav><div className="topbar-right">{!isAndroidShell && <button className={`desktop-download ${page === 'downloads' ? 'active' : ''}`} onClick={() => navigate('downloads')} aria-label={copy.desktopDownload}><Download size={14} /><span>{copy.desktopDownload}</span></button>}<LanguageSwitch language={language} setLanguage={setLanguage} copy={copy} /><span className="availability"><span /> {copy.availability}</span><button className="more-button" aria-label="More"><MoreHorizontal size={20} /></button></div></header>
     <main className="main-content">
       {page === 'home' && <HomePage copy={copy.home} onChat={() => navigate('chat')} />}
       {page === 'chat' && <div className="chat-layout"><PublicProfile copy={{ ...copy.profile, compactProfile: copy.chat.compactProfile }} compact={shouldUseCompactProfile({ viewportWidth, messageCount: activeSession.messages.length }) && !profileExpanded} onExpand={() => setProfileExpanded(true)} /><ChatBox copy={copy.chat} language={language} resumeDocument={resumeDocument} session={activeSession} visitorId={visitorState.visitorId} sessions={visitorState.sessions} onSessionChange={updateSession} onSelectSession={selectSession} onNewChat={newChat} /></div>}
-      {page === 'projects' && <ProjectsPage copy={copy.projects} />}
+      {page === 'projects' && <ProjectsPage copy={copy.projects} language={language} selectedProject={selectedProject} onSelectProject={setSelectedProject} onBack={() => setSelectedProject(null)} />}
       {page === 'resume' && <ResumePage copy={copy.resume} resumeDocument={resumeDocument} />}
       {page === 'downloads' && <DownloadCenter copy={copy} />}
     </main>

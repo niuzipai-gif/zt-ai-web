@@ -36,6 +36,7 @@ test('provides a matching resume file for every interface language', () => {
 })
 
 test('resume download paths point to published DOCX files', () => {
+  assert.equal(resumeDocumentByLanguage.zh.name, '蔡宙廷_个人简历.docx')
   for (const code of ['zh', 'en', 'ja']) {
     const publicPath = fileURLToPath(new URL(`../../public/${resumeDocumentByLanguage[code].path}`, import.meta.url))
     assert.ok(existsSync(publicPath), `${code} resume asset is missing: ${resumeDocumentByLanguage[code].path}`)
