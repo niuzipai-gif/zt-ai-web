@@ -19,7 +19,8 @@ import { getStreamBatchSize } from './lib/streaming.js'
 import { evidenceLabel, researchSummary } from './lib/research-sources.js'
 import { createVoiceRecognition, formatVoiceRecognitionError, mergeVoiceTranscript, prepareVoicePlayback, VOICE_GREETING_PREROLL_MS } from './lib/voice-audio.js'
 import { VoiceMode } from './components/VoiceMode.jsx'
-import { PROJECT_DETAIL_IDS, getProjectDetail, getProjectDetailUi } from './lib/project-details.js'
+import { ProjectFlowDemo } from './components/ProjectFlowDemo.jsx'
+import { CASE_STUDIES_GITHUB_URL, PROJECT_DETAIL_IDS, getProjectDetail, getProjectDetailUi } from './lib/project-details.js'
 import './styles.css'
 import './research-sources.css'
 
@@ -558,6 +559,7 @@ function ProjectDetail({ detail, ui, onBack }) {
     <button type="button" className="project-back" onClick={onBack}><ArrowLeft size={15} />{ui.back}</button>
     <div className="project-detail-hero"><div><span className="eyebrow">{ui.caseEyebrow}</span><h2>{detail.title}</h2><p>{detail.summary}</p></div><strong>{detail.metric}</strong></div>
     <section className="project-detail-panel project-detail-problem"><span className="eyebrow">{ui.problem}</span><p>{detail.problem}</p></section>
+    <ProjectFlowDemo flowDemo={detail.flowDemo} ui={ui} />
     <div className="project-detail-grid">
       {listSection('', ui.contribution, detail.contribution)}
       {listSection('', ui.workflow, detail.workflow)}
@@ -573,7 +575,7 @@ function ProjectsPage({ copy, language, selectedProject, onSelectProject, onBack
   const ui = getProjectDetailUi(language)
   const detail = selectedProject ? getProjectDetail(language, selectedProject) : null
   if (detail) return <ProjectDetail detail={detail} ui={ui} onBack={onBack} />
-  return <section className="page-section projects-page"><div className="section-heading"><div><span className="eyebrow">{copy.eyebrow}</span><h2>{copy.title}</h2></div><span className="section-count">{copy.count}</span></div><div className="project-grid">{copy.cards.map(([title, tag, desc, metric], index) => { const Icon = [Orbit, Sparkles, BriefcaseBusiness][index]; return <button type="button" className="project-card" key={title} onClick={() => onSelectProject(PROJECT_DETAIL_IDS[index])} aria-label={`${copy.view}: ${title}`}><div className="project-icon"><Icon size={18} /></div><div className="project-number">0{index + 1}</div><span className="project-tag">{tag}</span><h3>{title}</h3><p>{desc}</p><div className="project-bottom"><strong>{metric}</strong><span>{copy.view} <ArrowUpRight size={14} /></span></div></button> })}</div><a className="github-card" href="https://github.com/niuzipai-gif?tab=repositories" target="_blank" rel="noreferrer"><div className="github-icon"><GitBranch size={22} /></div><div><span className="eyebrow">{copy.githubEyebrow}</span><h3>{copy.githubTitle}</h3><p>{copy.githubBody}</p></div><span className="github-link-icon" aria-label={copy.githubTitle}><ArrowUpRight size={17} /></span></a></section>
+  return <section className="page-section projects-page"><div className="section-heading"><div><span className="eyebrow">{copy.eyebrow}</span><h2>{copy.title}</h2></div><span className="section-count">{copy.count}</span></div><div className="project-grid">{copy.cards.map(([title, tag, desc, metric], index) => { const Icon = [Orbit, Sparkles, BriefcaseBusiness][index]; return <button type="button" className="project-card" key={title} onClick={() => onSelectProject(PROJECT_DETAIL_IDS[index])} aria-label={`${copy.view}: ${title}`}><div className="project-icon"><Icon size={18} /></div><div className="project-number">0{index + 1}</div><span className="project-tag">{tag}</span><h3>{title}</h3><p>{desc}</p><div className="project-bottom"><strong>{metric}</strong><span>{copy.view} <ArrowUpRight size={14} /></span></div></button> })}</div><a className="github-card" href={CASE_STUDIES_GITHUB_URL} target="_blank" rel="noreferrer"><div className="github-icon"><GitBranch size={22} /></div><div><span className="eyebrow">{copy.githubEyebrow}</span><h3>{copy.githubTitle}</h3><p>{copy.githubBody}</p></div><span className="github-link-icon" aria-label={copy.githubTitle}><ArrowUpRight size={17} /></span></a></section>
 }
 
 function PlatformIcon({ platform }) {
