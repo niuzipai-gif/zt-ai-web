@@ -12,7 +12,7 @@ export function ProjectFlowDemo({ flowDemo, ui }) {
 
   useEffect(() => {
     setState(createFlowDemoState(steps.length))
-  }, [steps.length])
+  }, [flowDemo, steps.length])
 
   useEffect(() => {
     if (state.mode !== 'auto' || state.index >= lastIndex) return undefined
@@ -24,7 +24,7 @@ export function ProjectFlowDemo({ flowDemo, ui }) {
       })
     }, FLOW_STEP_MS)
     return () => globalThis.clearTimeout(timer)
-  }, [lastIndex, state.index, state.mode, steps.length])
+  }, [flowDemo, lastIndex, state.index, state.mode, steps.length])
 
   if (!steps.length) return null
   const activeStep = steps[state.index] || steps[0]
