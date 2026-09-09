@@ -21,7 +21,12 @@ test('every selected project has a complete case study in all interface language
       assert.ok(detail.results.length >= 2)
       assert.ok(detail.evidence.length >= 1)
       assert.ok(detail.demoPrompt)
+      assert.ok(detail.repository)
+      assert.equal(detail.flowDemo.steps.length, 5)
     }
+    assert.equal(details[0].repository, 'https://github.com/niuzipai-gif/zt-ai-project-case-studies')
+    assert.equal(details[1].repository, 'https://github.com/niuzipai-gif/amazon-linkfox-image-sop')
+    assert.equal(details[2].repository, 'https://github.com/niuzipai-gif/zt-ai-project-case-studies')
   }
 })
 
