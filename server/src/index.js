@@ -302,7 +302,7 @@ async function handleChat(request, response) {
   const language = ['zh', 'en', 'ja'].includes(body.language) ? body.language : 'zh'
   const originalMessages = messages.filter(message => message.role !== 'system')
   const directlyAttachedImage = hasImageContent(originalMessages.findLast(message => message.role === 'user')?.content)
-  const providerMessages = carryForwardImages([{ role: 'system', content: buildPublicSystemPrompt(language) }, ...originalMessages])
+  const providerMessages = carryForwardImages([{ role: 'system', content: buildPublicSystemPrompt(language, { messages: originalMessages }) }, ...originalMessages])
   const incomingAttachments = Array.isArray(body.attachments) ? body.attachments.slice(0, 8) : []
   const attachmentNotes = incomingAttachments.filter(file => file && file.name).map(file => `[附件：${String(file.name).slice(0, 160)}，类型：${String(file.type || '未知').slice(0, 80)}]`)
   const latestUser = providerMessages.findLast(message => message.role === 'user')
@@ -396,7 +396,7 @@ async function handleAgentChat(request, response) {
   const body = await readBody(request)
   const { model, messages } = normalizeChatRequest(body)
   const language = ['zh', 'en', 'ja'].includes(body.language) ? body.language : 'zh'
-  const providerMessages = carryForwardImages([{ role: 'system', content: buildAgentSystemPrompt(language) }, ...messages.filter(message => message.role !== 'system')])
+  const providerMessages = carryForwardImages([{ role: 'system', content: buildAgentSystemPrompt(language, { messages }) }, ...messages.filter(message => message.role !== 'system')])
   const context = clientContext(request, body, session, 'desktop-agent')
   const inputText = contentToText(providerMessages.findLast(message => message.role === 'user')?.content || '')
   let outputText = ''
@@ -459,6 +459,8 @@ async function handleMiMoOpenAI(request, response, route) {
   const body = await readBody(request)
   const context = clientContext(request, body, session, 'desktop-agent')
   const streamChat = input => streamGatewayChat(input)
+  // Only pass conversation/format hints, never client-supplied clock options.
+  const promptOptions = { messages: body.messages, input: body.input, response_format: body.response_format, text: body.text }
   const responseId = `resp_zt_${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`
   const requestedModel = String(body.model || 'zt-minimax-m3')
   const modelLabel = MODEL_CATALOG[requestedModel]?.label || requestedModel
@@ -468,7 +470,7 @@ async function handleMiMoOpenAI(request, response, route) {
     let status = 'success'
     if (body.stream === false) {
       try {
-        const completed = await completeMiMoResponse({ request: body, systemPrompt: buildAgentSystemPrompt(body.language || 'zh'), streamChat, responseId })
+        const completed = await completeMiMoResponse({ request: body, systemPrompt: buildAgentSystemPrompt(body.language || 'zh', promptOptions), streamChat, responseId })
         outputText = completed.output
           .filter(item => item.type === 'message')
           .flatMap(item => item.content || [])
@@ -484,7 +486,7 @@ async function handleMiMoOpenAI(request, response, route) {
     }
     privateSseStart(response)
     try {
-      for await (const frame of streamResponseEvents({ request: body, systemPrompt: buildAgentSystemPrompt(body.language || 'zh'), streamChat, responseId })) {
+      for await (const frame of streamResponseEvents({ request: body, systemPrompt: buildAgentSystemPrompt(body.language || 'zh', promptOptions), streamChat, responseId })) {
         if (frame.type === 'response.output_text.delta') outputText += frame.data.delta || ''
         sse(response, frame.type, frame.data)
       }
@@ -502,7 +504,7 @@ async function handleMiMoOpenAI(request, response, route) {
     let outputText = ''
     privateSseStart(response)
     try {
-      for await (const frame of streamChatCompletionEvents({ request: body, systemPrompt: buildAgentSystemPrompt(body.language || 'zh'), streamChat })) {
+      for await (const frame of streamChatCompletionEvents({ request: body, systemPrompt: buildAgentSystemPrompt(body.language || 'zh', promptOptions), streamChat })) {
         const text = frame.choices?.[0]?.delta?.content || ''
         outputText += text
         response.write(`data: ${JSON.stringify(frame)}\n\n`)
@@ -550,6 +552,8 @@ export function createServer() {
         return sendJson(request, response, 200, {
           ok: true,
           service: 'zt-ai-gateway',
+          revision: /^[a-f0-9]{40}$/i.test(process.env.RENDER_GIT_COMMIT || '') ? process.env.RENDER_GIT_COMMIT : null,
+          communication: { explanationPolicy: 'adaptive-v1' },
           profile: { name: ZT_PROFILE.name, identity: ZT_PROFILE.identity },
           models: CHAT_MODELS,
           providers: {

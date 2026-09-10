@@ -22,6 +22,8 @@ test('health exposes optional image provider readiness without secrets', async (
     assert.equal(payload.providers.tineye, true)
     assert.equal(payload.providers.media, true)
     assert.equal(payload.providers.voice, false)
+    assert.equal(payload.communication.explanationPolicy, 'adaptive-v1')
+    assert.ok(payload.revision === null || /^[a-f0-9]{40}$/.test(payload.revision))
     assert.doesNotMatch(body, /vision-secret|tineye-secret/)
     assert.doesNotMatch(body, /API_KEY|MINIMAX_VOICE_ID|ASR_PROVIDER/)
   } finally {
