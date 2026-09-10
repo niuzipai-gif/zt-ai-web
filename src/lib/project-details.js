@@ -18,6 +18,7 @@ function projectEvidence(language, repository) {
 const flowDemo = {
   zh: {
     selectionWorkflow: {
+      outcomes: ["产品机会卡","证据与利润判断","明确分工的任务表","完整的交付检查","可追溯的复盘记录"],
       steps: [
         { id: 'input', label: '输入', description: '锁定产品形态、市场和使用场景。' },
         { id: 'decision', label: '判断', description: '把热度、竞品、利润和供应证据放在同一条判断链上。' },
@@ -27,6 +28,7 @@ const flowDemo = {
       ],
     },
     imageProduction: {
+      outcomes: ["标准化素材包","一套图片任务单","多版构图候选","人工确认的合格图","可直接交付的套图"],
       steps: [
         { id: 'input', label: '输入', description: '整理素材、尺寸、市场语言和页面目标。' },
         { id: 'decision', label: '判断', description: '把功能、场景和差异化映射成图片任务。' },
@@ -36,6 +38,7 @@ const flowDemo = {
       ],
     },
     profitLoop: {
+      outcomes: ["统一口径的成本表","可接受的利润底线","持续更新的经营记录","估算与实际的差异","有依据的下一步行动"],
       steps: [
         { id: 'input', label: '输入', description: '收集成本、售价、物流、费用和库存假设。' },
         { id: 'decision', label: '判断', description: '先算利润底线，再决定是否继续开品。' },
@@ -47,6 +50,7 @@ const flowDemo = {
   },
   en: {
     selectionWorkflow: {
+      outcomes: ["Product opportunity brief","Evidence-led launch decision","Owned launch tasks","Verified handoff checklist","Traceable review notes"],
       steps: [
         { id: 'input', label: 'Input', description: 'Define the product form, market, and use case.' },
         { id: 'decision', label: 'Decision', description: 'Put heat, competitors, margin, and supply evidence into one chain.' },
@@ -56,6 +60,7 @@ const flowDemo = {
       ],
     },
     imageProduction: {
+      outcomes: ["Organized material pack","Image-by-image brief","Candidate compositions","Human-reviewed images","Delivery-ready image set"],
       steps: [
         { id: 'input', label: 'Input', description: 'Collect materials, dimensions, market language, and page goal.' },
         { id: 'decision', label: 'Decision', description: 'Map function, scenario, and differentiation to image tasks.' },
@@ -65,6 +70,7 @@ const flowDemo = {
       ],
     },
     profitLoop: {
+      outcomes: ["Consistent cost model","Acceptable margin floor","Updated operating record","Estimate-to-actual variance","Evidence-led next action"],
       steps: [
         { id: 'input', label: 'Input', description: 'Collect cost, price, logistics, fees, and inventory assumptions.' },
         { id: 'decision', label: 'Decision', description: 'Calculate the margin floor before continuing the launch.' },
@@ -76,6 +82,7 @@ const flowDemo = {
   },
   ja: {
     selectionWorkflow: {
+      outcomes: ["商品候補の情報カード","根拠に基づく判断","担当者を決めたタスク","納品チェックリスト","追跡できる振り返り"],
       steps: [
         { id: 'input', label: '入力', description: '商品形態、市場、利用シーンを決めます。' },
         { id: 'decision', label: '判断', description: '熱量、競合、利益、供給の根拠を一つの流れにまとめます。' },
@@ -85,6 +92,7 @@ const flowDemo = {
       ],
     },
     imageProduction: {
+      outcomes: ["整理済み素材パック","画像ごとの制作指示","複数の構図案","人が確認した画像","納品可能な画像セット"],
       steps: [
         { id: 'input', label: '入力', description: '素材、サイズ、市場言語、ページ目的を整理します。' },
         { id: 'decision', label: '判断', description: '機能、シーン、差別化を画像タスクに割り当てます。' },
@@ -94,6 +102,7 @@ const flowDemo = {
       ],
     },
     profitLoop: {
+      outcomes: ["統一したコスト表","許容できる利益下限","更新される運営記録","予測と実績の差分","根拠のある次の行動"],
       steps: [
         { id: 'input', label: '入力', description: 'コスト、価格、物流、手数料、在庫の前提を集めます。' },
         { id: 'decision', label: '判断', description: '利益下限を計算してからローンチを続けるか決めます。' },
@@ -125,6 +134,18 @@ export const PROJECT_DETAILS = {
       flowNote: '这是流程示意，不是实时业务数据。可以点击步骤或重新播放。',
       flowPlay: '播放演示',
       flowReplay: '重新播放',
+      flowPause: "暂停",
+      flowContinue: "继续播放",
+      flowPrevious: "上一步",
+      flowNext: "下一步",
+      flowPlaying: "正在演示",
+      flowPaused: "已暂停",
+      flowComplete: "演示完成",
+      flowManual: "自由浏览",
+      flowStep: "步骤",
+      flowOutcome: "这一环产出",
+      flowIllustration: "流程示意 · 非实际业务数据",
+      flowSceneLabels: {"selection-workflow":["任务流转","候选与证据","回写结果"],"image-production":["素材与要求","构图候选","检查与交付"],"profit-loop":["收入与成本结构 · 示意","拆解影响因素","结果回到下一次决策"]},
     },
     items: [
       {
@@ -224,6 +245,18 @@ export const PROJECT_DETAILS = {
       flowNote: 'A process illustration, not live business data. Select a step or replay it.',
       flowPlay: 'Play demo',
       flowReplay: 'Replay',
+      flowPause: "Pause",
+      flowContinue: "Continue",
+      flowPrevious: "Previous step",
+      flowNext: "Next step",
+      flowPlaying: "Playing",
+      flowPaused: "Paused",
+      flowComplete: "Complete",
+      flowManual: "Explore at your pace",
+      flowStep: "STEP",
+      flowOutcome: "OUTPUT",
+      flowIllustration: "PROCESS SKETCH · NOT LIVE DATA",
+      flowSceneLabels: {"selection-workflow":["TASK FLOW","CANDIDATES & EVIDENCE","WRITE BACK"],"image-production":["SOURCE MATERIAL","COMPOSITIONS","REVIEW & DELIVER"],"profit-loop":["REVENUE & COST STRUCTURE · SCHEMATIC","UNDERSTAND THE DRIVERS","FEED THE NEXT DECISION"]},
     },
     items: [
       {
@@ -290,6 +323,18 @@ export const PROJECT_DETAILS = {
       flowNote: '実際の業務データではなく、進め方のイメージです。手順を選択または再生できます。',
       flowPlay: 'デモを再生',
       flowReplay: 'もう一度再生',
+      flowPause: "一時停止",
+      flowContinue: "再開",
+      flowPrevious: "前の手順",
+      flowNext: "次の手順",
+      flowPlaying: "再生中",
+      flowPaused: "一時停止中",
+      flowComplete: "再生完了",
+      flowManual: "手順を選んで確認",
+      flowStep: "手順",
+      flowOutcome: "この工程の成果物",
+      flowIllustration: "フローのイメージ · 実データではありません",
+      flowSceneLabels: {"selection-workflow":["タスクの流れ","候補と根拠","結果を記録"],"image-production":["素材と要件","構図の候補","確認と納品"],"profit-loop":["収益とコストの構造 · イメージ","要因を分解","次の判断に反映"]},
     },
     items: [
       {

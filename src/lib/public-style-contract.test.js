@@ -36,7 +36,7 @@ test('public composer keeps drag and paste affordances visible', async () => {
 })
 
 test('project flow demo has responsive and reduced-motion styling', async () => {
-  const css = await fs.readFile('src/styles.css', 'utf8')
+  const css = await fs.readFile('src/components/project-flow.css', 'utf8')
   for (const selector of ['.project-flow-demo', '.project-flow-step.is-active', '.project-flow-progress', '.project-flow-active', '@media(max-width:800px)', '@media (prefers-reduced-motion: reduce)']) {
     assert.match(css, new RegExp(selector.replace(/[().]/g, '\\$&')))
   }

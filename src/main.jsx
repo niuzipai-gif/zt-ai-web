@@ -559,7 +559,7 @@ function ProjectDetail({ detail, ui, onBack }) {
     <button type="button" className="project-back" onClick={onBack}><ArrowLeft size={15} />{ui.back}</button>
     <div className="project-detail-hero"><div><span className="eyebrow">{ui.caseEyebrow}</span><h2>{detail.title}</h2><p>{detail.summary}</p></div><strong>{detail.metric}</strong></div>
     <section className="project-detail-panel project-detail-problem"><span className="eyebrow">{ui.problem}</span><p>{detail.problem}</p></section>
-    <ProjectFlowDemo flowDemo={detail.flowDemo} ui={ui} />
+    <ProjectFlowDemo flowDemo={detail.flowDemo} ui={ui} projectId={detail.id} />
     <div className="project-detail-grid">
       {listSection('', ui.contribution, detail.contribution)}
       {listSection('', ui.workflow, detail.workflow)}
