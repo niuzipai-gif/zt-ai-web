@@ -43,4 +43,20 @@ Raw local evidence is retained under `output/video-study-2026-09-11/`, `output/a
 
 ## Deployment verification
 
-Only this change should be applied to the current production `main`. Do not merge unrelated feature-branch history or redeploy Pages assets for a server-only policy update. Verify `/api/health` returns `communication.explanationPolicy = adaptive-v1` and the expected `revision` before claiming the public site uses the new policy.
+Applied only this feature to production `main` as `76e919564493f1feb4f38622777cbca77a3d4177`. Source feature commit is `666f000595d90e6819304a2a559050296e7a24f1`. Release-tree server tests: **115 passed, 0 failed**. No unrelated feature history or Pages assets were merged. The original development branch was restored and its existing untracked directories preserved.
+
+Live `/api/health` returned `ok: true`, `communication.explanationPolicy: adaptive-v1`, and the exact production revision above. This verifies the serving code, not merely a successful push. Deployment used the existing Git-triggered flow; no Render workspace selection, service configuration or manual restart was performed.
+
+Three additional live `/api/chat` checks each returned HTTP 200, `message.done`, a nonempty answer and no error events:
+
+| Live case | Model | Duration | Source count |
+| --- | --- | ---: | ---: |
+| Chinese researched explanation | MiniMax | 36.4 s | 10 |
+| English management explanation | DeepSeek | 2.2 s | 0 (ordinary explanation path) |
+| Japanese casual conversation | MiniMax | 3.2 s | 0 (casual path) |
+
+The source-backed answer was longer than the soft brevity target; source count alone is not an accuracy or authority score. The English answer still contained some broad claims about index performance. The Japanese answer stayed in Japanese but its joke still alluded to Amazon; casual-topic steering is improved, not perfect. These limitations remain visible rather than labeling all outputs excellent.
+
+Public Pages returned HTTP 200 and still referenced `index-Btgl9BSu.js` and `index-W-zlBszz.css`. No changes were made to `public/`, `src/main.jsx`, `src/styles.css`, `render.yaml`, desktop packaging or Android assets in this feature. Existing online health also reports non-durable JSON storage; this was not changed or represented as a new persistence fix.
+
+Raw live evidence: `output/adaptive-explanations-2026-09-11-v3/production-results.json` (local, not committed). Device-level microphone/playback and authenticated production desktop login were not exercised; desktop request wiring was tested at the local HTTP boundary.
