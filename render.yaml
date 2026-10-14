@@ -17,9 +17,11 @@ services:
       - key: MINIMAX_API_KEY
         sync: false
       - key: MINIMAX_TEXT_MODEL
-        value: MiniMax-M3
+        value: MiniMax-M3.1-Flash-Preview
       - key: MINIMAX_BASE_URL
-        value: https://api.minimaxi.com/v1
+        value: https://api.minimax.cn/v1
+      - key: MINIMAX_REASONING_EFFORT
+        value: high
       - key: DEEPSEEK_API_KEY
         sync: false
       - key: DEEPSEEK_TEXT_MODEL
