@@ -6,6 +6,79 @@ export function chooseRecorderMime(isTypeSupported = () => false) {
 
 function stopTracks(stream) { stream?.getTracks?.().forEach(track => track.stop?.()) }
 
+export function createPcmVoiceRecorder({ mediaDevices = globalThis.navigator?.mediaDevices || null, audioContextFactory = globalThis.AudioContext || globalThis.webkitAudioContext, maxTakeMs = 90_000, onLimit = () => {} } = {}) {
+  let stream = null, context = null, source = null, processor = null, gain = null, analyser = null, timer = null
+  let samples = [], frames = 0, rate = 16000, generation = 0, finished = null
+  function release() {
+    clearTimeout(timer); timer = null
+    if (processor) processor.onaudioprocess = null
+    source?.disconnect?.(); processor?.disconnect?.(); gain?.disconnect?.()
+    stopTracks(stream); stream = null
+    context?.close?.()?.catch?.(() => {})
+    context = source = processor = gain = analyser = null
+  }
+  function cancel() { generation += 1; release(); samples = []; frames = 0; finished = null; return { status: 'cancelled' } }
+  async function start() {
+    cancel()
+    const token = generation
+    if (!mediaDevices?.getUserMedia || !audioContextFactory) return { status: 'unavailable', error: '当前设备不支持录音，请使用文字输入。' }
+    try {
+      context = new audioContextFactory()
+      const captureContext = context
+      const resume = captureContext.resume?.()
+      resume?.catch?.(() => {})
+      const acquired = await mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+      if (token !== generation) { stopTracks(acquired); return { status: 'cancelled' } }
+      stream = acquired
+      rate = captureContext.sampleRate
+      source = captureContext.createMediaStreamSource(stream)
+      analyser = captureContext.createAnalyser(); analyser.fftSize = 256
+      // PCM avoids browser-dependent WebM codecs and needs no server converter.
+      processor = captureContext.createScriptProcessor(4096, 1, 1)
+      gain = captureContext.createGain(); gain.gain.value = 0
+      source.connect(analyser); source.connect(processor); processor.connect(gain); gain.connect(captureContext.destination)
+      processor.onaudioprocess = event => {
+        if (token !== generation) return
+        const data = event.inputBuffer.getChannelData(0)
+        const remaining = Math.max(0, Math.floor(rate * maxTakeMs / 1000) - frames)
+        if (remaining) { const chunk = new Float32Array(data.slice(0, remaining)); samples.push(chunk); frames += chunk.length }
+      }
+      timer = setTimeout(() => { if (token === generation) { void stop(); onLimit() } }, maxTakeMs)
+      return { status: 'recording', stream, analyser, mimeType: 'audio/wav' }
+    } catch (error) {
+      if (token !== generation) return { status: 'cancelled' }
+      release()
+      return { status: 'unavailable', error: error?.name === 'NotAllowedError' ? '麦克风权限未开启' : '录音启动失败，请重试。' }
+    }
+  }
+  function stop() {
+    if (finished) return Promise.resolve(finished)
+    if (!context) return Promise.resolve({ status: 'unavailable', error: '当前没有正在进行的录音' })
+    const pcm = new Float32Array(frames)
+    let offset = 0
+    for (const chunk of samples) { pcm.set(chunk, offset); offset += chunk.length }
+    const count = Math.floor(frames * 16000 / rate)
+    const buffer = new ArrayBuffer(44 + count * 2)
+    const view = new DataView(buffer), bytes = new Uint8Array(buffer)
+    const ascii = (at, value) => [...value].forEach((character, index) => { bytes[at + index] = character.charCodeAt(0) })
+    ascii(0, 'RIFF'); view.setUint32(4, 36 + count * 2, true); ascii(8, 'WAVE'); ascii(12, 'fmt ')
+    view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true)
+    view.setUint32(24, 16000, true); view.setUint32(28, 32000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true)
+    ascii(36, 'data'); view.setUint32(40, count * 2, true)
+    for (let index = 0; index < count; index += 1) {
+      const begin = Math.floor(index * rate / 16000), end = Math.min(frames, Math.max(begin + 1, Math.floor((index + 1) * rate / 16000)))
+      let sum = 0
+      for (let at = begin; at < end; at += 1) sum += pcm[at]
+      const value = Math.max(-1, Math.min(1, sum / (end - begin)))
+      view.setInt16(44 + index * 2, value < 0 ? value * 32768 : value * 32767, true)
+    }
+    finished = { status: 'ready', blob: new Blob([buffer], { type: 'audio/wav' }), mimeType: 'audio/wav', durationMs: Math.round(frames / rate * 1000) }
+    generation += 1; release(); samples = []; frames = 0
+    return Promise.resolve(finished)
+  }
+  return { start, stop, cancel, dispose: cancel, getAnalyser: () => analyser }
+}
+
 function defaultRecognitionFactory() {
   const Recognition = globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition
   return Recognition ? () => new Recognition() : null
@@ -91,12 +164,14 @@ export function createVoiceRecognition({ language = 'zh', recognitionFactory = d
     if (!recognitionFactory) return unavailable('当前设备没有可用的语音识别服务')
     try {
       recognition = recognitionFactory()
+      const active = recognition
       const locale = recognitionLanguage(language)
       if (locale) recognition.lang = locale
       recognition.continuous = true
       recognition.interimResults = true
       recognition.maxAlternatives = 1
       recognition.onresult = event => {
+        if (active !== recognition) return
         let text = ''
         let final = true
         const startIndex = Number(event?.resultIndex) || 0
@@ -107,15 +182,17 @@ export function createVoiceRecognition({ language = 'zh', recognitionFactory = d
         }
         if (text.trim()) onTranscript(text.trim(), final)
       }
-    recognition.onerror = event => handleError(event?.error || '语音识别暂时不可用')
-    recognition.onend = () => onEnd()
-    recognition.start()
+    recognition.onerror = event => { if (active === recognition && listening) handleError(event?.error || '语音识别暂时不可用') }
+    recognition.onend = () => { if (active === recognition) { listening = false; recognition = null; onEnd() } }
       listening = true
+    recognition.start()
       return { status: 'listening', mode: 'browser' }
     } catch (error) { recognition = null; return unavailable(error?.message || '语音识别启动失败') }
   }
   function stop() {
-    if (bridge?.stop && listening) { try { bridge.stop() } catch {} }
+    const wasListening = listening
+    listening = false
+    if (bridge?.stop && wasListening) { try { bridge.stop() } catch {} }
     try { recognition?.stop?.() } catch {}
     recognition = null
     listening = false

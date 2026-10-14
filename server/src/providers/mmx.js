@@ -108,8 +108,8 @@ async function minimaxRequest(path, options = {}) {
   const raw = await response.text()
   let body = {}
   try { body = raw ? JSON.parse(raw) : {} } catch { body = { raw: raw.slice(0, 300) } }
-  if (!response.ok) throw new Error(`MMX 请求失败（${response.status}）：${body.base_resp?.status_msg || body.error?.message || body.raw || '未知错误'}`)
-  if (body.base_resp && body.base_resp.status_code && body.base_resp.status_code !== 0) throw new Error(`MMX 请求失败（${body.base_resp.status_code}）：${body.base_resp.status_msg || '未知错误'}`)
+  if (!response.ok) throw Object.assign(new Error(`MMX 请求失败（${response.status}）：${body.base_resp?.status_msg || body.error?.message || body.raw || '未知错误'}`), { status: response.status, providerCode: Number(body.base_resp?.status_code) || 0 })
+  if (body.base_resp && body.base_resp.status_code && body.base_resp.status_code !== 0) throw Object.assign(new Error(`MMX 请求失败（${body.base_resp.status_code}）：${body.base_resp.status_msg || '未知错误'}`), { providerCode: Number(body.base_resp.status_code) })
   return body
 }
 
@@ -170,10 +170,10 @@ async function generateVideo(prompt) {
   return { kind: 'video', status: 'processing', taskId }
 }
 
-export async function synthesizeVoice({ text, language = 'zh', leadingPause = false } = {}) {
+export async function synthesizeVoice({ text, language = 'zh', leadingPause = false, voiceId: restoredVoiceId } = {}) {
   if (!MEDIA_API_KEY()) throw new Error('MMX 语音服务未配置')
   const normalizedLanguage = voiceLanguage(language)
-  const voiceId = voiceIdForLanguage(normalizedLanguage)
+  const voiceId = restoredVoiceId || voiceIdForLanguage(normalizedLanguage)
   if (!voiceId) throw new Error('MMX 自定义音色未配置')
   const value = cleanVoiceText(text, normalizedLanguage)
   if (!value) throw new Error('没有可合成的回答内容')
@@ -202,6 +202,36 @@ export async function synthesizeVoice({ text, language = 'zh', leadingPause = fa
   const url = String(body.data?.audio || '').trim()
   if (!/^https:\/\//i.test(url)) throw new Error('MMX 语音接口没有返回可播放地址')
   return { kind: 'audio', status: 'completed', url, language: normalizedLanguage }
+}
+
+export async function listVoiceClones() {
+  const body = await minimaxRequest('/v1/get_voice', { method: 'POST', body: JSON.stringify({ voice_type: 'voice_cloning' }) })
+  return (Array.isArray(body.voice_cloning) ? body.voice_cloning : []).map(item => String(item.voice_id || '')).filter(Boolean)
+}
+
+export async function transcribeVoice({ audio, mimeType = 'audio/wav', language = 'auto' } = {}) {
+  const inputError = () => Object.assign(new Error('Invalid recording'), { code: 'voice_input' })
+  if (!MEDIA_API_KEY()) throw Object.assign(new Error('ASR not configured'), { status: 401 })
+  const extensions = { 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg', 'audio/opus': 'opus' }
+  const type = String(mimeType).split(';')[0]
+  if (!extensions[type] || typeof audio !== 'string' || audio.length > 8_000_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(audio) || audio.length % 4) throw inputError()
+  const bytes = Buffer.from(audio, 'base64')
+  if (bytes.length < 44 || bytes.length > 6_000_000 || bytes.toString('base64') !== audio) throw inputError()
+  if (type.includes('wav') && (bytes.toString('ascii', 0, 4) !== 'RIFF' || bytes.toString('ascii', 8, 12) !== 'WAVE')) throw inputError()
+  const form = new FormData()
+  form.append('model', process.env.MINIMAX_ASR_MODEL || 'asr-1.0')
+  form.append('response_format', 'json')
+  form.append('file', new Blob([bytes], { type }), `recording.${extensions[type]}`)
+  const response = await fetch(`${API_ROOT()}/v1/speech_to_text`, {
+    method: 'POST', body: form,
+    headers: { authorization: `Bearer ${MEDIA_API_KEY()}`, ...(['zh', 'en', 'ja'].includes(language) ? { language } : {}) },
+    signal: AbortSignal.timeout(mediaTimeout()),
+  })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok || body.base_resp?.status_code) throw Object.assign(new Error('Voice transcription failed'), { status: response.status, providerCode: Number(body.base_resp?.status_code) || 0 })
+  const text = String(body.text || '').trim().slice(0, 10_000)
+  if (!text) throw Object.assign(new Error('No speech detected'), { code: 'voice_no_speech' })
+  return { text, status: 'completed' }
 }
 
 export async function runHiddenMediaRequest({ text }) {
