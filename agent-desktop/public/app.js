@@ -9,7 +9,8 @@ import { attachmentReadFailure, extractDocxText, extractPdfText, extractSpreadsh
 import { createNavigationState, goBack, goForward, pushNavigationState } from './navigation-state.mjs'
 import { createTaskRunRegistry } from './task-runs.mjs'
 import { createVoiceGreetingState, createVoiceState, detectVoiceLanguage, startVoiceCapture, transitionVoiceGreeting, transitionVoiceState } from './voice-mode.mjs'
-import { createVoiceAudioController, createVoicePlayback, createVoiceRecognition, formatVoiceRecognitionError } from './voice-audio.mjs'
+import { createPcmVoiceRecorder, createVoicePlayback, createVoiceRecognition, formatVoiceRecognitionError } from './voice-audio.mjs'
+import { createVoiceClient } from './voice-client.mjs'
 import { clampLevel, orbVisualState, readAnalyserLevel, shouldAnimateOrb } from './voice-orb.mjs'
 
 const $ = selector => document.querySelector(selector)
@@ -565,15 +566,12 @@ function setAccount(user) {
 function describeNetworkError(error, action = '连接 ZT.AI 网关') { const message = String(error?.message || error || ''); return /failed to fetch|networkerror|load failed/i.test(message) ? `${action}失败：当前无法访问 ${state.gatewayUrl || 'ZT.AI 网关'}，请确认网络正常或稍后重试。` : message || `${action}失败` }
 
 async function synthesizeVoice(text, language = 'zh') {
-  const response = await fetch(`${state.gatewayUrl}/api/voice/synthesize`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', ...(state.authToken ? { authorization: `Bearer ${state.authToken}` } : {}) },
-    body: JSON.stringify({ text: String(text || '').trim(), language }),
-  })
-  const body = await readJson(response)
-  if (!response.ok || !body.url) throw new Error(body.error || '语音合成没有返回音频')
+  const body = await desktopVoiceClient().synthesize(String(text || '').trim(), language)
+  if (!body.url) throw new Error('语音合成没有返回音频')
   return body
 }
+
+function desktopVoiceClient() { return createVoiceClient({ baseUrl: state.gatewayUrl, headers: state.authToken ? { authorization: `Bearer ${state.authToken}` } : {} }) }
 
 async function submitAuth(event) {
   event.preventDefault(); showAuthError(''); saveLoginFields(); setAuthPending(true)
@@ -1102,7 +1100,8 @@ function openVoiceMode() {
   state.voice.playbackPurpose = 'reply'
   state.voice.finalTranscript = ''
   state.voice.draft = ''
-  state.voice.controller = createVoiceAudioController()
+  state.voice.serverInput = true
+  state.voice.controller = createPcmVoiceRecorder({ onLimit: () => { if (state.voice.lifecycle.status === 'listening') void toggleVoiceInput() } })
   state.voice.recognition = createVoiceRecognition({
     language: 'auto',
     onTranscript: (value, isFinal) => {
@@ -1186,11 +1185,17 @@ async function toggleVoiceInput() {
     state.voice.recognition?.stop?.()
     const result = await state.voice.controller?.stop()
     if (result?.status !== 'ready') { setVoiceLifecycle({ type: 'fail', error: result?.error || '录音停止失败' }); return }
-    const transcript = String(state.voice.finalTranscript || state.voice.lifecycle.transcript || '').trim()
-    if (!transcript) { setVoiceLifecycle({ type: 'fail', error: '没有听清你的话，请再说一次。' }); return }
+    let transcript = String(state.voice.finalTranscript || state.voice.lifecycle.transcript || '').trim()
     setVoiceLifecycle({ type: 'finish-listening', transcript })
     const turnId = ++state.voice.turnId
     try {
+      if (state.voice.serverInput) {
+        const recognized = await desktopVoiceClient().transcribe(result.blob)
+        if (turnId !== state.voice.turnId) return
+        transcript = String(recognized.text || '').trim()
+        state.voice.draft = transcript
+      }
+      if (!transcript) throw new Error('没有听清你的话，请再说一次。')
       const detectedLanguage = detectVoiceLanguage(transcript, 'zh')
       const output = await runChat({ taskOverride: transcript, language: detectedLanguage })
       if (turnId !== state.voice.turnId) return
@@ -1223,7 +1228,7 @@ async function toggleVoiceInput() {
   state.voice.turnId += 1
   setVoiceLifecycle({ type: 'start-listening' })
   state.voice.finalTranscript = ''
-  const result = await startVoiceCapture({ recognition: state.voice.recognition, recorder: state.voice.controller })
+  const result = state.voice.serverInput ? await state.voice.controller.start() : await startVoiceCapture({ recognition: state.voice.recognition, recorder: state.voice.controller })
   if (result?.status !== 'recording') {
     setVoiceLifecycle({ type: 'fail', error: formatVoiceRecognitionError(result?.error || '当前设备无法使用麦克风') })
     return

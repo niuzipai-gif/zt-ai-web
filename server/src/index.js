@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { CHAT_MODELS, contentToText, isMediaIntent, normalizeChatRequest } from './contracts/chat.js'
 import { streamMinimax } from './providers/minimax.js'
 import { streamDeepseek } from './providers/deepseek.js'
-import { runHiddenMediaRequest, synthesizeVoice } from './providers/mmx.js'
+import { runHiddenMediaRequest, synthesizeVoice, transcribeVoice, listVoiceClones } from './providers/mmx.js'
+import { createVoiceService, voiceErrorResponse } from './voice-service.js'
 import { ZT_PROFILE } from './profile.js'
 import { createAuthService } from './auth.js'
 import { createTelemetry } from './telemetry.js'
@@ -45,6 +46,7 @@ const requestWindows = new Map()
 const auth = createAuthService()
 const telemetry = createTelemetry()
 const adminApi = createAdminApi({ auth, telemetry })
+const voiceService = createVoiceService({ synthesize: synthesizeVoice, transcribe: transcribeVoice, listVoices: listVoiceClones })
 const CONTROL_ROOM_PUBLIC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/control-room')
 
 function corsOrigin(request) {
@@ -538,13 +540,22 @@ export function createServer() {
         return
       }
       if (request.method === 'POST' && route === '/api/voice/synthesize') {
+        if (!voiceCapability().output) return sendJson(request, response, 503, { code: 'voice_disabled', error: '语音服务尚未开启，文字对话可以继续使用。', retryable: false })
         if (!rateLimit(request)) return sendJson(request, response, 429, { error: '语音请求过于频繁，请稍后再试' })
         const body = await readBody(request)
         try {
-          return sendJson(request, response, 200, await synthesizeVoice({ text: body.text, language: body.language, leadingPause: body.leadingPause === true }))
+          return sendJson(request, response, 200, await voiceService.synthesize({ text: body.text, language: body.language, leadingPause: body.leadingPause === true }))
         } catch (error) {
-          return sendJson(request, response, 502, { error: error.message || '语音合成暂时不可用' })
+          const failure = voiceErrorResponse(error)
+          return sendJson(request, response, failure.status, failure.body)
         }
+      }
+      if (request.method === 'POST' && route === '/api/voice/transcribe') {
+        if (!voiceCapability().serverInput) return sendJson(request, response, 503, { code: 'voice_disabled', error: '语音识别服务尚未开启，请使用文字输入。', retryable: false })
+        if (!rateLimit(request)) return sendJson(request, response, 429, { code: 'voice_rate_limit', error: '语音请求过于频繁，请稍后再试', retryable: true })
+        const body = await readBody(request)
+        try { return sendJson(request, response, 200, await voiceService.transcribe({ audio: body.audio, mimeType: body.mimeType, language: body.language })) }
+        catch (error) { const failure = voiceErrorResponse(error); return sendJson(request, response, failure.status, failure.body) }
       }
       if (request.method === 'GET' && route === '/api/health') {
         const imageSearchConfig = resolveImageSearchConfig()
@@ -554,6 +565,7 @@ export function createServer() {
           service: 'zt-ai-gateway',
           revision: /^[a-f0-9]{40}$/i.test(process.env.RENDER_GIT_COMMIT || '') ? process.env.RENDER_GIT_COMMIT : null,
           communication: { explanationPolicy: 'adaptive-v1' },
+          voiceReliability: 'server-asr-v1',
           profile: { name: ZT_PROFILE.name, identity: ZT_PROFILE.identity },
           models: CHAT_MODELS,
           providers: {

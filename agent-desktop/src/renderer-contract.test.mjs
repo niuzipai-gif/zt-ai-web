@@ -70,10 +70,10 @@ test('desktop renderer exposes an accessible tool drawer for execution context',
   }
   assert.match(html, /id="voice-mode"[^>]*class="[^"]*hidden/)
   assert.match(app, /openVoiceMode/)
-  assert.match(app, /createVoiceAudioController/)
+  assert.match(app, /createPcmVoiceRecorder/)
   assert.match(app, /createVoiceRecognition/)
   assert.match(app, /createVoicePlayback/)
-  assert.match(app, /api\/voice\/synthesize/)
+  assert.match(await fs.readFile('agent-desktop/public/voice-client.mjs', 'utf8'), /api\/voice\/synthesize/)
   assert.match(app, /playVoiceGreeting|voiceGreeting/)
   assert.doesNotMatch(app, /语音入口已准备；接入声音模型后可开始语音输入/)
   assert.match(html, /data-drawer-section="context"/)

@@ -23,3 +23,10 @@ test('voice capability accepts language-specific cloned voices with browser reco
   })
   assert.deepEqual(result, { enabled: true, input: true, output: true, reason: 'ready' })
 })
+
+test('server transcription remains available when browser recognition is disabled', () => {
+  const result = voiceCapability({ VOICE_MODE_ENABLED: 'true', MINIMAX_VOICE_ID_ZH: 'OwnerVoice', MMX_API_KEY: 'secret', VOICE_BROWSER_ASR: 'false' })
+  assert.equal(result.enabled, true)
+  assert.equal(result.serverInput, true)
+  assert.doesNotMatch(JSON.stringify(result), /secret|OwnerVoice/)
+})

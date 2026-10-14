@@ -17,7 +17,8 @@ import { attachmentStatusLabel, buildAttachmentContext } from './lib/attachment-
 import { renderMarkdown } from './lib/markdown.js'
 import { getStreamBatchSize } from './lib/streaming.js'
 import { evidenceLabel, researchSummary } from './lib/research-sources.js'
-import { createVoiceRecognition, formatVoiceRecognitionError, mergeVoiceTranscript, prepareVoicePlayback, VOICE_GREETING_PREROLL_MS } from './lib/voice-audio.js'
+import { createPcmVoiceRecorder, createVoiceRecognition, formatVoiceRecognitionError, mergeVoiceTranscript, prepareVoicePlayback, VOICE_GREETING_PREROLL_MS } from './lib/voice-audio.js'
+import { createVoiceClient } from './lib/voice-client.js'
 import { VoiceMode } from './components/VoiceMode.jsx'
 import { ProjectFlowDemo } from './components/ProjectFlowDemo.jsx'
 import { CASE_STUDIES_GITHUB_URL, PROJECT_DETAIL_IDS, getProjectDetail, getProjectDetailUi } from './lib/project-details.js'
@@ -25,6 +26,7 @@ import './styles.css'
 import './research-sources.css'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+const voiceClient = createVoiceClient({ baseUrl: API_BASE })
 const isAndroidShell = new URLSearchParams(globalThis.location?.search || '').get('zt-shell') === 'android'
 const isVoicePreview = new URLSearchParams(globalThis.location?.search || '').get('voice-preview') === '1'
 const projects = [
@@ -287,6 +289,11 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
   const [retryPayload, setRetryPayload] = useState(null)
   const [voiceOpen, setVoiceOpen] = useState(false)
   const [voiceCapability, setVoiceCapability] = useState({ enabled: false, input: false, output: false, reason: 'voice-disabled' })
+  const dictationRecorderRef = useRef(null)
+  const dictationToggleRef = useRef(null)
+  const dictationAbortRef = useRef(null)
+  const dictationTurnRef = useRef(0)
+  const voiceAnswerRef = useRef(null)
   const [dictationStatus, setDictationStatus] = useState('idle')
   const [dictationError, setDictationError] = useState('')
   const inputRef = useRef(null)
@@ -331,16 +338,18 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
       onEnd: () => setDictationStatus('idle'),
     })
     dictationRef.current = recognition
+    dictationRecorderRef.current = createPcmVoiceRecorder({ onLimit: () => { void dictationToggleRef.current?.() } })
     return () => {
       recognition.dispose?.()
+      dictationRecorderRef.current?.dispose?.()
+      dictationAbortRef.current?.abort()
       if (dictationRef.current === recognition) dictationRef.current = null
     }
   }, [copy])
 
   useEffect(() => {
     let cancelled = false
-    fetch(`${API_BASE}/api/voice/status`, { cache: 'no-store' })
-      .then(response => response.ok ? response.json() : null)
+    voiceClient.status()
       .then(result => { if (!cancelled && result) setVoiceCapability(result) })
       .catch(() => {})
     return () => { cancelled = true }
@@ -423,10 +432,17 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
   const removeAttachment = id => setAttachments(current => current.filter(file => file.id !== id))
 
   const synthesizeVoice = async (text, requestedLanguage = language, options = {}) => {
-    const response = await fetch(`${API_BASE}/api/voice/synthesize`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, language: requestedLanguage, ...options }) })
-    const body = await response.json().catch(() => ({}))
-    if (!response.ok || !body.url) throw new Error(body.error || copy.voiceUnavailable)
+    const body = await voiceClient.synthesize(text, requestedLanguage, options)
+    if (!body.url) throw new Error(copy.voiceUnavailable)
     return body
+  }
+  const submitVoiceReply = async (text, detectedLanguage, options) => {
+    const cached = voiceAnswerRef.current
+    const answer = cached?.text === text && cached?.language === detectedLanguage && cached?.sessionId === session.id ? cached.answer : await send({ value: text, language: detectedLanguage })
+    voiceAnswerRef.current = { text, language: detectedLanguage, sessionId: session.id, answer }
+    const result = await synthesizeVoice(answer, detectedLanguage, options)
+    voiceAnswerRef.current = null
+    return { audioUrl: result.url }
   }
   const send = (draft = null) => {
     const responseLanguage = ['zh', 'en', 'ja'].includes(draft?.language) ? draft.language : language
@@ -506,10 +522,46 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
   const primeVoiceAssistant = () => { voiceAudioRef.current = prepareVoicePlayback() }
   const openVoiceAssistant = () => {
     if (!voiceAvailable) return
+    dictationTurnRef.current += 1
+    dictationAbortRef.current?.abort()
+    dictationRecorderRef.current?.cancel()
+    dictationRef.current?.stop()
+    setDictationStatus('idle')
     if (!voiceAudioRef.current) primeVoiceAssistant()
     setVoiceOpen(true)
   }
-  const toggleDictation = () => {
+  const toggleDictation = async () => {
+    if (voiceCapability.serverInput) {
+      if (['processing', 'starting'].includes(dictationStatus)) return
+      const requestId = ++dictationTurnRef.current
+      const recorder = dictationRecorderRef.current
+      if (dictationStatus === 'listening') {
+        setDictationStatus('processing')
+        const result = await recorder.stop()
+        if (requestId !== dictationTurnRef.current) return
+        const abort = new AbortController()
+        dictationAbortRef.current?.abort()
+        dictationAbortRef.current = abort
+        try {
+          if (result.status !== 'ready') throw new Error(result.error)
+          const transcript = await voiceClient.transcribe(result.blob, { signal: abort.signal })
+          if (abort.signal.aborted || requestId !== dictationTurnRef.current) return
+          setInput(`${dictationBaseRef.current} ${transcript.text}`.trim())
+          setDictationStatus('idle')
+        } catch (error) {
+          if (!abort.signal.aborted && requestId === dictationTurnRef.current) { setDictationStatus('error'); setDictationError(error.message || copy.voiceUnavailable) }
+        }
+      } else {
+        dictationBaseRef.current = input.trim()
+        setDictationError('')
+        setDictationStatus('starting')
+        const result = await recorder.start()
+        if (requestId !== dictationTurnRef.current) return
+        if (result.status === 'recording') setDictationStatus('listening')
+        else { setDictationStatus('error'); setDictationError(result.error || copy.voiceUnavailable) }
+      }
+      return
+    }
     if (dictationStatus === 'listening') {
       dictationRef.current?.stop?.()
       setDictationStatus('idle')
@@ -529,6 +581,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
       setDictationError(formatVoiceRecognitionError(result?.error || copy.voiceUnavailable, copy))
     }
   }
+  dictationToggleRef.current = toggleDictation
   return <section className="chat-card">
     <div className="chat-topline"><div><span className="eyebrow">{copy.eyebrow} · {visitorShortId(visitorId)}</span><h2>{copy.title}</h2></div><div className="chat-top-actions"><button className="chat-history-button" onClick={() => setHistoryOpen(true)}><History size={14} />{copy.history}</button><button className="chat-new-button" onClick={onNewChat}><Plus size={14} />{copy.newChat}</button><a className="resume-inline-download" href={resumeDocument.url} download={resumeDocument.name}><FileText size={13} />{copy.resume}</a><span className="free-pill"><span />{copy.free}</span></div></div>
     {messages.length ? <div className="messages" ref={messagesRef}>{messages.map((message, index) => <div key={message.id ?? `${message.role}-${index}`} className={`message-row ${message.role === 'user' ? 'from-user' : ''}`}><div className={`message-bubble ${message.status === 'thinking' ? 'is-thinking' : ''}`}><span className="message-label">{message.role === 'zt' ? 'ZT.AI' : copy.visitor}</span>{renderMessage(message)}{renderMedia(message.media)}</div></div>)}</div> : <div className="empty-chat" ref={messagesRef}><span className="empty-chat-mark"><MessageCircle size={20} /></span><span className="eyebrow">{copy.emptyEyebrow}</span><h3>{copy.emptyTitle}</h3><p>{copy.emptyBody}</p><div className="starter-prompts starter-prompt-group"><span>{copy.starterLabel}</span><div>{starterPrompts.map(prompt => <button key={prompt} onClick={() => { setInput(prompt); window.setTimeout(() => inputRef.current?.focus(), 0) }}>{prompt}<ArrowUpRight size={13} /></button>)}</div></div><button className="empty-chat-action" onClick={() => { setInput(copy.startPrompt); window.setTimeout(() => inputRef.current?.focus(), 0) }}>{copy.emptyAction} <ArrowUpRight size={14} /></button></div>}
@@ -538,7 +591,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     <div className="chat-footer"><ModelSwitch model={model} setModel={setModel} /><span className="chat-note"><MessageCircle size={14} /> {copy.publicNote}</span></div>
     {historyOpen && <ChatHistoryDrawer visitorId={visitorId} sessions={sessions} activeSessionId={session.id} copy={copy} language={language} onSelectSession={id => { onSelectSession(id); setHistoryOpen(false) }} onNewChat={() => { onNewChat(); setHistoryOpen(false) }} onClose={() => setHistoryOpen(false)} />}
     {previewAttachment && <div className="attachment-lightbox" role="dialog" aria-modal="true" aria-label={`预览 ${previewAttachment.name}`} onClick={() => setPreviewAttachment(null)}><button type="button" onClick={() => setPreviewAttachment(null)} aria-label="关闭预览"><X size={18} /></button><img src={previewAttachment.preview} alt={previewAttachment.name} onClick={event => event.stopPropagation()} /></div>}
-    {voiceOpen && <VoiceMode copy={copy} language={language} preview={isVoicePreview} capability={voiceCapability} audioElement={voiceAudioRef.current} onGreeting={async text => ({ audioUrl: (await synthesizeVoice(text, language, { leadingPause: true })).url, preRollMs: VOICE_GREETING_PREROLL_MS })} onSubmit={async (text, detectedLanguage) => ({ audioUrl: (await synthesizeVoice(await send({ value: text, language: detectedLanguage }), detectedLanguage)).url })} onClose={() => { setVoiceOpen(false); voiceAudioRef.current = null }} />}
+    {voiceOpen && <VoiceMode copy={copy} language={language} preview={isVoicePreview} capability={voiceCapability} audioElement={voiceAudioRef.current} onGreeting={async (text, options) => ({ audioUrl: (await synthesizeVoice(text, language, { leadingPause: true, ...options })).url, preRollMs: VOICE_GREETING_PREROLL_MS })} onTranscribe={(blob, options) => voiceClient.transcribe(blob, options)} onSubmit={submitVoiceReply} onClose={() => { setVoiceOpen(false); voiceAudioRef.current = null }} />}
   </section>
 }
 
