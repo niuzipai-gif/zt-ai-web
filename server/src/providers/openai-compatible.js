@@ -82,7 +82,7 @@ function createVisibleTextFilter() {
   }
 }
 
-export async function* streamOpenAICompatible({ baseUrl, apiKey, model, messages, extra = {}, fetchImpl = fetch }) {
+export async function* streamOpenAICompatible({ baseUrl, apiKey, model, messages, extra = {}, fetchImpl = fetch, separateReasoning = false }) {
   const response = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
@@ -97,33 +97,41 @@ export async function* streamOpenAICompatible({ baseUrl, apiKey, model, messages
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  let reachedEof = false
   const textFilter = createVisibleTextFilter()
   try {
     while (true) {
       const { value, done } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
+      reachedEof = done
+      buffer += decoder.decode(value, { stream: !done })
       const lines = buffer.split(/\r?\n/)
-      buffer = lines.pop() || ''
+      buffer = done ? '' : lines.pop() || ''
       for (const line of lines) {
         if (!line.startsWith('data:')) continue
         const payload = line.slice(5).trim()
-        if (!payload || payload === '[DONE]') continue
+        if (payload === '[DONE]') {
+          const trailing = separateReasoning ? '' : textFilter.finish()
+          if (trailing) yield trailing
+          return
+        }
+        if (!payload) continue
         try {
           const json = JSON.parse(payload)
           const delta = json.choices?.[0]?.delta?.content || ''
           if (delta) {
-            const visible = textFilter.push(delta)
+            const visible = separateReasoning ? delta : textFilter.push(delta)
             if (visible) yield visible
           }
         } catch {
           // Ignore an incomplete or provider-specific SSE frame.
         }
       }
+      if (done) break
     }
   } finally {
+    if (!reachedEof) await reader.cancel().catch(() => {})
     reader.releaseLock()
   }
-  const trailing = textFilter.finish()
+  const trailing = separateReasoning ? '' : textFilter.finish()
   if (trailing) yield trailing
 }

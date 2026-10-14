@@ -1,5 +1,7 @@
+export const MINIMAX_PREVIEW_MODEL = 'MiniMax-M3.1-Flash-Preview'
+
 export const CHAT_MODELS = Object.freeze({
-  get minimax() { return process.env.MINIMAX_TEXT_MODEL || 'MiniMax-M3' },
+  get minimax() { return process.env.MINIMAX_TEXT_MODEL || MINIMAX_PREVIEW_MODEL },
   get deepseek() { return process.env.DEEPSEEK_TEXT_MODEL || 'deepseek-v4-flash' },
 })
 

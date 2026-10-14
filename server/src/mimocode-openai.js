@@ -1,8 +1,8 @@
 import crypto from 'node:crypto'
-import { CHAT_MODELS } from './contracts/chat.js'
+import { CHAT_MODELS, MINIMAX_PREVIEW_MODEL } from './contracts/chat.js'
 
 export const MODEL_CATALOG = Object.freeze({
-  'zt-minimax-m3': Object.freeze({ provider: 'minimax', label: 'MiniMax M3' }),
+  'zt-minimax-m3': Object.freeze({ provider: 'minimax', get label() { return CHAT_MODELS.minimax } }),
   'zt-deepseek-v4-flash': Object.freeze({ provider: 'deepseek', label: 'DeepSeek V4 Flash' }),
 })
 
@@ -244,11 +244,18 @@ function providerConfig(model, env) {
     model: env.DEEPSEEK_TEXT_MODEL || CHAT_MODELS.deepseek,
     extra: { thinking: { type: 'disabled' } },
   }
+  const textModel = env.MINIMAX_TEXT_MODEL || CHAT_MODELS.minimax
+  const isPreview = textModel === MINIMAX_PREVIEW_MODEL
+  const effort = env.MINIMAX_REASONING_EFFORT || 'high'
+  if (isPreview && !['low', 'medium', 'high', 'xhigh', 'max'].includes(effort)) {
+    throw new Error('MINIMAX_REASONING_EFFORT must be low, medium, high, xhigh or max')
+  }
   return {
-    baseUrl: env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1',
+    baseUrl: env.MINIMAX_BASE_URL || 'https://api.minimax.cn/v1',
     apiKey: env.MINIMAX_API_KEY,
-    model: env.MINIMAX_TEXT_MODEL || CHAT_MODELS.minimax,
-    extra: { thinking: { type: 'adaptive' } },
+    model: textModel,
+    separateReasoning: isPreview,
+    extra: { thinking: { type: 'adaptive' }, ...(isPreview ? { reasoning_effort: effort } : {}) },
   }
 }
 
@@ -325,21 +332,23 @@ export async function* streamGatewayChat({ model, messages, tools }, { fetchImpl
   const toolCalls = new Map()
   const visibleText = createVisibleTextFilter()
   let buffer = ''
+  let reachedEof = false
   try {
-    while (true) {
+    readStream: while (true) {
       const { value, done } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
+      reachedEof = done
+      buffer += decoder.decode(value, { stream: !done })
       const lines = buffer.split(/\r?\n/)
-      buffer = lines.pop() || ''
+      buffer = done ? '' : lines.pop() || ''
       for (const line of lines) {
         if (!line.startsWith('data:')) continue
         const data = line.slice(5).trim()
-        if (!data || data === '[DONE]') continue
+        if (data === '[DONE]') break readStream
+        if (!data) continue
         try {
           const delta = JSON.parse(data).choices?.[0]?.delta || {}
           if (delta.content) {
-            const text = visibleText.push(delta.content)
+            const text = provider.separateReasoning ? delta.content : visibleText.push(delta.content)
             if (text) yield { type: 'text', text }
           }
           for (const call of delta.tool_calls || []) {
@@ -353,11 +362,13 @@ export async function* streamGatewayChat({ model, messages, tools }, { fetchImpl
           // Ignore an incomplete/provider-specific SSE frame.
         }
       }
+      if (done) break
     }
   } finally {
+    if (!reachedEof) await reader.cancel().catch(() => {})
     reader.releaseLock()
   }
-  const remainingText = visibleText.finish()
+  const remainingText = provider.separateReasoning ? '' : visibleText.finish()
   if (remainingText) yield { type: 'text', text: remainingText }
   for (const call of toolCalls.values()) if (call.name) yield { type: 'tool_call', ...call }
 }
