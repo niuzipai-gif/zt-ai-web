@@ -33,6 +33,15 @@
 
 Physical iOS/Android speaker routes and voice likeness need human testing. The installed Windows desktop renderer has not been rebuilt with this web dialog; no new installer is claimed. Network/provider outages remain possible and are surfaced recoverably. Activation applies to the normal public URL, not a special preview link.
 
+## Production verification and startup follow-up
+
+- Gateway release `a40d5fcd1bf041db278fda59732d71ddf2629f5c` was live on Render; health and voice status confirmed streaming output and server speech input. The release checkout's serial full suite passed 241 tests.
+- Three bounded public chat-to-PCM-to-ASR probes completed successfully with ordered audio chunks and completion events. Chinese and English read-back matched the short answers. Japanese ASR omitted the opening phrase, so Japanese pronunciation/completeness remains unresolved; successful transport is not a quality pass.
+- The first published frontend was verified by exact JavaScript SHA-256 and a successful Pages deployment. An isolated public-browser continuous-capture check then timed out while loading VAD assets. Local checks had passed; no claim of a completely verified public hands-free experience was made from them alone.
+- Follow-up: self-host a gzip copy of the WASM runtime (2,892,500 bytes versus 11,210,254 raw), decode it using the browser's `DecompressionStream`, validate its WASM header, and supply it through ONNX Runtime's `wasmBinary` option. Older browsers retain the raw fallback. The model and runtime remain lazy-loaded; normal text chat downloads neither.
+- Bound detector startup to 60 seconds. A timeout stops microphone tracks immediately and restores a recoverable UI instead of leaving it preparing indefinitely. Initialization is allowed to settle before the audio context is destroyed.
+- Current follow-up checks: eight loader/capture unit tests passed, including invalid downloads, already-decoded CDN content, unsupported decompression, and late startup cancellation. Isolated Chromium at 1440/390 px passed three utterances and two spoken interruptions each with the real compressed runtime, no silence submissions, no uncaught page errors, and tracks stopped on close. The production build passed. A fresh public check is still required after this follow-up is deployed.
+
 ## References
 
 - [MiniMax bidirectional TTS](https://platform.minimax.cn/docs/api-reference/speech-t2a-websocket-bidi)

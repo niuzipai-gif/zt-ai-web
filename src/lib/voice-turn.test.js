@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createAutomaticVoiceCapture, pcm16Wav } from './voice-turn.js'
 
 function fixture(extra = {}) {
+  extra = { loadWasm: async () => undefined, ...extra }
   let options, starts = 0, ends = [], stopped = 0, destroyed = 0, playing = false
   const track = { stop() { stopped++ }, getSettings: () => ({ echoCancellation: true }), addEventListener() {}, removeEventListener() {} }
   const stream = { getTracks: () => [track], getAudioTracks: () => [track] }
@@ -42,6 +43,16 @@ test('closing during model loading releases the microphone and ignores late init
   const start = f.capture.start(); await new Promise(r => setImmediate(r)); await f.capture.stop()
   resolve({ MicVAD: { new: async () => { throw Error('must not initialize after cancel') } } })
   assert.equal((await start).status, 'cancelled'); assert.ok(f.stopped > 0)
+})
+
+test('slow asset loading times out, releases microphone, and does not stay preparing', async () => {
+  let stoppedReason, resolveVad
+  const f = fixture({ startupTimeoutMs: 10, onStop: reason => { stoppedReason = reason }, loadVad: () => new Promise(resolve => { resolveVad = resolve }) })
+  const starting = f.capture.start()
+  await new Promise(resolve => setTimeout(resolve, 30))
+  assert.equal(stoppedReason, 'startup'); assert.ok(f.stopped > 0)
+  resolveVad({ MicVAD: { new: () => { throw Error('late initialization') } } })
+  assert.equal((await starting).status, 'cancelled')
 })
 
 test('WAV encoding clips safely and rejects oversized / empty speech', () => {
