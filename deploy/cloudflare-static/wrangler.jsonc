@@ -1,0 +1,8 @@
+{
+  "name": "zt-ai-static",
+  "account_id": "70cd8d3fa27eadd74fe812b48564cb4e",
+  "compatibility_date": "2026-10-23",
+  "workers_dev": true,
+  "assets": { "directory": "../../.edge-static" },
+  "observability": { "enabled": false }
+}
