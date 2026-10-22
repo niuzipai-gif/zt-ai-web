@@ -45,4 +45,13 @@ Tests cover safe queue rejection, invalid PCM, first-sample preservation, cancel
 
 ## Deployment
 
-Pending at this report's initial commit. Before release, public health was HTTP 200 at revision `61b118556b6cf8777a1db3006b9b33ac3f3260c5`, using Preview; voice status reported server ASR ready. Deployment success requires a subsequent exact-revision and functional check, not just a successful push.
+- Source implementation: `33c110491a860c5747b7f2e4344a02e836e895be` on the working branch. Selective production integration: `fc0d422ff29f2e10f6cec725ca33fcdea267619d` on main, without unrelated edits in the primary checkout.
+- The isolated release checkout initially lacked the frontend spreadsheet dependency; reusing the identical verified dependency tree resolved setup. Integrated production source tests: **229 passed, 0 failed** (the working branch also carries previously accepted project-demo tests). Targeted server/model/voice checks: **14 passed**.
+- A fresh server-only dependency install was impeded locally by npm TLS resets/missing offline baseline packages; this is not reported as a clean-install pass. Render's subsequent build and deployment did succeed with the separate server manifest.
+- Render service `srv-d9u10fqjobas73e1hai0` matched the exact repository, main branch and public URL in the user's sole listed workspace. The push and Blueprint sync created deployments automatically; no duplicate manual trigger or credential replacement was made.
+- Deployment `dep-dbct5hmkvk2s73e72vn0` reached **live**. Public health independently returned the exact production revision above and model `MiniMax-M3.1-Flash`.
+- Live public chat returned HTTP 200, the requested greeting, `message.done`, and no `message.error`. A bounded Chinese TTS check returned HTTP 200; the resulting MP3 downloaded with HTTP 200 and 36,276 bytes. This confirms availability, not physical listening or voice-likeness scoring.
+- Pages: `c07b12838f9d16c73dcc7dfe279fbe57cc38da73`; [deployment run](https://github.com/niuzipai-gif/zt-ai-web/actions/runs/39753296785) completed successfully.
+- Normal public URL returned HTTP 200, loading `/zt-ai-web/assets/index-jIPpopFC.js`. The asset returned HTTP 200; SHA-256 `777e6327e0e67140f27d5fab7462346f403f9c01c4a1c96e0abd1556f33dc5d1` matched the built file.
+- Streaming speech remains **disabled by default**, as documented. No new installer or all-device completion claim. The verified streaming path remains synthetic-browser plus bounded real upstream evidence, not an enabled production end-to-end feature.
+- Existing resume files and project-animation assets were unchanged by this release. The release worktree is retained at `E:/ZT.AI/zt-ai-web/.worktrees/minimax-release-20261022`; it isolates release work from unrelated uncommitted primary-checkout changes.
