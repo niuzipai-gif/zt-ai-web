@@ -42,6 +42,13 @@ Physical iOS/Android speaker routes and voice likeness need human testing. The i
 - Bound detector startup to 60 seconds. A timeout stops microphone tracks immediately and restores a recoverable UI instead of leaving it preparing indefinitely. Initialization is allowed to settle before the audio context is destroyed.
 - Current follow-up checks: eight loader/capture unit tests passed, including invalid downloads, already-decoded CDN content, unsupported decompression, and late startup cancellation. Isolated Chromium at 1440/390 px passed three utterances and two spoken interruptions each with the real compressed runtime, no silence submissions, no uncaught page errors, and tracks stopped on close. The production build passed. A fresh public check is still required after this follow-up is deployed.
 
+### Follow-up deployment read-back
+
+- Source `20a5c0023328404bece34ac49d98f2b07a88d050`; Pages `05caf0318d5535113a16ae117980a5e39d3a4a09`. [Pages run 39762675106](https://github.com/niuzipai-gif/zt-ai-web/actions/runs/39762675106) completed successfully. This frontend-only follow-up deliberately skipped Render; gateway health remains the verified `a40d5fc` server release.
+- The normal public HTML returned HTTP 200 and references `index-ONEkdrih.js`. The published JavaScript returned HTTP 200 and SHA-256 `197b460136f39734db362e94196456f22a575c93d6acebbb6aaaaa8a91fcc698`, matching the local build exactly. Public gateway health returned `ok: true`; voice status again returned enabled, serverInput, and streamOutput all true.
+- Public continuous-capture verification is **not passed**: direct browser navigation timed out; a bounded retry through the machine's already-configured network proxy reached the dialog but did not become ready within 60 seconds. Separate runtime downloads timed out with incomplete bodies (1,114,112/2,892,500 bytes direct; 868,352/2,892,500 through the proxy). These are not reported as successful runtime hash verification, and the local browser pass does not override this public result.
+- The QA harness can explicitly opt into `VOICE_QA_PROXY`; it never changes the user's browser profile or system network configuration. Further work is required to validate acceptable first-use loading on slow public networks. The recoverable timeout/manual input path remains available. No claim of flawless service or fully corrected EN/JA pronunciation is made.
+
 ## References
 
 - [MiniMax bidirectional TTS](https://platform.minimax.cn/docs/api-reference/speech-t2a-websocket-bidi)
