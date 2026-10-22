@@ -346,7 +346,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
       setState(current => transitionVoiceState(current, { type: 'start-listening' }))
     },
     end: blob => { setAnalyser(null); void transcribeRecording(blob) },
-    stop: () => { setAutomatic(false); setAutoStarting(false); setState(current => current.status === 'listening' ? createVoiceState() : current); setAnalyser(null) },
+    stop: reason => { setAutomatic(false); setAutoStarting(false); setState(current => reason === 'startup' ? { ...createVoiceState(), status: 'error', error: copy.voiceAutoUnavailable } : current.status === 'listening' ? createVoiceState() : current); setAnalyser(null) },
     suspend: interruptOutput,
   }
   const toggleAutomatic = async () => {

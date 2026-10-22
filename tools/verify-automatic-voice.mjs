@@ -48,12 +48,12 @@ try {
       }
       return route.fulfill({ json: { ok: true } })
     })
-    await page.goto(base)
+    await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 60000 })
     await page.locator('button:visible').filter({ hasText: '公开聊天' }).first().click()
     await page.locator('.voice-assistant-entry').click()
     await page.waitForFunction(() => document.querySelector('.voice-mode')?.dataset.voiceStatus === 'idle')
     await page.getByRole('button', { name: '开启连续语音', exact: true }).click()
-    await page.waitForFunction(() => document.querySelector('.voice-mode')?.dataset.autoListening === 'true', { timeout: 60000 })
+    await page.waitForFunction(() => document.querySelector('.voice-mode')?.dataset.autoListening === 'true', null, { timeout: 60000 })
     await page.waitForTimeout(3000)
     assert.equal(asr, 0, 'silence must not upload or interrupt')
     for (let turn = 0; turn < 3; turn++) {
@@ -69,7 +69,7 @@ try {
     await page.waitForTimeout(1200)
     assert.equal(asr, 3); assert.equal(chats, 3)
     assert.ok(modelRequests.some(r => r.url.endsWith('.onnx') && r.status === 200))
-    assert.ok(modelRequests.some(r => r.url.endsWith('.wasm') && r.status === 200))
+    assert.ok(modelRequests.some(r => r.url.endsWith('.wasm.gz') && r.status === 200))
     assert.deepEqual(errors, [])
     console.log(JSON.stringify({ width, silence: 'passed', realVadTurns: asr, spokenInterruptions: 2, closeReleasesTracks: true, localAssets: modelRequests, pageErrors: errors.length }))
     await context.close()

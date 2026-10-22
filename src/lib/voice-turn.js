@@ -1,3 +1,4 @@
+import { loadVoiceWasm } from './voice-vad-loader.js'
 // Silero runs locally. Only completed speech segments leave the browser for ASR.
 export function pcm16Wav(samples) {
   if (!(samples instanceof Float32Array) || !samples.length || samples.length > 16000 * 90) throw new Error('Invalid audio length')
@@ -15,6 +16,7 @@ export function createAutomaticVoiceCapture({
   Context = globalThis.AudioContext || globalThis.webkitAudioContext,
   mediaDevices = globalThis.navigator?.mediaDevices,
   loadVad = () => import('@ricky0123/vad-web'),
+  loadWasm = loadVoiceWasm, startupTimeoutMs = 60000,
   assetPath = `${import.meta.env?.BASE_URL || '/'}voice-vad/`,
   isOutputActive = () => false, onSpeechStart = () => {}, onSpeechEnd = () => {}, onStop = () => {},
 } = {}) {
@@ -22,7 +24,8 @@ export function createAutomaticVoiceCapture({
   const release = async r => {
     if (!r || r.released) return
     r.released = true
-    clearTimeout(r.idleTimer); clearTimeout(r.takeTimer)
+    clearTimeout(r.idleTimer); clearTimeout(r.takeTimer); clearTimeout(r.startupTimer)
+    r.abort?.abort()
     r.stream?.getTracks().forEach(t => { t.removeEventListener?.('ended', r.trackEnded); t.stop() })
     r.source?.disconnect(); r.analyser?.disconnect()
     // Keep only the context alive until in-flight model/node initialization settles.
@@ -34,12 +37,12 @@ export function createAutomaticVoiceCapture({
   async function stop(reason = '') {
     generation++
     const r = resources; resources = null
-    await release(r)
     if (reason) onStop(reason)
+    await release(r)
   }
   async function start() {
     if (resources) return { status: 'recording', analyser: resources.analyser }
-    const token = ++generation, r = { accepted: false, released: false }
+    const token = ++generation, r = { accepted: false, released: false, abort: new AbortController() }
     resources = r
     const live = () => generation === token && !r.released
     const idleTimer = () => { clearTimeout(r.idleTimer); r.idleTimer = setTimeout(() => { if (live()) void stop('idle') }, 5 * 60_000) }
@@ -59,13 +62,14 @@ export function createAutomaticVoiceCapture({
       stream.getTracks().forEach(t => t.addEventListener?.('ended', r.trackEnded))
       r.analyser = r.context.createAnalyser(); r.analyser.fftSize = 256
       r.source = r.context.createMediaStreamSource(stream); r.source.connect(r.analyser)
-      const { MicVAD } = await loadVad()
+      r.startupTimer = setTimeout(() => { if (live()) void stop('startup') }, startupTimeoutMs)
+      const [{ MicVAD }, wasm] = await Promise.all([loadVad(), loadWasm(assetPath, { signal: r.abort.signal })])
       if (!live()) return { status: 'cancelled' }
       r.initializing = (async () => {
       r.vad = await MicVAD.new({
         model: 'v5', startOnLoad: false, audioContext: r.context,
         baseAssetPath: assetPath, onnxWASMBasePath: assetPath,
-        ortConfig: ort => { ort.env.wasm.numThreads = 1; ort.env.wasm.proxy = false; ort.env.logLevel = 'error' },
+        ortConfig: ort => { ort.env.wasm.numThreads = 1; ort.env.wasm.proxy = false; ort.env.wasm.initTimeout = 20000; if (wasm) ort.env.wasm.wasmBinary = wasm; ort.env.logLevel = 'error' },
         getStream: async () => stream, resumeStream: async () => stream, pauseStream: async () => {},
         positiveSpeechThreshold: .7, negativeSpeechThreshold: .35,
         minSpeechMs: 320, preSpeechPadMs: 800, redemptionMs: 1000, submitUserSpeechOnPause: false,
@@ -92,6 +96,7 @@ export function createAutomaticVoiceCapture({
       })()
       await r.initializing
       if (!live()) { await release(r); return { status: 'cancelled' } }
+      clearTimeout(r.startupTimer)
       idleTimer()
       return { status: 'recording', analyser: r.analyser, echoCancellation: r.echoCancellation }
     } catch (error) {
