@@ -105,3 +105,20 @@ test('voice language follows the recognized speech instead of the selected inter
   assert.equal(detectVoiceLanguage('現在のプロジェクトを紹介してください', 'zh'), 'ja')
   assert.equal(detectVoiceLanguage('12345', 'ja'), 'ja')
 })
+
+test('verified local greeting can speak, pause and finish without an error state', () => {
+  const previous = globalThis.location
+  globalThis.location = { origin: 'https://site.test' }
+  try {
+    let state = transitionVoiceGreeting(createVoiceGreetingState('Hello'), { type: 'ready', audioUrl: 'blob:https://site.test/audio' })
+    assert.equal(state.status, 'ready')
+    state = transitionVoiceGreeting(state, { type: 'start-speaking' })
+    assert.equal(state.status, 'speaking')
+    assert.equal(transitionVoiceGreeting(state, { type: 'pause' }).status, 'ready')
+    assert.equal(transitionVoiceGreeting(state, { type: 'finish-speaking' }).status, 'idle')
+    for (const audioUrl of ['blob:https://other.test/audio', 'blob:null/audio', 'http://site.test/audio']) assert.equal(transitionVoiceGreeting(state, { type: 'ready', audioUrl }).status, 'error')
+  } finally {
+    if (previous === undefined) delete globalThis.location
+    else globalThis.location = previous
+  }
+})

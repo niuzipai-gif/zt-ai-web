@@ -1,3 +1,5 @@
+import { isLocalVoiceAudioBlob } from './voice-audio-url.js'
+
 const RECORDER_MIMES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus']
 const MAX_TAKE_MS = 90_000
 
@@ -353,7 +355,7 @@ export function createVoiceRecognition({ language = 'zh', recognitionFactory = d
 
 function secureAudioUrl(url) {
   const parsed = new URL(String(url || ''), globalThis.location?.href || 'https://zt.ai.invalid')
-  const localBlob = parsed.protocol === 'blob:' && parsed.origin !== 'null' && parsed.origin === globalThis.location?.origin
+  const localBlob = isLocalVoiceAudioBlob(parsed.href)
   if (parsed.protocol !== 'https:' && !localBlob) throw new Error('音频地址必须使用 HTTPS 或本站的本地音频')
   return parsed.href
 }

@@ -43,6 +43,7 @@ try {
     const start = Date.now()
     await page.locator('.voice-assistant-entry').click()
     await page.waitForFunction(() => window.__playingAudio.some(a => !a.paused && a.currentTime > 0.05), null, { timeout: 15000 })
+    assert.equal(await page.locator('.voice-mode').getAttribute('data-voice-status'), 'speaking', 'audible greeting and visible state must agree')
     const audibleMs = Date.now() - start
     assert.equal(synthesisCalls, variant.name === 'baseline' ? 1 : 0)
     await page.locator('.voice-mode-close').click()
