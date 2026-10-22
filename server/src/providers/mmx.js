@@ -1,3 +1,4 @@
+import { japaneseSpeechReadings } from './japanese-speech.js'
 const MEDIA_API_KEY = () => process.env.MMX_API_KEY || process.env.MINIMAX_API_KEY || ''
 const API_ROOT = () => (process.env.MMX_BASE_URL || process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1').replace(/\/v1\/?$/, '')
 const mediaTimeout = () => Number(process.env.MMX_HTTP_TIMEOUT_MS || 45_000)
@@ -91,6 +92,7 @@ export function cleanVoiceText(text, language) {
     raw = raw
       .replace(/([\p{Script=Han}]{1,12})[（(][\p{Script=Hiragana}\p{Script=Katakana}ー・\s]+[）)]/gu, '$1')
       .replace(/([\p{Script=Han}]{1,12})[（(][A-Za-z][A-Za-z .・'\-]{0,40}[）)]/gu, '$1')
+    raw = japaneseSpeechReadings(raw)
   }
   if (voiceLanguage(language) === 'zh') return raw.replace(/\s+/g, ' ').trim().slice(0, 10_000)
   return raw.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, 10_000)

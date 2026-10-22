@@ -2,6 +2,15 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createVoiceService, voiceErrorResponse } from './voice-service.js'
 
+test('an explicitly selected standard Japanese voice survives the personal-voice registry lookup', async () => {
+  const env = { MINIMAX_VOICE_ID_ZH: 'OwnerZhClean20260828', MINIMAX_VOICE_ID_EN: 'OwnerZhClean20260828', MINIMAX_VOICE_ID_JA: 'Japanese_IntellectualSenior' }
+  const service = createVoiceService({ env, listVoices: async () => ['OwnerZhClean20260828', 'OwnerJa20260827'], synthesize: async input => ({ voiceId: input.voiceId }) })
+  assert.equal(await service.resolveVoice('ja'), 'Japanese_IntellectualSenior')
+  assert.equal((await service.synthesize({ text: 'こんにちは。', language: 'ja' })).voiceId, 'Japanese_IntellectualSenior')
+  assert.equal(await service.resolveVoice('zh'), 'OwnerZhClean20260828')
+  assert.equal(await service.resolveVoice('en'), 'OwnerZhClean20260828')
+})
+
 test('streaming and HTTP resolve the same registered personal voice; Chinese is never reselected', async () => {
   let lists = 0
   const service = createVoiceService({ env: { MINIMAX_VOICE_ID_ZH: 'OwnerZhClean20260828', MINIMAX_VOICE_ID_EN: 'OwnerEnClean20260828' },
