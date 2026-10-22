@@ -91,7 +91,7 @@ services:
       - key: MINIMAX_VOICE_ID_EN
         value: CaiZhouTingZhClean20260828
       - key: MINIMAX_VOICE_ID_JA
-        value: CaiZhouTingZhClean20260828
+        value: Japanese_IntellectualSenior
       - key: MINIMAX_TTS_MODEL
         value: speech-2.8-hd
       - key: MINIMAX_TTS_SPEED
