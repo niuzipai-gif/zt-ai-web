@@ -1,4 +1,20 @@
 import { loadVoiceParts } from './voice-vad-parts.js'
+
+// Start the model alongside WASM, using the browser's preload cache. MicVAD's
+// later fetch consumes the same response (matching anonymous CORS credentials).
+// This hint is optional: unsupported browsers keep the ordinary fetch path.
+export function preloadVoiceModel(assetPath, document = globalThis.document) {
+  if (!document?.head) return () => {}
+  const link = document.createElement('link')
+  link.rel = 'preload'
+  link.as = 'fetch'
+  link.crossOrigin = 'anonymous'
+  link.fetchPriority = 'low'
+  link.href = `${assetPath}silero_vad_v5.onnx`
+  document.head.appendChild(link)
+  return () => link.remove()
+}
+
 // Pages does not reliably compress .wasm responses. Ship a gzip asset and use
 // the documented ORT wasmBinary override; old browsers retain the raw fallback.
 export async function loadVoiceWasm(assetPath, { signal, fetchImpl = globalThis.fetch, Decompress = globalThis.DecompressionStream, onProgress = () => {}, timeoutMs = 30000 } = {}) {

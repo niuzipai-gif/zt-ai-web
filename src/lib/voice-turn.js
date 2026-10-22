@@ -1,4 +1,4 @@
-import { loadVoiceWasm } from './voice-vad-loader.js'
+import { loadVoiceWasm, preloadVoiceModel } from './voice-vad-loader.js'
 // Silero runs locally. Only completed speech segments leave the browser for ASR.
 export function pcm16Wav(samples) {
   if (!(samples instanceof Float32Array) || !samples.length || samples.length > 16000 * 90) throw new Error('Invalid audio length')
@@ -25,6 +25,7 @@ export function createAutomaticVoiceCapture({
     if (!r || r.released) return
     r.released = true
     clearTimeout(r.idleTimer); clearTimeout(r.takeTimer); clearTimeout(r.startupTimer)
+    r.removePreload?.()
     r.abort?.abort()
     r.stream?.getTracks().forEach(t => { t.removeEventListener?.('ended', r.trackEnded); t.stop() })
     r.source?.disconnect(); r.analyser?.disconnect()
@@ -63,7 +64,10 @@ export function createAutomaticVoiceCapture({
       r.analyser = r.context.createAnalyser(); r.analyser.fftSize = 256
       r.source = r.context.createMediaStreamSource(stream); r.source.connect(r.analyser)
       r.startupTimer = setTimeout(() => { if (live()) void stop('startup') }, startupTimeoutMs)
-      const [{ MicVAD }, wasm] = await Promise.all([loadVad(), loadWasm(assetPath, { signal: r.abort.signal, onProgress: progress => { if (live()) onLoadProgress(progress) } })])
+      r.removePreload = preloadVoiceModel(assetPath)
+      // Both assets now share the connection. Allow a bounded slow-network
+      // transfer (about 5 MB total), while cancellation still aborts immediately.
+      const [{ MicVAD }, wasm] = await Promise.all([loadVad(), loadWasm(assetPath, { signal: r.abort.signal, timeoutMs: Math.min(60000, startupTimeoutMs), onProgress: progress => { if (live()) onLoadProgress(progress) } })])
       if (!live()) return { status: 'cancelled' }
       r.initializing = (async () => {
       r.vad = await MicVAD.new({
@@ -97,6 +101,7 @@ export function createAutomaticVoiceCapture({
       await r.initializing
       if (!live()) { await release(r); return { status: 'cancelled' } }
       clearTimeout(r.startupTimer)
+      r.removePreload?.()
       idleTimer()
       return { status: 'recording', analyser: r.analyser, echoCancellation: r.echoCancellation }
     } catch (error) {

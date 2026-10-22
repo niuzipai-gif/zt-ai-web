@@ -1,4 +1,5 @@
-import * as XLSX from 'xlsx'
+// Spreadsheet parsing is only needed after an upload, never for first paint.
+let XLSX
 
 export const MAX_SPREADSHEET_BYTES = 20 * 1024 * 1024
 export const MAX_SHEETS = 32
@@ -136,6 +137,7 @@ export async function extractSpreadsheetText(file) {
   if (Number(file?.size) > MAX_SPREADSHEET_BYTES) throw new Error(`${name} 超过 20MB，请拆分或压缩后再试。`)
   let workbook
   try {
+    XLSX ||= await import('xlsx')
     workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true, cellNF: true, cellText: false })
   } catch {
     throw new Error(`${name} 无法读取，文件可能已损坏或格式不受支持；请另存为 xlsx 或 CSV 后重试。`)

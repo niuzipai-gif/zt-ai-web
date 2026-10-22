@@ -11,7 +11,9 @@ try {
   for (const width of [1440, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 900 } })
     const page = await context.newPage(), errors = [], modelRequests = []
-    let asr = 0, chats = 0
+    let asr = 0, chats = 0, modelStarted = 0, runtimeFinished = 0
+    page.on('request', r => { if (r.url().endsWith('/silero_vad_v5.onnx')) modelStarted ||= Date.now() })
+    page.on('requestfinished', r => { if (r.url().endsWith('/ort-wasm-simd-threaded.wasm.gz')) runtimeFinished = Date.now() })
     page.on('pageerror', e => errors.push(e.message))
     page.on('requestfailed', request => { if (request.url().includes('voice-vad/') || request.url().includes('/assets/')) console.error(JSON.stringify({ width, failedUrl: request.url(), failure: request.failure()?.errorText })) })
     page.on('response', r => { if (r.url().includes('voice-vad/')) modelRequests.push({ url: r.url(), status: r.status() }) })
@@ -84,8 +86,11 @@ try {
     assert.equal(asr, 3); assert.equal(chats, 3)
     assert.ok(modelRequests.some(r => r.url.endsWith('.onnx') && r.status === 200))
     assert.ok(modelRequests.some(r => (r.url.endsWith('.wasm.gz') || r.url.includes('/parts/')) && r.status === 200))
+    assert.ok(modelStarted > 0 && modelStarted < runtimeFinished, 'model must download alongside runtime')
+    assert.equal(modelRequests.filter(r => r.url.endsWith('.onnx')).length, 1, 'model preload must be reused, not downloaded twice')
+    assert.equal(await page.locator('link[rel=preload][as=fetch]').count(), 0, 'voice hint must be removed after startup/close')
     assert.deepEqual(errors, [])
-    console.log(JSON.stringify({ width, firstInteractiveMs, startupMs, silence: 'passed', realVadTurns: asr, spokenInterruptions: 2, closeReleasesTracks: true, localAssets: modelRequests, pageErrors: errors.length }))
+    console.log(JSON.stringify({ width, firstInteractiveMs, startupMs, parallelModelDownload: true, modelDownloadedOnce: true, silence: 'passed', realVadTurns: asr, spokenInterruptions: 2, closeReleasesTracks: true, localAssets: modelRequests, pageErrors: errors.length }))
     await context.close()
   }
 } finally { await browser.close() }
