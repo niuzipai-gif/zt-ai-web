@@ -2,7 +2,8 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 
-// Run after publish-pages.ps1 with VoiceAssetUrl set to the static endpoint.
+// Run after publish-pages.ps1. Production retains the original voice asset URL;
+// the static voice files remain available for isolated network diagnostics only.
 // Only public build output is uploaded. No Worker/API code or secrets.
 const root = path.resolve('.edge-static')
 const manifest = JSON.parse(await fs.readFile('server/public/voice-vad/v1/manifest.json', 'utf8'))
