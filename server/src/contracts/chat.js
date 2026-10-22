@@ -1,7 +1,16 @@
 export const MINIMAX_PREVIEW_MODEL = 'MiniMax-M3.1-Flash-Preview'
+export const MINIMAX_CURRENT_MODEL = 'MiniMax-M3.1-Flash'
+
+export function minimaxModelOptions(model, effort = 'high') {
+  const separateReasoning = [MINIMAX_CURRENT_MODEL, MINIMAX_PREVIEW_MODEL].includes(model)
+  if (separateReasoning && !['low', 'medium', 'high', 'xhigh', 'max'].includes(effort)) {
+    throw new Error('MINIMAX_REASONING_EFFORT must be low, medium, high, xhigh or max')
+  }
+  return { separateReasoning, extra: { thinking: { type: 'adaptive' }, ...(separateReasoning ? { reasoning_effort: effort } : {}) } }
+}
 
 export const CHAT_MODELS = Object.freeze({
-  get minimax() { return process.env.MINIMAX_TEXT_MODEL || MINIMAX_PREVIEW_MODEL },
+  get minimax() { return process.env.MINIMAX_TEXT_MODEL || MINIMAX_CURRENT_MODEL },
   get deepseek() { return process.env.DEEPSEEK_TEXT_MODEL || 'deepseek-v4-flash' },
 })
 

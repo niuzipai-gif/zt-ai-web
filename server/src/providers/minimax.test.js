@@ -5,6 +5,7 @@ import { streamMinimax } from './minimax.js'
 import { streamDeepseek } from './deepseek.js'
 
 const PREVIEW = 'MiniMax-M3.1-Flash-Preview'
+const CURRENT = 'MiniMax-M3.1-Flash'
 const messages = [{ role: 'user', content: 'Return a small JSON object.' }]
 
 function configure(t, overrides = {}) {
@@ -52,15 +53,23 @@ async function finalText(stream) {
   return text
 }
 
-test('uses the preview model, China endpoint and explicit high effort by default', async t => {
+test('uses the released model, China endpoint and explicit high effort by default', async t => {
   configure(t)
   const requests = mockStream(t)
   assert.equal(await finalText(streamMinimax({ messages })), '{"ok":true}')
   assert.equal(requests[0].url, 'https://api.minimax.cn/v1/chat/completions')
-  assert.equal(requests[0].body.model, PREVIEW)
+  assert.equal(requests[0].body.model, CURRENT)
   assert.equal(requests[0].body.reasoning_effort, 'high')
   assert.deepEqual(requests[0].body.thinking, { type: 'adaptive' })
   assert.equal(requests[0].body.stream, true)
+})
+
+test('released model preserves separate reasoning and supports explicit request effort', async t => {
+  configure(t)
+  const requests = mockStream(t, [{ reasoning_content: 'private' }, { content: '{"tag":"<think>literal</think>"}' }])
+  assert.deepEqual(JSON.parse(await finalText(streamMinimax({ model: CURRENT, messages, reasoningEffort: 'low' }))), { tag: '<think>literal</think>' })
+  assert.equal(requests[0].body.reasoning_effort, 'low')
+  assert.throws(() => streamMinimax({ model: CURRENT, messages, reasoningEffort: 'none' }), /reasoning|EFFORT/)
 })
 
 test('keeps structured final content intact and does not surface separate reasoning or tools', async t => {
@@ -133,7 +142,7 @@ test('still rejects missing MiniMax credentials before any request', t => {
 
 test('includes the preview model in the usage catalog and preserves previous choices', () => {
   const html = fs.readFileSync(new URL('../../public/control-room/index.html', import.meta.url), 'utf8')
-  for (const model of [PREVIEW, 'MiniMax-M3', 'deepseek-v4-flash']) {
+  for (const model of [CURRENT, PREVIEW, 'MiniMax-M3', 'deepseek-v4-flash']) {
     assert.ok(html.includes(`<option value="${model}">${model}</option>`), `Missing usage filter: ${model}`)
   }
 })

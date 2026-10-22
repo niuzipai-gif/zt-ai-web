@@ -91,7 +91,7 @@ export function transitionVoiceState(current, event = {}) {
   }
   if (type === 'start-speaking' && ['processing', 'ready', 'blocked'].includes(state.status)) {
     const audioUrl = String(event.audioUrl || '').trim()
-    if (!/^https:\/\//i.test(audioUrl) && !state.audioUrl) return state
+    if (!event.stream && !/^https:\/\//i.test(audioUrl) && !state.audioUrl) return state
     return { ...state, status: 'speaking', audioUrl: audioUrl || state.audioUrl, error: '' }
   }
   if (type === 'blocked' && ['processing', 'ready', 'blocked'].includes(state.status)) {

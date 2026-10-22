@@ -30,3 +30,10 @@ test('server transcription remains available when browser recognition is disable
   assert.equal(result.serverInput, true)
   assert.doesNotMatch(JSON.stringify(result), /secret|OwnerVoice/)
 })
+
+test('streaming output requires its own explicit rollout flag', () => {
+  const configured = { VOICE_MODE_ENABLED: 'true', MINIMAX_VOICE_ID: 'OwnerVoice' }
+  assert.equal(voiceCapability(configured).streamOutput, undefined)
+  assert.equal(voiceCapability({ ...configured, VOICE_STREAMING_ENABLED: 'false' }).streamOutput, undefined)
+  assert.equal(voiceCapability({ ...configured, VOICE_STREAMING_ENABLED: 'true' }).streamOutput, true)
+})

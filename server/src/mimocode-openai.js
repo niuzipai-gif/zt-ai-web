@@ -1,5 +1,5 @@
 import crypto from 'node:crypto'
-import { CHAT_MODELS, MINIMAX_PREVIEW_MODEL } from './contracts/chat.js'
+import { CHAT_MODELS, minimaxModelOptions } from './contracts/chat.js'
 
 export const MODEL_CATALOG = Object.freeze({
   'zt-minimax-m3': Object.freeze({ provider: 'minimax', get label() { return CHAT_MODELS.minimax } }),
@@ -245,17 +245,12 @@ function providerConfig(model, env) {
     extra: { thinking: { type: 'disabled' } },
   }
   const textModel = env.MINIMAX_TEXT_MODEL || CHAT_MODELS.minimax
-  const isPreview = textModel === MINIMAX_PREVIEW_MODEL
-  const effort = env.MINIMAX_REASONING_EFFORT || 'high'
-  if (isPreview && !['low', 'medium', 'high', 'xhigh', 'max'].includes(effort)) {
-    throw new Error('MINIMAX_REASONING_EFFORT must be low, medium, high, xhigh or max')
-  }
+  const settings = minimaxModelOptions(textModel, env.MINIMAX_REASONING_EFFORT || 'high')
   return {
     baseUrl: env.MINIMAX_BASE_URL || 'https://api.minimax.cn/v1',
     apiKey: env.MINIMAX_API_KEY,
     model: textModel,
-    separateReasoning: isPreview,
-    extra: { thinking: { type: 'adaptive' }, ...(isPreview ? { reasoning_effort: effort } : {}) },
+    ...settings,
   }
 }
 

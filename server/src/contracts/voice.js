@@ -7,5 +7,5 @@ export function voiceCapability(env = process.env) {
   if (!enabled) return { enabled: false, input: false, output: false, reason: 'voice-disabled' }
   if (!hasVoice) return { enabled: false, input: false, output: false, reason: 'voice-not-configured' }
   if (!hasAsr) return { enabled: false, input: false, output: true, reason: 'asr-not-configured' }
-  return { enabled: true, input: true, output: true, reason: 'ready', ...(serverInput ? { serverInput: true } : {}) }
+  return { enabled: true, input: true, output: true, reason: 'ready', ...(serverInput ? { serverInput: true } : {}), ...(env.VOICE_STREAMING_ENABLED === 'true' ? { streamOutput: true } : {}) }
 }
