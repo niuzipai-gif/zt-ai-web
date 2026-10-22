@@ -22,6 +22,7 @@ import { buildAgentPlannerSystemPrompt, buildAgentSystemPrompt, buildPublicSyste
 import { buildImageVerificationQuery, carryForwardImages, hasImageContent, hasImageInput, isImageIdentificationRequest, latestImage } from './image-input.js'
 import { voiceCapability } from './contracts/voice.js'
 import { createChatSpeech } from './voice-stream.js'
+import { serveVoiceAsset } from './voice-assets.js'
 
 function loadEnvFile(filePath) {
   try {
@@ -553,6 +554,7 @@ export function createServer({ speechFactory = createChatSpeech } = {}) {
     }
     try {
       const route = request.url.split('?')[0]
+      if (serveVoiceAsset(request, response, route)) return
       if ((route === '/admin' || route.startsWith('/admin/')) && !route.startsWith('/admin/api/')) return await serveControlRoom(request, response)
       if (request.method === 'GET' && route === '/api/voice/status') {
         response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'access-control-allow-origin': corsOrigin(request), vary: 'Origin' })

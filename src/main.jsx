@@ -7,7 +7,6 @@ import {
 } from 'lucide-react'
 import avatar from './assets/resume-avatar.png'
 import logo from './assets/zt-logo.png'
-import mammoth from 'mammoth/mammoth.browser'
 import { createChatSession, createSessionTitle, loadVisitorState, saveVisitorState } from './lib/chat-session.js'
 import { getInitialLanguage, LANGUAGE_OPTIONS, resumeDocumentByLanguage, siteCopy } from './lib/i18n.js'
 import { buildStarterPrompts, formatRelativeSessionTime, shouldUseCompactProfile } from './lib/chat-ux.js'
@@ -196,6 +195,7 @@ async function prepareAttachment(file) {
     attachment.text = await extractPdfText(file)
     attachment.readStatus = attachment.text ? 'ready' : 'error'
   } else if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || /\.docx$/i.test(name)) {
+    const { default: mammoth } = await import('mammoth/mammoth.browser')
     attachment.text = (await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value.slice(0, 16000)
     attachment.readStatus = attachment.text ? 'ready' : 'error'
   } else if (isTextAttachment(file)) {

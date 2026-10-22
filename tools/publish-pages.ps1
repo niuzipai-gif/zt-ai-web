@@ -1,11 +1,12 @@
 param(
   [string]$GatewayUrl = 'https://zt-ai-gateway.onrender.com',
-  [string]$VoiceAssetUrl = 'https://cdn.jsdelivr.net/gh/niuzipai-gif/zt-ai-web@ad78c8acfd047627f9b16ea885fd1855934451f3/voice-vad/'
+  [string]$VoiceAssetUrl = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $env:GITHUB_PAGES_BUILD = 'true'
 $env:VITE_API_BASE_URL = $GatewayUrl.TrimEnd('/')
+if (-not $VoiceAssetUrl) { $VoiceAssetUrl = $GatewayUrl.TrimEnd('/') + '/voice-vad/v1/' }
 $env:VITE_VOICE_ASSET_BASE_URL = $VoiceAssetUrl.TrimEnd('/') + '/'
 npm run build
 $adminSource = Join-Path $PSScriptRoot '..\server\public\control-room'
