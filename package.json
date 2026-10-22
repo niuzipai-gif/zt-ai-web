@@ -21,10 +21,12 @@
   },
   "dependencies": {
     "@openai/codex": "0.148.0",
+    "@ricky0123/vad-web": "0.0.31",
     "@vitejs/plugin-react": "latest",
     "cloakbrowser": "0.5.7",
     "lucide-react": "latest",
     "mammoth": "^1.12.1",
+    "onnxruntime-web": "1.22.0",
     "pdfjs-dist": "^4.10.38",
     "playwright-core": "1.62.1",
     "react": "latest",

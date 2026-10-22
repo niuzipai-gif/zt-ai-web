@@ -1,0 +1,77 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs/promises'
+import { chromium } from 'playwright-core'
+
+const base = process.env.VOICE_QA_URL || 'http://127.0.0.1:5182'
+const fixture = await fs.readFile(process.env.VOICE_QA_AUDIO || 'output/voice-network-2026-10-14/capture.wav')
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--autoplay-policy=user-gesture-required'] })
+const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+const silence = Buffer.alloc(32000 * 2 * 8).toString('base64')
+try {
+  for (const width of [1440, 390]) {
+    const context = await browser.newContext({ viewport: { width, height: 900 } })
+    const page = await context.newPage(), errors = [], modelRequests = []
+    let asr = 0, chats = 0
+    page.on('pageerror', e => errors.push(e.message))
+    page.on('response', r => { if (r.url().includes('voice-vad/')) modelRequests.push({ url: r.url(), status: r.status() }) })
+    // Real WebAudio + real Silero/ONNX. Synthetic microphone only; no personal profile.
+    await page.addInitScript(() => {
+      window.__micFixture = { tracks: [], play: async base64 => {
+        const f = window.__micFixture
+        const raw = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+        const buffer = await f.ctx.decodeAudioData(raw.buffer)
+        await f.ctx.resume()
+        const source = f.ctx.createBufferSource(); source.buffer = buffer; source.connect(f.destination); source.start()
+      } }
+      navigator.mediaDevices.getUserMedia = async () => {
+        const f = window.__micFixture
+        f.ctx ||= new AudioContext(); await f.ctx.resume()
+        f.destination = f.ctx.createMediaStreamDestination()
+        f.tracks.push(...f.destination.stream.getTracks())
+        return f.destination.stream
+      }
+    })
+    await page.route('https://fonts.googleapis.com/**', r => r.fulfill({ body: '', contentType: 'text/css' }))
+    await page.route('https://voice-fixture.test/**', r => r.fulfill({ body: fixture, contentType: 'audio/wav', headers: { 'access-control-allow-origin': '*' } }))
+    await page.route('**/api/**', route => {
+      const url = new URL(route.request().url())
+      if (url.pathname.endsWith('/voice/status')) return route.fulfill({ json: { enabled: true, input: true, output: true, serverInput: true, streamOutput: true } })
+      if (url.pathname.endsWith('/voice/synthesize')) return route.fulfill({ json: { url: 'https://voice-fixture.test/audio.wav' } })
+      if (url.pathname.endsWith('/voice/transcribe')) {
+        asr++; const body = route.request().postDataJSON(), bytes = Buffer.from(body.audio, 'base64')
+        assert.equal(bytes.toString('ascii', 0, 4), 'RIFF'); assert.ok(bytes.length > 10000)
+        return route.fulfill({ json: { text: `你好，这是第${asr}次测试。` } })
+      }
+      if (url.pathname === '/api/chat') {
+        chats++
+        return route.fulfill({ contentType: 'text/event-stream', body: frame('message.start', {}) + frame('message.delta', { text: '这是测试回答。' }) + frame('voice.audio', { sequence: 0, sampleRate: 32000, audio: silence }) + frame('voice.done', {}) + frame('message.done', {}) })
+      }
+      return route.fulfill({ json: { ok: true } })
+    })
+    await page.goto(base)
+    await page.locator('button:visible').filter({ hasText: '公开聊天' }).first().click()
+    await page.locator('.voice-assistant-entry').click()
+    await page.waitForFunction(() => document.querySelector('.voice-mode')?.dataset.voiceStatus === 'idle')
+    await page.getByRole('button', { name: '开启连续语音', exact: true }).click()
+    await page.waitForFunction(() => document.querySelector('.voice-mode')?.dataset.autoListening === 'true', { timeout: 60000 })
+    await page.waitForTimeout(3000)
+    assert.equal(asr, 0, 'silence must not upload or interrupt')
+    for (let turn = 0; turn < 3; turn++) {
+      await page.evaluate(data => window.__micFixture.play(data), fixture.toString('base64'))
+      await page.waitForFunction(() => document.querySelector('.voice-mode')?.dataset.voiceStatus === 'listening')
+      await page.waitForFunction(() => document.querySelector('.voice-mode')?.dataset.voiceStatus === 'speaking')
+      assert.equal(asr, turn + 1); assert.equal(chats, turn + 1)
+      assert.equal(await page.locator('.voice-mode').getAttribute('data-auto-listening'), 'true')
+      // Next iteration starts during the eight-second answer: real speech interrupts.
+    }
+    await page.locator('.voice-mode-close').click()
+    assert.ok(await page.evaluate(() => window.__micFixture.tracks.every(t => t.readyState === 'ended')))
+    await page.waitForTimeout(1200)
+    assert.equal(asr, 3); assert.equal(chats, 3)
+    assert.ok(modelRequests.some(r => r.url.endsWith('.onnx') && r.status === 200))
+    assert.ok(modelRequests.some(r => r.url.endsWith('.wasm') && r.status === 200))
+    assert.deepEqual(errors, [])
+    console.log(JSON.stringify({ width, silence: 'passed', realVadTurns: asr, spokenInterruptions: 2, closeReleasesTracks: true, localAssets: modelRequests, pageErrors: errors.length }))
+    await context.close()
+  }
+} finally { await browser.close() }

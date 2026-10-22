@@ -21,10 +21,10 @@ export function createSpeechTextBuffer(language) {
 }
 
 let activeStreams = 0
-export function createChatSpeech({ language, signal, onAudio, factory = createBidiSpeech }) {
+export function createChatSpeech({ language, signal, onAudio, factory = createBidiSpeech, resolveVoice }) {
   const buffer = createSpeechTextBuffer(language)
-  let stream, pending = Promise.resolve(), failure, ended = false
-  function release() { if (!ended) { ended = true; if (stream) activeStreams -= 1 }; signal?.removeEventListener('abort', cancel) }
+  let stream, pending = Promise.resolve(), failure, ended = false, reserved = false
+  function release() { if (!ended) { ended = true; if (reserved) { activeStreams -= 1; reserved = false } }; signal?.removeEventListener('abort', cancel) }
   function cancel() { stream?.cancel(); release() }
   signal?.addEventListener('abort', cancel, { once: true })
   function queue(text) {
@@ -34,8 +34,12 @@ export function createChatSpeech({ language, signal, onAudio, factory = createBi
       if (ended) return
       if (!stream) {
         if (activeStreams >= 4) throw new Error('语音服务繁忙，请稍后重试。')
-        stream = factory({ ...voiceStreamConfiguration(language), signal, onAudio })
-        activeStreams += 1
+        activeStreams += 1; reserved = true
+        const configuration = voiceStreamConfiguration(language)
+        if (resolveVoice) configuration.settings.voice_setting.voice_id = await resolveVoice(language)
+        signal?.throwIfAborted()
+        if (ended) return
+        stream = factory({ ...configuration, signal, onAudio })
       }
       await stream.write(text)
     }).catch(error => { failure = error; stream?.cancel(); release() })

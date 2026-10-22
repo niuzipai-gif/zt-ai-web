@@ -14,8 +14,29 @@ function fixture() {
   }
   const player = createPcmSpeechPlayer({ Context, onStateChange: e => events.push(e.status) })
   const frame = sequence => ({ audio: Buffer.from([255, 127, 0, 128]).toString('base64'), sequence, sampleRate: 32000 })
-  return { player, sources, events, frame }
+  return { player, sources, events, frame, Context }
 }
+
+test('device suspension cancels playback instead of leaving a silent speaking indicator', async () => {
+  const f = fixture(); let context
+  class Context extends f.Context { constructor() { super(); context = this } }
+  const events = [], player = createPcmSpeechPlayer({ Context, onStateChange: event => events.push(event.status) })
+  await player.unlock(); player.begin(); player.push(f.frame(0))
+  const finished = player.finish()
+  context.state = 'suspended'; context.onstatechange?.()
+  await assert.rejects(finished, { name: 'AbortError' })
+  assert.equal(events.at(-1), 'blocked')
+  player.dispose()
+})
+
+test('suspension before first audio fails instead of queuing inaudible samples', async () => {
+  const f = fixture(); let context
+  class Context extends f.Context { constructor() { super(); context = this } }
+  const events = [], player = createPcmSpeechPlayer({ Context, onStateChange: e => events.push(e.status) })
+  await player.unlock(); player.begin(); context.state = 'suspended'; context.onstatechange?.()
+  assert.throws(() => player.push(f.frame(0)), /暂停/)
+  assert.equal(events.at(-1), 'blocked'); player.dispose()
+})
 
 test('PCM playback preserves the first sample, schedules in order, and waits for final audio', async () => {
   const f = fixture()

@@ -1,6 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { runHiddenMediaRequest, synthesizeVoice } from './mmx.js'
+import { runHiddenMediaRequest, synthesizeVoice, voiceStreamConfiguration } from './mmx.js'
+
+test('Chinese configuration is unchanged while English/Japanese normalize speech consistently', async () => {
+  await withEnv({ MMX_API_KEY: 'fixture', MINIMAX_VOICE_ID: 'OwnerZhClean20260828', MINIMAX_TTS_SPEED: '1', MINIMAX_TTS_MODEL: 'speech-2.8-hd', MINIMAX_TTS_EMOTION_EN: 'auto', MINIMAX_TTS_EMOTION_JA: 'auto', MINIMAX_TTS_PRONUNCIATION_EN_JSON: undefined, MINIMAX_TTS_PRONUNCIATION_JA_JSON: undefined }, async () => {
+    assert.deepEqual(voiceStreamConfiguration('zh').settings, { model: 'speech-2.8-hd', language_boost: 'Chinese', voice_setting: { voice_id: 'OwnerZhClean20260828', speed: 1, vol: 1, pitch: 0 } })
+    const en = voiceStreamConfiguration('en').settings, ja = voiceStreamConfiguration('ja').settings
+    assert.equal(en.text_normalization_mode, 'basic')
+    assert.equal(en.voice_setting.emotion, undefined)
+    assert.ok(en.pronunciation_dict.tone.includes('ZT.AI/(ˌziː tiː eɪ ˈaɪ)'))
+    assert.ok(ja.pronunciation_dict.tone.includes('ZT.AI/ゼットティーエーアイ'))
+  })
+})
 
 function withEnv(values, callback) {
   const previous = new Map(Object.keys(values).map(key => [key, process.env[key]]))
@@ -125,12 +136,13 @@ test('keeps personal voice IDs while applying multilingual pronunciation default
     const japanese = JSON.parse(calls[1].options.body)
     assert.equal(english.voice_setting.voice_id, 'CaiZhouTingEnClean20260828')
     assert.equal(english.voice_setting.speed, 0.90)
-    assert.ok(english.pronunciation_dict.tone.includes('ZT.AI/zee tee eye'))
-    assert.ok(english.pronunciation_dict.tone.includes('FDE/eff dee ee'))
+    assert.equal(english.text_normalization_mode, 'quality')
+    assert.ok(english.pronunciation_dict.tone.includes('ZT.AI/(ˌziː tiː eɪ ˈaɪ)'))
+    assert.ok(english.pronunciation_dict.tone.includes('FDE/(ˌɛf diː ˈiː)'))
     assert.equal(japanese.voice_setting.voice_id, 'CaiZhoutingJaClean20260828')
     assert.equal(japanese.voice_setting.speed, 0.88)
-    assert.ok(japanese.pronunciation_dict.tone.includes('蔡宙廷/さい・ちょうてい'))
-    assert.ok(japanese.pronunciation_dict.tone.includes('ZT.AI/ゼットエーアイ'))
+    assert.ok(japanese.pronunciation_dict.tone.includes('蔡宙廷/サイチュウテイ'))
+    assert.ok(japanese.pronunciation_dict.tone.includes('ZT.AI/ゼットティーエーアイ'))
   } finally {
     globalThis.fetch = originalFetch
   }

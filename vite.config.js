@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { voiceVadAssets } from './tools/voice-vad-assets.mjs'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), voiceVadAssets()],
   base: process.env.GITHUB_PAGES_BUILD === 'true' || process.env.GITHUB_ACTIONS ? '/zt-ai-web/' : '/',
   server: {
     host: '0.0.0.0',
