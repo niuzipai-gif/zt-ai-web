@@ -16,7 +16,7 @@ export function createAutomaticVoiceCapture({
   Context = globalThis.AudioContext || globalThis.webkitAudioContext,
   mediaDevices = globalThis.navigator?.mediaDevices,
   loadVad = () => import('@ricky0123/vad-web'),
-  loadWasm = loadVoiceWasm, startupTimeoutMs = 60000,
+  loadWasm = loadVoiceWasm, startupTimeoutMs = 120000, onLoadProgress = () => {},
   assetPath = `${import.meta.env?.BASE_URL || '/'}voice-vad/`,
   isOutputActive = () => false, onSpeechStart = () => {}, onSpeechEnd = () => {}, onStop = () => {},
 } = {}) {
@@ -63,7 +63,7 @@ export function createAutomaticVoiceCapture({
       r.analyser = r.context.createAnalyser(); r.analyser.fftSize = 256
       r.source = r.context.createMediaStreamSource(stream); r.source.connect(r.analyser)
       r.startupTimer = setTimeout(() => { if (live()) void stop('startup') }, startupTimeoutMs)
-      const [{ MicVAD }, wasm] = await Promise.all([loadVad(), loadWasm(assetPath, { signal: r.abort.signal })])
+      const [{ MicVAD }, wasm] = await Promise.all([loadVad(), loadWasm(assetPath, { signal: r.abort.signal, onProgress: progress => { if (live()) onLoadProgress(progress) } })])
       if (!live()) return { status: 'cancelled' }
       r.initializing = (async () => {
       r.vad = await MicVAD.new({

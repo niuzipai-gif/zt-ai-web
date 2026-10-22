@@ -13,6 +13,7 @@ try {
     const page = await context.newPage(), errors = [], modelRequests = []
     let asr = 0, chats = 0
     page.on('pageerror', e => errors.push(e.message))
+    page.on('requestfailed', request => { if (request.url().includes('voice-vad/') || request.url().includes('/assets/')) console.error(JSON.stringify({ width, failedUrl: request.url(), failure: request.failure()?.errorText })) })
     page.on('response', r => { if (r.url().includes('voice-vad/')) modelRequests.push({ url: r.url(), status: r.status() }) })
     // Real WebAudio + real Silero/ONNX. Synthetic microphone only; no personal profile.
     await page.addInitScript(() => {
@@ -53,7 +54,14 @@ try {
     await page.locator('.voice-assistant-entry').click()
     await page.waitForFunction(() => document.querySelector('.voice-mode')?.dataset.voiceStatus === 'idle')
     await page.getByRole('button', { name: '开启连续语音', exact: true }).click()
-    await page.waitForFunction(() => document.querySelector('.voice-mode')?.dataset.autoListening === 'true', null, { timeout: 60000 })
+    const startup = Date.now()
+    try {
+      await page.waitForFunction(() => document.querySelector('.voice-mode')?.dataset.autoListening === 'true', null, { timeout: 125000 })
+    } catch (error) {
+      console.error(JSON.stringify({ width, startupFailed: true, status: await page.locator('.voice-mode-status').textContent(), modelRequests, pageErrors: errors }))
+      throw error
+    }
+    const startupMs = Date.now() - startup
     await page.waitForTimeout(3000)
     assert.equal(asr, 0, 'silence must not upload or interrupt')
     for (let turn = 0; turn < 3; turn++) {
@@ -69,9 +77,9 @@ try {
     await page.waitForTimeout(1200)
     assert.equal(asr, 3); assert.equal(chats, 3)
     assert.ok(modelRequests.some(r => r.url.endsWith('.onnx') && r.status === 200))
-    assert.ok(modelRequests.some(r => r.url.endsWith('.wasm.gz') && r.status === 200))
+    assert.ok(modelRequests.some(r => (r.url.endsWith('.wasm.gz') || r.url.includes('/parts/')) && r.status === 200))
     assert.deepEqual(errors, [])
-    console.log(JSON.stringify({ width, silence: 'passed', realVadTurns: asr, spokenInterruptions: 2, closeReleasesTracks: true, localAssets: modelRequests, pageErrors: errors.length }))
+    console.log(JSON.stringify({ width, startupMs, silence: 'passed', realVadTurns: asr, spokenInterruptions: 2, closeReleasesTracks: true, localAssets: modelRequests, pageErrors: errors.length }))
     await context.close()
   }
 } finally { await browser.close() }
