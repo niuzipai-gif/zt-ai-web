@@ -70,6 +70,7 @@ try {
       throw error
     }
     const startupMs = Date.now() - startup
+    console.log(JSON.stringify({ width, startupMs, resources: await page.evaluate(() => performance.getEntriesByType('resource').filter(e => /\/voice-vad\/|\/assets\/dist-/.test(e.name)).map(e => ({ url: e.name, durationMs: Math.round(e.duration), bytes: e.transferSize }))) }))
     await page.waitForTimeout(3000)
     assert.equal(asr, 0, 'silence must not upload or interrupt')
     for (let turn = 0; turn < 3; turn++) {
