@@ -4,7 +4,7 @@ import { chromium } from 'playwright-core'
 
 const base = process.env.VOICE_QA_URL || 'http://127.0.0.1:5182'
 const fixture = await fs.readFile(process.env.VOICE_QA_AUDIO || 'output/voice-network-2026-10-14/capture.wav')
-const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--autoplay-policy=user-gesture-required'], ...(process.env.VOICE_QA_PROXY ? { proxy: { server: process.env.VOICE_QA_PROXY } } : {}) })
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--autoplay-policy=user-gesture-required', ...(!process.env.VOICE_QA_PROXY ? ['--no-proxy-server'] : [])], ...(process.env.VOICE_QA_PROXY ? { proxy: { server: process.env.VOICE_QA_PROXY } } : {}) })
 const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
 const silence = Buffer.alloc(32000 * 2 * 8).toString('base64')
 try {
@@ -32,7 +32,9 @@ try {
         return f.destination.stream
       }
     })
-    await page.route('https://fonts.googleapis.com/**', r => r.fulfill({ body: '', contentType: 'text/css' }))
+    const pendingFonts = []
+    // A blocked font host must not delay the first interactive page.
+    await page.route('https://fonts.googleapis.com/**', r => { pendingFonts.push(r) })
     await page.route('https://voice-fixture.test/**', r => r.fulfill({ body: fixture, contentType: 'audio/wav', headers: { 'access-control-allow-origin': '*' } }))
     await page.route('**/api/**', route => {
       const url = new URL(route.request().url())
@@ -49,7 +51,11 @@ try {
       }
       return route.fulfill({ json: { ok: true } })
     })
+    const navigationStart = Date.now()
     await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 60000 })
+    await page.locator('button:visible').filter({ hasText: '公开聊天' }).first().waitFor()
+    const firstInteractiveMs = Date.now() - navigationStart
+    await Promise.all(pendingFonts.map(r => r.fulfill({ body: '', contentType: 'text/css' })))
     await page.locator('button:visible').filter({ hasText: '公开聊天' }).first().click()
     await page.locator('.voice-assistant-entry').click()
     await page.waitForFunction(() => document.querySelector('.voice-mode')?.dataset.voiceStatus === 'idle')
@@ -79,7 +85,7 @@ try {
     assert.ok(modelRequests.some(r => r.url.endsWith('.onnx') && r.status === 200))
     assert.ok(modelRequests.some(r => (r.url.endsWith('.wasm.gz') || r.url.includes('/parts/')) && r.status === 200))
     assert.deepEqual(errors, [])
-    console.log(JSON.stringify({ width, startupMs, silence: 'passed', realVadTurns: asr, spokenInterruptions: 2, closeReleasesTracks: true, localAssets: modelRequests, pageErrors: errors.length }))
+    console.log(JSON.stringify({ width, firstInteractiveMs, startupMs, silence: 'passed', realVadTurns: asr, spokenInterruptions: 2, closeReleasesTracks: true, localAssets: modelRequests, pageErrors: errors.length }))
     await context.close()
   }
 } finally { await browser.close() }
