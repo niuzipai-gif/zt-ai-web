@@ -82,26 +82,38 @@ function createVisibleTextFilter() {
   }
 }
 
-export async function* streamOpenAICompatible({ baseUrl, apiKey, model, messages, extra = {}, fetchImpl = fetch, separateReasoning = false }) {
+export async function* streamOpenAICompatible({ baseUrl, apiKey, model, messages, extra = {}, fetchImpl = fetch, separateReasoning = false, signal, onMetadata = () => {}, timeoutMs = 90_000 }) {
+  const started = Date.now()
+  const abort = AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])])
+  abort.throwIfAborted()
   const response = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({ model, messages, stream: true, temperature: 0.7, ...extra }),
-    signal: AbortSignal.timeout(90_000),
+    signal: abort,
   })
   if (!response.ok) {
-    const detail = (await response.text()).slice(0, 300)
-    throw new Error(`上游模型请求失败（${response.status}）${detail ? `：${detail}` : ''}`)
+    await response.body?.cancel().catch(() => {})
+    throw Object.assign(new Error(`上游模型请求失败（${response.status}），请稍后重试。`), { status: response.status, code: 'model_upstream' })
   }
   if (!response.body) throw new Error('上游模型没有返回流')
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
   let reachedEof = false
+  let completed = false
+  let finishReason = null
+  let firstTokenMs = null
+  let usage = null
+  const count = value => Number.isFinite(value) && value >= 0 ? Math.floor(value) : null
   const textFilter = createVisibleTextFilter()
+  const cancelReader = () => { void reader.cancel().catch(() => {}) }
+  abort.addEventListener('abort', cancelReader, { once: true })
   try {
     while (true) {
+      abort.throwIfAborted()
       const { value, done } = await reader.read()
+      abort.throwIfAborted()
       reachedEof = done
       buffer += decoder.decode(value, { stream: !done })
       const lines = buffer.split(/\r?\n/)
@@ -110,28 +122,38 @@ export async function* streamOpenAICompatible({ baseUrl, apiKey, model, messages
         if (!line.startsWith('data:')) continue
         const payload = line.slice(5).trim()
         if (payload === '[DONE]') {
+          completed = true
           const trailing = separateReasoning ? '' : textFilter.finish()
           if (trailing) yield trailing
           return
         }
         if (!payload) continue
-        try {
-          const json = JSON.parse(payload)
-          const delta = json.choices?.[0]?.delta?.content || ''
-          if (delta) {
-            const visible = separateReasoning ? delta : textFilter.push(delta)
-            if (visible) yield visible
+        let json
+        try { json = JSON.parse(payload) } catch { throw Object.assign(new Error('模型流数据不完整，请重试。'), { code: 'model_protocol' }) }
+          if (json.error) throw Object.assign(new Error('模型服务暂时不可用，请重试。'), { code: 'model_upstream' })
+          if (json.usage) usage = { inputTokens: count(json.usage.prompt_tokens), outputTokens: count(json.usage.completion_tokens), cachedTokens: count(json.usage.prompt_tokens_details?.cached_tokens ?? json.usage.cache_read_input_tokens) }
+          const reason = json.choices?.[0]?.finish_reason
+          if (reason) {
+            finishReason = reason
+            if (reason !== 'stop') throw Object.assign(new Error(reason === 'length' ? '回答达到长度限制，尚未完成。' : '模型回答未正常完成，请重试。'), { code: reason === 'length' ? 'model_truncated' : 'model_incomplete' })
+            completed = true
           }
-        } catch {
-          // Ignore an incomplete or provider-specific SSE frame.
-        }
+          const delta = json.choices?.[0]?.delta?.content || ''
+          if (typeof delta === 'string' && delta) {
+            const visible = separateReasoning ? delta : textFilter.push(delta)
+            if (visible) { firstTokenMs ??= Date.now() - started; yield visible }
+          }
       }
       if (done) break
     }
   } finally {
+    abort.removeEventListener('abort', cancelReader)
     if (!reachedEof) await reader.cancel().catch(() => {})
     reader.releaseLock()
+    // Diagnostics must not turn a successful reply into an application error.
+    try { onMetadata({ model, finishReason, completed, firstTokenMs, durationMs: Date.now() - started, usage }) } catch {}
   }
+  if (!completed) throw Object.assign(new Error('模型连接中断，回答尚未完成，请重试。'), { code: 'model_incomplete' })
   const trailing = separateReasoning ? '' : textFilter.finish()
   if (trailing) yield trailing
 }

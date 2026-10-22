@@ -21,6 +21,7 @@ import { resolveImageSearchConfig, searchGoogleWebDetection, searchTinEye } from
 import { buildAgentPlannerSystemPrompt, buildAgentSystemPrompt, buildPublicSystemPrompt } from './prompt-context.js'
 import { buildImageVerificationQuery, carryForwardImages, hasImageContent, hasImageInput, isImageIdentificationRequest, latestImage } from './image-input.js'
 import { voiceCapability } from './contracts/voice.js'
+import { createChatSpeech } from './voice-stream.js'
 
 function loadEnvFile(filePath) {
   try {
@@ -297,10 +298,16 @@ async function runImageWebResearch({ imageDataUrl, inputText, visionHint, langua
   }
 }
 
-async function handleChat(request, response) {
+async function handleChat(request, response, speechFactory = createChatSpeech) {
   if (!rateLimit(request)) { sendJson(request, response, 429, { error: '请求过于频繁，请稍后再试' }); return }
   const body = await readBody(request)
+  if (body.voice?.stream === true && request.headers.origin && !isAllowedOrigin(request.headers.origin, allowedOrigins)) {
+    sendJson(request, response, 403, { error: '此来源不能使用语音连接。' })
+    return
+  }
   const { model, messages } = normalizeChatRequest(body)
+  const abort = new AbortController()
+  response.once('close', () => abort.abort())
   const language = ['zh', 'en', 'ja'].includes(body.language) ? body.language : 'zh'
   const originalMessages = messages.filter(message => message.role !== 'system')
   const directlyAttachedImage = hasImageContent(originalMessages.findLast(message => message.role === 'user')?.content)
@@ -382,13 +389,26 @@ async function handleChat(request, response) {
     await recordTelemetry({ product: 'web', ...context, model: CHAT_MODELS[model], requestType: 'media', status, inputText, outputText, metadata: { attachments: attachmentMetadata(incomingAttachments), webResearch: false } })
     return
   }
+  let speech = null
+  let streamMetadata = null
   try {
-    const stream = model === 'deepseek' ? streamDeepseek({ model: CHAT_MODELS.deepseek, messages: providerMessages }) : streamMinimax({ model: CHAT_MODELS.minimax, messages: providerMessages })
-    for await (const text of stream) { outputText += text; sse(response, 'message.delta', { text }) }
-  } catch (error) { status = 'error'; sse(response, 'message.error', { message: error.message }) }
+    if (body.voice?.stream === true && voiceCapability().streamOutput && !abort.signal.aborted) {
+      speech = speechFactory({ language, signal: abort.signal, onAudio: audio => {
+        if (response.destroyed || response.writableLength > 2_000_000) throw new Error('语音连接过慢，请重试。')
+        sse(response, 'voice.audio', audio)
+      } })
+    }
+    const input = { model: CHAT_MODELS[model], messages: providerMessages, signal: abort.signal, onMetadata: metadata => { streamMetadata = metadata } }
+    const stream = model === 'deepseek' ? streamDeepseek(input) : streamMinimax(input)
+    for await (const text of stream) { outputText += text; sse(response, 'message.delta', { text }); speech?.write(text) }
+    if (speech) {
+      try { await speech.finish(); sse(response, 'voice.done', {}) }
+      catch (error) { if (!abort.signal.aborted) sse(response, 'voice.error', voiceErrorResponse(error).body) }
+    }
+  } catch (error) { speech?.cancel(); status = abort.signal.aborted ? 'cancelled' : 'error'; if (!abort.signal.aborted) sse(response, 'message.error', { message: error.message }) }
   sse(response, 'message.done', {})
   response.end()
-  await recordTelemetry({ product: 'web', ...context, model: CHAT_MODELS[model], requestType: shouldResearch ? 'chat-research' : 'chat', status, inputText, outputText, metadata: { attachments: attachmentMetadata(incomingAttachments), webResearch: shouldResearch, query: research?.query || query || null, provider: research?.provider || null, sourceCount: research?.results?.length || 0, researchError: researchError?.message || null, imageRequest } })
+  await recordTelemetry({ product: 'web', ...context, model: CHAT_MODELS[model], requestType: shouldResearch ? 'chat-research' : 'chat', status, inputText, outputText, metadata: { attachments: attachmentMetadata(incomingAttachments), webResearch: shouldResearch, query: research?.query || query || null, provider: research?.provider || null, sourceCount: research?.results?.length || 0, researchError: researchError?.message || null, imageRequest, stream: streamMetadata } })
 }
 
 async function handleAgentChat(request, response) {
@@ -524,7 +544,7 @@ async function handleMiMoOpenAI(request, response, route) {
   sendPrivateJson(response, 404, { error: 'Not found' })
 }
 
-export function createServer() {
+export function createServer({ speechFactory = createChatSpeech } = {}) {
   return http.createServer(async (request, response) => {
     if (request.method === 'OPTIONS') {
       const optionRoute = request.url.split('?')[0]
@@ -638,7 +658,7 @@ export function createServer() {
         try { return sendJson(request, response, 200, await adminApi.detail(adminToken(request), decodeURIComponent(visitorMatch[1]))) }
         catch (error) { return sendJson(request, response, adminErrorStatus(error), { error: error.message }) }
       }
-      if (request.method === 'POST' && route === '/api/chat') return await handleChat(request, response)
+      if (request.method === 'POST' && route === '/api/chat') return await handleChat(request, response, speechFactory)
       if (request.method === 'POST' && route === '/api/agent/chat') return await handleAgentChat(request, response)
       if (request.method === 'POST' && route === '/api/agent/plan') return await handleAgentPlan(request, response)
       sendJson(request, response, 404, { error: 'Not found' })

@@ -16,6 +16,16 @@ test('desktop alias displays the actual configured MiniMax model', () => {
   assert.equal(MODEL_CATALOG['zt-minimax-m3'].label, CHAT_MODELS.minimax)
 })
 
+test('desktop bridge configures separate reasoning for the released model too', async () => {
+  let body
+  const chunks = await collect(streamGatewayChat(input, {
+    env: { ...env, MINIMAX_TEXT_MODEL: 'MiniMax-M3.1-Flash', MINIMAX_REASONING_EFFORT: 'medium' },
+    fetchImpl: async (_, options) => { body = JSON.parse(options.body); return new Response(`${frame({ content: '{"tag":"<think>literal</think>"}' })}\n\ndata: [DONE]\n\n`) },
+  }))
+  assert.equal(body.reasoning_effort, 'medium')
+  assert.equal(chunks[0].text, '{"tag":"<think>literal</think>"}')
+})
+
 test('desktop bridge sends preview high effort and preserves final JSON at EOF', async () => {
   let request
   const final = '{"value":"<think>literal</think>"}'

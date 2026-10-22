@@ -71,7 +71,7 @@ function pronunciationDictForLanguage(language) {
   }
 }
 
-function cleanVoiceText(text, language) {
+export function cleanVoiceText(text, language) {
   let raw = String(text || '')
     .replace(/```[\s\S]*?```/g, '')
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
@@ -93,6 +93,21 @@ function cleanVoiceText(text, language) {
   }
   if (voiceLanguage(language) === 'zh') return raw.replace(/\s+/g, ' ').trim().slice(0, 10_000)
   return raw.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, 10_000)
+}
+
+export function voiceStreamConfiguration(language = 'zh') {
+  const normalized = voiceLanguage(language)
+  const voiceId = voiceIdForLanguage(normalized)
+  if (!MEDIA_API_KEY() || !voiceId) throw Object.assign(new Error('语音服务未配置'), { status: 401 })
+  const voiceSetting = { voice_id: voiceId, speed: ttsSpeedForLanguage(normalized), vol: 1, pitch: 0 }
+  if (normalized !== 'zh') voiceSetting.emotion = ttsEmotionForLanguage(normalized)
+  const pronunciation = pronunciationDictForLanguage(normalized)
+  return { apiKey: MEDIA_API_KEY(), baseUrl: API_ROOT(), settings: {
+    model: ttsModelForLanguage(normalized),
+    language_boost: normalized === 'en' ? 'English' : normalized === 'ja' ? 'Japanese' : 'Chinese',
+    voice_setting: voiceSetting,
+    ...(pronunciation ? { pronunciation_dict: pronunciation } : {}),
+  } }
 }
 
 async function minimaxRequest(path, options = {}) {

@@ -11,9 +11,9 @@ async function collect(stream) {
   return text
 }
 
-test('processes the final complete SSE data line at EOF without a trailing newline', async t => {
+test('processes a final complete SSE data line and finish reason without a trailing newline', async t => {
   const final = JSON.stringify({ label: '\u4f60\u597d', ok: true })
-  const bytes = new TextEncoder().encode(data({ content: final }))
+  const bytes = new TextEncoder().encode(`data: ${JSON.stringify({ choices: [{ delta: { content: final }, finish_reason: 'stop' }] })}`)
   t.mock.method(globalThis, 'fetch', async () => new Response(new ReadableStream({
     start(controller) {
       for (const byte of bytes) controller.enqueue(Uint8Array.of(byte))
@@ -21,6 +21,33 @@ test('processes the final complete SSE data line at EOF without a trailing newli
     },
   }), { status: 200 }))
   assert.equal(await collect(streamOpenAICompatible(input)), final)
+})
+
+test('does not silently accept a cut-off stream or a truncated generation', async () => {
+  await assert.rejects(collect(streamOpenAICompatible({ ...input, fetchImpl: async () => new Response(data({ content: 'partial' })) })), /incomplete|中断/)
+  const wire = `data: ${JSON.stringify({ choices: [{ delta: { content: 'partial' }, finish_reason: 'length' }] })}\n\ndata: [DONE]\n\n`
+  await assert.rejects(collect(streamOpenAICompatible({ ...input, fetchImpl: async () => new Response(wire) })), /truncated|长度/)
+})
+
+test('cancellation aborts upstream and rejects without late content', async () => {
+  const controller = new AbortController()
+  let signal
+  const stream = streamOpenAICompatible({ ...input, signal: controller.signal, fetchImpl: async (_, options) => {
+    signal = options.signal
+    controller.abort()
+    return new Response(`${data({ content: 'late' })}\n\ndata: [DONE]\n\n`)
+  } })
+  await assert.rejects(collect(stream), { name: 'AbortError' })
+  assert.equal(signal.aborted, true)
+})
+
+test('reports only safe usage metadata and hides provider error details', async () => {
+  let report
+  const wire = `${data({ content: 'ok' })}\n\ndata: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 12, completion_tokens: 4, prompt_tokens_details: { cached_tokens: 8 } } })}\n\ndata: [DONE]\n\n`
+  assert.equal(await collect(streamOpenAICompatible({ ...input, onMetadata: value => { report = value }, fetchImpl: async () => new Response(wire) })), 'ok')
+  assert.equal(report.usage.cachedTokens, 8)
+  assert.equal(report.finishReason, 'stop')
+  await assert.rejects(collect(streamOpenAICompatible({ ...input, fetchImpl: async () => new Response('secret-provider-debug', { status: 401 }) })), error => !error.message.includes('secret-provider-debug') && error.status === 401)
 })
 
 test('honors the DONE marker instead of appending content after completion', async t => {

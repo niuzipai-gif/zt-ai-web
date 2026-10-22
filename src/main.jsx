@@ -19,6 +19,8 @@ import { getStreamBatchSize } from './lib/streaming.js'
 import { evidenceLabel, researchSummary } from './lib/research-sources.js'
 import { createPcmVoiceRecorder, createVoiceRecognition, formatVoiceRecognitionError, mergeVoiceTranscript, prepareVoicePlayback, VOICE_GREETING_PREROLL_MS } from './lib/voice-audio.js'
 import { createVoiceClient } from './lib/voice-client.js'
+import { createPcmSpeechPlayer } from './lib/voice-pcm.js'
+import { consumeChatSse as consumeSse } from './lib/chat-sse.js'
 import { VoiceMode } from './components/VoiceMode.jsx'
 import './styles.css'
 import './research-sources.css'
@@ -153,33 +155,6 @@ function ModelSwitch({ model, setModel }) {
   </div>
 }
 
-async function consumeSse(response, onEvent) {
-  if (!response.ok || !response.body) throw new Error(`聊天网关不可用（${response.status}）`)
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  const consumeFrame = frame => {
-    const lines = frame.split(/\r?\n/)
-    const event = lines.find(line => line.startsWith('event:'))?.slice(6).trim() || 'message.delta'
-    const data = lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('')
-    if (!data) return
-    try { onEvent(event, JSON.parse(data)) } catch { /* ignore malformed provider frames */ }
-  }
-  try {
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const frames = buffer.split(/\r?\n\r?\n/)
-      buffer = frames.pop() || ''
-      frames.forEach(consumeFrame)
-    }
-    if (buffer.trim()) consumeFrame(buffer)
-  } finally {
-    reader.releaseLock()
-  }
-}
-
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
@@ -301,6 +276,8 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
   const dictationRef = useRef(null)
   const dictationBaseRef = useRef('')
   const voiceAudioRef = useRef(null)
+  const voicePcmRef = useRef(null)
+  const sendGenerationRef = useRef(0)
 
   const model = session.model || 'MINIMAX'
   const updateMessages = updater => onSessionChange(session.id, current => {
@@ -310,6 +287,11 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
   const setModel = nextModel => onSessionChange(session.id, current => ({ ...current, model: nextModel, updatedAt: Date.now() }))
 
   useEffect(() => {
+    sendGenerationRef.current += 1
+    setVoiceOpen(false)
+    voiceAnswerRef.current = null
+    voicePcmRef.current?.dispose()
+    voicePcmRef.current = null
     setInput('')
     setAttachments([])
     setActiveMessageId(null)
@@ -319,6 +301,12 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     streamQueueRef.current = []
     streamFinishedRef.current = false
   }, [session.id])
+
+  useEffect(() => () => {
+    sendGenerationRef.current += 1
+    voicePcmRef.current?.dispose()
+    voicePcmRef.current = null
+  }, [])
 
   useEffect(() => {
     const recognition = createVoiceRecognition({
@@ -434,10 +422,24 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     if (!body.url) throw new Error(copy.voiceUnavailable)
     return body
   }
-  const submitVoiceReply = async (text, detectedLanguage, options) => {
+  const submitVoiceReply = async (text, detectedLanguage, options = {}) => {
     const cached = voiceAnswerRef.current
-    const answer = cached?.text === text && cached?.language === detectedLanguage && cached?.sessionId === session.id ? cached.answer : await send({ value: text, language: detectedLanguage })
+    const reuse = cached?.text === text && cached?.language === detectedLanguage && cached?.sessionId === session.id
+    let chunks = 0, streamDone = false, voiceError = null
+    const streamVoice = !reuse && voiceCapability.streamOutput && options.stream === true
+    const answer = reuse ? cached.answer : await send({ value: text, attachments: [], language: detectedLanguage, signal: options.signal, streamVoice, onVoice: (event, data) => {
+      if (event === 'voice.audio' && !voiceError) { try { options.onAudio(data); chunks += 1 } catch (error) { voiceError = error } }
+      if (event === 'voice.done') streamDone = true
+      if (event === 'voice.error') voiceError = Object.assign(new Error(data.error), { code: data.code })
+    } })
+    options.signal?.throwIfAborted()
     voiceAnswerRef.current = { text, language: detectedLanguage, sessionId: session.id, answer }
+    if (chunks) {
+      if (voiceError || !streamDone) throw voiceError || new Error(copy.voiceUnavailable)
+      voiceAnswerRef.current = null
+      return { streamed: true }
+    }
+    // Automatic HTTP recovery is safe only before any streamed audio was played.
     const result = await synthesizeVoice(answer, detectedLanguage, options)
     voiceAnswerRef.current = null
     return { audioUrl: result.url }
@@ -446,7 +448,8 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     const responseLanguage = ['zh', 'en', 'ja'].includes(draft?.language) ? draft.language : language
     const nextAttachments = draft?.attachments || attachments
     const value = (draft?.value ?? input).trim()
-    if ((!value && !nextAttachments.length) || activeMessageId) return Promise.resolve('')
+    if ((!value && !nextAttachments.length) || (activeMessageId && !draft?.signal)) return Promise.resolve('')
+    const generation = ++sendGenerationRef.current
     const now = Date.now()
     const attachmentText = buildAttachmentContext(nextAttachments, copy)
     const attachmentFallback = copy.attachmentFallback || copy.sendFallback
@@ -463,11 +466,16 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     setRetryPayload(null)
     setInput('')
     setAttachments([])
-    return new Promise(resolve => { void (async () => {
+    return new Promise((resolve, reject) => { void (async () => {
       let outputText = ''
+      let messageError = null
+      let done = false
       try {
-        const response = await fetch(`${API_BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, language: responseLanguage, visitorId, conversationId: session.id, messages: history, attachments: userMessage.attachments.map(({ name, type, size }) => ({ name, type, size })) }) })
+        const response = await fetch(`${API_BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, signal: draft?.signal, body: JSON.stringify({ model, language: responseLanguage, visitorId, conversationId: session.id, messages: history, ...(draft?.streamVoice ? { voice: { stream: true } } : {}), attachments: userMessage.attachments.map(({ name, type, size }) => ({ name, type, size })) }) })
         await consumeSse(response, (event, data) => {
+          draft?.signal?.throwIfAborted()
+          if (generation !== sendGenerationRef.current) throw new DOMException('Cancelled', 'AbortError')
+          if (event.startsWith('voice.')) draft?.onVoice?.(event, data)
           if (event === 'research.started') updateMessages(items => items.map(message => message.id === responseId ? { ...message, researching: true, researchStatus: copy.researching || '正在核验公开资料' } : message))
           if (event === 'research.progress') updateMessages(items => items.map(message => message.id === responseId ? { ...message, researching: true, researchStatus: String(data.message || copy.researching || '正在核验公开资料') } : message))
           if (event === 'research.sources') updateMessages(items => items.map(message => message.id === responseId ? { ...message, researching: false, research: data } : message))
@@ -480,12 +488,23 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
               : message))
             streamQueueRef.current.push(...copy.mediaCompleted)
           }
-          if (event === 'message.error') { const errorText = `${copy.responseError}${data.message ? `: ${data.message}` : ''}`; outputText += errorText; streamQueueRef.current.push(...errorText) }
-          if (event === 'message.done') { streamFinishedRef.current = true; updateMessages(items => items.map(message => message.id === responseId ? { ...message, researching: false } : message)) }
+          if (event === 'message.error') { messageError = new Error(data.message || copy.responseError); if (!draft?.signal) { const errorText = `${copy.responseError}: ${messageError.message}`; streamQueueRef.current.push(...errorText) } }
+          if (event === 'message.done') { done = true; streamFinishedRef.current = true; updateMessages(items => items.map(message => message.id === responseId ? { ...message, researching: false } : message)) }
         })
+        draft?.signal?.throwIfAborted()
+        if (generation !== sendGenerationRef.current) throw new DOMException('Cancelled', 'AbortError')
+        if (messageError) throw messageError
+        if (!done) throw new Error('回答连接中断，请重试。')
         streamFinishedRef.current = true
         resolve(outputText.trim())
       } catch (error) {
+        if (generation !== sendGenerationRef.current) { reject(new DOMException('Cancelled', 'AbortError')); return }
+        if (draft?.signal) {
+          streamFinishedRef.current = true
+          updateMessages(items => items.map(message => message.id === responseId ? { ...message, researching: false } : message))
+          reject(error)
+          return
+        }
         const errorText = `${copy.gatewayError}${error.message ? ` (${error.message})` : ''}`
         outputText += errorText
         streamQueueRef.current.push(...errorText)
@@ -517,7 +536,13 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
   const starterPrompts = buildStarterPrompts(copy)
   const voiceAvailable = isVoicePreview || voiceCapability.enabled
   const dictationAvailable = isVoicePreview || voiceCapability.input || Boolean(globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition || globalThis.ztaiAndroidVoice?.start)
-  const primeVoiceAssistant = () => { voiceAudioRef.current = prepareVoicePlayback() }
+  const primeVoiceAssistant = () => {
+    voiceAudioRef.current = prepareVoicePlayback()
+    if (voiceCapability.streamOutput) {
+      voicePcmRef.current ||= createPcmSpeechPlayer()
+      void voicePcmRef.current.unlock()
+    }
+  }
   const openVoiceAssistant = () => {
     if (!voiceAvailable) return
     dictationTurnRef.current += 1
@@ -589,7 +614,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     <div className="chat-footer"><ModelSwitch model={model} setModel={setModel} /><span className="chat-note"><MessageCircle size={14} /> {copy.publicNote}</span></div>
     {historyOpen && <ChatHistoryDrawer visitorId={visitorId} sessions={sessions} activeSessionId={session.id} copy={copy} language={language} onSelectSession={id => { onSelectSession(id); setHistoryOpen(false) }} onNewChat={() => { onNewChat(); setHistoryOpen(false) }} onClose={() => setHistoryOpen(false)} />}
     {previewAttachment && <div className="attachment-lightbox" role="dialog" aria-modal="true" aria-label={`预览 ${previewAttachment.name}`} onClick={() => setPreviewAttachment(null)}><button type="button" onClick={() => setPreviewAttachment(null)} aria-label="关闭预览"><X size={18} /></button><img src={previewAttachment.preview} alt={previewAttachment.name} onClick={event => event.stopPropagation()} /></div>}
-    {voiceOpen && <VoiceMode copy={copy} language={language} preview={isVoicePreview} capability={voiceCapability} audioElement={voiceAudioRef.current} onGreeting={async (text, options) => ({ audioUrl: (await synthesizeVoice(text, language, { leadingPause: true, ...options })).url, preRollMs: VOICE_GREETING_PREROLL_MS })} onTranscribe={(blob, options) => voiceClient.transcribe(blob, options)} onSubmit={submitVoiceReply} onClose={() => { setVoiceOpen(false); voiceAudioRef.current = null }} />}
+    {voiceOpen && <VoiceMode copy={copy} language={language} preview={isVoicePreview} capability={voiceCapability} audioElement={voiceAudioRef.current} pcmPlayer={voicePcmRef.current} onGreeting={async (text, options) => ({ audioUrl: (await synthesizeVoice(text, language, { leadingPause: true, ...options })).url, preRollMs: VOICE_GREETING_PREROLL_MS })} onTranscribe={(blob, options) => voiceClient.transcribe(blob, options)} onSubmit={submitVoiceReply} onClose={() => { setVoiceOpen(false); voiceAudioRef.current = null; voicePcmRef.current?.dispose(); voicePcmRef.current = null }} />}
   </section>
 }
 
