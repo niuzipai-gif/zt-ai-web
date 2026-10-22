@@ -45,3 +45,20 @@ test('streaming concurrency is bounded and every completion or cancel releases i
   await Promise.all(streams.slice(1, 4).map(stream => stream.finish()))
   assert.equal(created, 5)
 })
+
+test('cancel during voice registry resolution releases reservation and never opens a late socket', async t => {
+  const old = process.env.MMX_API_KEY, oldVoice = process.env.MINIMAX_VOICE_ID
+  process.env.MMX_API_KEY = 'fixture'; process.env.MINIMAX_VOICE_ID = 'owner'
+  t.after(() => { if (old === undefined) delete process.env.MMX_API_KEY; else process.env.MMX_API_KEY = old; if (oldVoice === undefined) delete process.env.MINIMAX_VOICE_ID; else process.env.MINIMAX_VOICE_ID = oldVoice })
+  const resolvers = []; let created = 0
+  const streams = Array.from({ length: 4 }, () => createChatSpeech({ language: 'en', resolveVoice: () => new Promise(resolve => resolvers.push(resolve)), factory: () => { created++; return { async write() {}, async finish() {}, cancel() {} } } }))
+  streams.forEach(stream => stream.write('Hello. '))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(resolvers.length, 4)
+  streams.forEach(stream => stream.cancel())
+  resolvers.forEach(resolve => resolve('owner'))
+  await Promise.all(streams.map(stream => assert.rejects(stream.finish())))
+  assert.equal(created, 0)
+  const next = createChatSpeech({ language: 'en', factory: () => { created++; return { async write() {}, async finish() {}, cancel() {} } } })
+  next.write('Hello. '); await next.finish(); assert.equal(created, 1)
+})

@@ -47,7 +47,7 @@ test('voice API transcribes audio without browser recognition and recovers a rev
     const cached = await originalFetch(base + '/api/voice/synthesize', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
     assert.equal(cached.status, 200)
     await cached.text()
-    assert.equal(calls.length - before, 3, 'one failed preferred voice, one registered voice list, one successful TTS; replay is cached')
+    assert.equal(calls.length - before, 2, 'resolve the registered personal voice before synthesis; replay is cached')
     const status = await (await originalFetch(base + '/api/voice/status')).json()
     assert.equal(status.serverInput, true)
     assert.doesNotMatch(JSON.stringify(status), /fixture-key|OwnerEn/)

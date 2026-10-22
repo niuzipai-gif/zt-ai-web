@@ -3,17 +3,17 @@ const API_ROOT = () => (process.env.MMX_BASE_URL || process.env.MINIMAX_BASE_URL
 const mediaTimeout = () => Number(process.env.MMX_HTTP_TIMEOUT_MS || 45_000)
 const DEFAULT_PRONUNCIATION_TONES = Object.freeze({
   en: Object.freeze([
-    'ZT.AI/zee tee eye',
-    'AI/A I',
-    'API/A P I',
-    'FDE/eff dee ee',
+    'ZT.AI/(ˌziː tiː eɪ ˈaɪ)',
+    'AI/(ˌeɪ ˈaɪ)',
+    'API/(ˌeɪ piː ˈaɪ)',
+    'FDE/(ˌɛf diː ˈiː)',
     'ASIN/A S I N',
     'SKU/S K U',
     '蔡宙廷/Zhouting Cai',
   ]),
   ja: Object.freeze([
-    '蔡宙廷/さい・ちょうてい',
-    'ZT.AI/ゼットエーアイ',
+    '蔡宙廷/サイチュウテイ',
+    'ZT.AI/ゼットティーエーアイ',
     'AI/エーアイ',
     'API/エーピーアイ',
     'FDE/エフディーイー',
@@ -53,7 +53,8 @@ function ttsSpeedForLanguage(language) {
 function ttsEmotionForLanguage(language) {
   const normalized = voiceLanguage(language)
   if (normalized === 'zh') return ''
-  return String(process.env[`MINIMAX_TTS_EMOTION_${normalized.toUpperCase()}`] || 'calm').trim() || 'calm'
+  const emotion = String(process.env[`MINIMAX_TTS_EMOTION_${normalized.toUpperCase()}`] || 'calm').trim()
+  return emotion === 'auto' ? '' : emotion
 }
 
 function pronunciationDictForLanguage(language) {
@@ -100,12 +101,13 @@ export function voiceStreamConfiguration(language = 'zh') {
   const voiceId = voiceIdForLanguage(normalized)
   if (!MEDIA_API_KEY() || !voiceId) throw Object.assign(new Error('语音服务未配置'), { status: 401 })
   const voiceSetting = { voice_id: voiceId, speed: ttsSpeedForLanguage(normalized), vol: 1, pitch: 0 }
-  if (normalized !== 'zh') voiceSetting.emotion = ttsEmotionForLanguage(normalized)
+  if (ttsEmotionForLanguage(normalized)) voiceSetting.emotion = ttsEmotionForLanguage(normalized)
   const pronunciation = pronunciationDictForLanguage(normalized)
   return { apiKey: MEDIA_API_KEY(), baseUrl: API_ROOT(), settings: {
     model: ttsModelForLanguage(normalized),
     language_boost: normalized === 'en' ? 'English' : normalized === 'ja' ? 'Japanese' : 'Chinese',
     voice_setting: voiceSetting,
+    ...(normalized !== 'zh' ? { text_normalization_mode: 'basic' } : {}),
     ...(pronunciation ? { pronunciation_dict: pronunciation } : {}),
   } }
 }
@@ -198,7 +200,7 @@ export async function synthesizeVoice({ text, language = 'zh', leadingPause = fa
   // be swallowed by the provider/mobile audio path.
   const synthesisText = value
   const voiceSetting = { voice_id: voiceId, speed: ttsSpeedForLanguage(normalizedLanguage), vol: 1, pitch: 0 }
-  if (normalizedLanguage !== 'zh') voiceSetting.emotion = ttsEmotionForLanguage(normalizedLanguage)
+  if (ttsEmotionForLanguage(normalizedLanguage)) voiceSetting.emotion = ttsEmotionForLanguage(normalizedLanguage)
   const pronunciationDict = pronunciationDictForLanguage(normalizedLanguage)
   const body = await minimaxRequest('/v1/t2a_v2', {
     method: 'POST',
@@ -206,6 +208,7 @@ export async function synthesizeVoice({ text, language = 'zh', leadingPause = fa
       model: ttsModelForLanguage(normalizedLanguage),
       text: synthesisText,
       stream: false,
+      ...(normalizedLanguage !== 'zh' ? { text_normalization_mode: 'quality' } : {}),
       language_boost: normalizedLanguage === 'en' ? 'English' : normalizedLanguage === 'ja' ? 'Japanese' : 'Chinese',
       voice_setting: voiceSetting,
       ...(pronunciationDict ? { pronunciation_dict: pronunciationDict } : {}),

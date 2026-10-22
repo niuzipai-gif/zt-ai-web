@@ -15,6 +15,13 @@ export function createVoiceService({ synthesize, transcribe, listVoices, env = p
   const restored = new Map()
   const ttl = 5 * 60_000
   const MAX_ENTRIES = 64
+  const localeOf = value => /^en/i.test(value) ? 'en' : /^(ja|jp)/i.test(value) ? 'ja' : 'zh'
+  const preferredVoice = language => String(env[`MINIMAX_VOICE_ID_${localeOf(language).toUpperCase()}`] || env.MINIMAX_VOICE_ID || '')
+  const samePerson = (preferred, voices) => {
+    const prefix = preferred.replace(/Clean/gi, '').replace(/\d{8}.*$/, '').toLowerCase()
+    if (prefix.length < 5) return []
+    return voices.filter(id => id.toLowerCase().startsWith(prefix) && /^\d{8}$/.test(id.slice(prefix.length))).sort().reverse()
+  }
   function key(operation, input) {
     const configuration = Object.keys(env).filter(name => /^(MMX_|MINIMAX_(?:API|BASE|VOICE|TTS|ASR))/.test(name)).sort().map(name => [name, env[name]])
     return crypto.createHash('sha256').update(JSON.stringify([operation, input, configuration])).digest('hex')
@@ -41,15 +48,13 @@ export function createVoiceService({ synthesize, transcribe, listVoices, env = p
       const preferred = String(env[`MINIMAX_VOICE_ID_${language.toUpperCase()}`] || env.MINIMAX_VOICE_ID || '')
       const identityKey = key('voice', { preferred })
       const saved = restored.get(identityKey)
-      const selected = saved?.expires > now() ? saved.voiceId : preferred
+      const selected = saved?.expires > now() ? saved.voiceId : await resolveVoice(language)
       try { return await synthesize({ ...input, voiceId: selected }) } catch (error) {
         if (error.providerCode !== 2042) throw error
         // Resolve only a registered version of the configured person's voice.
         // Never silently substitute a system voice or another person's identity.
-        const prefix = preferred.replace(/Clean/gi, '').replace(/\d{8}.*$/, '').toLowerCase()
-        if (!prefix || prefix.length < 5) throw error
         const voices = await listVoices()
-        const candidates = voices.filter(id => id.toLowerCase().startsWith(prefix) && /^\d{8}$/.test(id.slice(prefix.length)) && id !== selected).sort().reverse()
+        const candidates = samePerson(preferred, voices).filter(id => id !== selected)
         if (!candidates.length) throw error
         const voiceId = candidates[0]
         const result = await synthesize({ ...input, voiceId })
@@ -59,5 +64,14 @@ export function createVoiceService({ synthesize, transcribe, listVoices, env = p
       }
     })
   }
-  return { synthesize: synthesis, transcribe: input => singleFlight('transcribe', input, () => transcribe(input), 10_000) }
+  async function resolveVoice(language) {
+    const preferred = preferredVoice(language)
+    // Chinese remains pinned. No cross-language or system-voice substitution.
+    if (localeOf(language) === 'zh' || !listVoices) return preferred
+    return singleFlight('resolveVoice', { preferred }, async () => {
+      const voices = await listVoices()
+      return voices.includes(preferred) ? preferred : samePerson(preferred, voices)[0] || preferred
+    }).catch(() => preferred) // Registry availability must not disable a valid pinned voice.
+  }
+  return { resolveVoice, synthesize: synthesis, transcribe: input => singleFlight('transcribe', input, () => transcribe(input), 10_000) }
 }

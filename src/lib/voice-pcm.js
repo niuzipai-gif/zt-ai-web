@@ -21,6 +21,9 @@ export function createPcmSpeechPlayer({ Context = globalThis.AudioContext || glo
       if (!Context) return false
       try {
         context ||= new Context()
+        context.onstatechange = () => {
+          if (context?.state !== 'running' && sources.size) { stop(); notify('blocked') }
+        }
         if (!analyser) { analyser = context.createAnalyser(); analyser.fftSize = 256; analyser.connect(context.destination) }
         await context.resume()
         return context.state === 'running'
@@ -39,6 +42,7 @@ export function createPcmSpeechPlayer({ Context = globalThis.AudioContext || glo
     },
     push({ audio, sampleRate, sequence: index }) {
       if (finished) throw new Error('语音会话已结束。')
+      if (context?.state !== 'running') { stop(); notify('blocked'); throw new Error('设备暂停了声音播放，请重新启用播放。') }
       if (index !== sequence) throw new Error('音频顺序异常，请重试。')
       if (sampleRate !== 32000 || typeof audio !== 'string' || audio.length > 3_000_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(audio) || audio.length % 4) throw new Error('音频格式异常。')
       const raw = atob(audio)
@@ -60,7 +64,7 @@ export function createPcmSpeechPlayer({ Context = globalThis.AudioContext || glo
       }
       source.start(start); nextTime = start + buffer.duration; sequence += 1
       received = true
-      if (sources.size === 1) notifyTimer = setTimeout(() => { if (token === generation && sources.size) notify('speaking') }, Math.max(0, (start - context.currentTime) * 1000))
+      if (sources.size === 1) notifyTimer = setTimeout(() => { if (token === generation && sources.size && context.state === 'running') notify('speaking') }, Math.max(0, (start - context.currentTime) * 1000))
     },
     finish() {
       if (!received) return Promise.reject(new Error('没有收到可播放的音频。'))
@@ -69,6 +73,6 @@ export function createPcmSpeechPlayer({ Context = globalThis.AudioContext || glo
       return completion
     },
     stop,
-    dispose() { stop(); analyser?.disconnect(); void context?.close?.(); analyser = context = null },
+    dispose() { stop(); if (context) context.onstatechange = null; analyser?.disconnect(); void context?.close?.(); analyser = context = null },
   }
 }

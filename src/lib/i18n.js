@@ -155,6 +155,14 @@ Object.assign(siteCopy.en.chat, { voiceConnectionError: 'The voice connection wa
 Object.assign(siteCopy.ja.chat, { voiceConnectionError: '音声接続が中断されました。録音と入力は保持されています。再試行してください。', voiceQuotaError: '音声サービスの利用枠が一時的に不足しています。テキストで会話を続けられます。', voiceServiceError: '音声サービスを一時的に利用できません。テキストで会話を続けられます。', voiceRecordingError: '音声を聞き取れなかったか、録音形式が無効です。もう一度録音してください。' })
 Object.assign(siteCopy.ja.chat, { attachmentFallback: 'アップロードした添付ファイルを分析してください。', attachmentReady: '読み取り済み', attachmentTruncated: '一部表示', attachmentError: '未解析', attachmentPreviewOnly: '画像プレビュー' })
 
+Object.assign(siteCopy.zh.chat, { voiceAutoStart: '开启连续语音', voiceAutoStop: '关闭麦克风', voiceAutoLoading: '正在准备本地语音检测…', voiceAutoListening: '正在听，你可以直接说话', voiceAutoHint: '停顿后自动发送；说话可打断回答。外放回声较大时建议戴耳机。', voiceAutoStartHint: '点击麦克风开启连续对话，也可以直接输入文字。', voiceAutoUnavailable: '连续语音暂时未能启动，请重试或使用文字输入。' })
+Object.assign(siteCopy.en.chat, { voiceAutoStart: 'Enable hands-free conversation', voiceAutoStop: 'Turn microphone off', voiceAutoLoading: 'Preparing local speech detection…', voiceAutoListening: 'Listening — speak whenever you like', voiceAutoHint: 'Pauses send your message. Speak to interrupt. Use headphones if the speaker echoes.', voiceAutoStartHint: 'Enable the microphone for hands-free conversation, or type a message.', voiceAutoUnavailable: 'Hands-free speech could not start. Please retry or type a message.' })
+Object.assign(siteCopy.ja.chat, { voiceAutoStart: '連続音声会話を開始', voiceAutoStop: 'マイクをオフにする', voiceAutoLoading: '端末内の音声検出を準備中…', voiceAutoListening: '聞いています。そのまま話しかけてください', voiceAutoHint: '話し終わると自動送信します。発話で回答を中断できます。反響する場合はイヤホンをご利用ください。', voiceAutoStartHint: 'マイクをオンにして会話するか、文字で入力してください。', voiceAutoUnavailable: '連続音声を開始できませんでした。再試行するか、文字で入力してください。' })
+
+Object.assign(siteCopy.zh.chat, { voicePlaybackInterrupted: '设备暂停了声音播放。请点击麦克风或重新发送，继续对话。' })
+Object.assign(siteCopy.en.chat, { voicePlaybackInterrupted: 'Your device paused audio. Tap the microphone or send again to continue.' })
+Object.assign(siteCopy.ja.chat, { voicePlaybackInterrupted: '端末が音声再生を停止しました。マイクをタップするか、再送信してください。' })
+
 export const resumeDocumentByLanguage = {
   zh: { path: 'resume.docx', name: '蔡宙廷_FDE个人简历.docx' },
   en: { path: 'resume-en.docx', name: 'Cai_Zhouting_FDE_Resume_EN.docx' },

@@ -393,7 +393,7 @@ async function handleChat(request, response, speechFactory = createChatSpeech) {
   let streamMetadata = null
   try {
     if (body.voice?.stream === true && voiceCapability().streamOutput && !abort.signal.aborted) {
-      speech = speechFactory({ language, signal: abort.signal, onAudio: audio => {
+      speech = speechFactory({ language, signal: abort.signal, resolveVoice: voiceService.resolveVoice, onAudio: audio => {
         if (response.destroyed || response.writableLength > 2_000_000) throw new Error('语音连接过慢，请重试。')
         sse(response, 'voice.audio', audio)
       } })

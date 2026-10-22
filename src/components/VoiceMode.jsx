@@ -4,6 +4,7 @@ import { VoiceOrb } from './VoiceOrb.jsx'
 import { createVoiceGreetingState, createVoiceState, detectVoiceLanguage, startVoiceCapture, transitionVoiceGreeting, transitionVoiceState } from '../lib/voice-mode.js'
 import { createPcmVoiceRecorder, createVoiceAudioController, createVoicePlayback, createVoiceRecognition, formatVoiceRecognitionError, mergeVoiceTranscript } from '../lib/voice-audio.js'
 import { formatVoiceRequestError } from '../lib/voice-client.js'
+import { createAutomaticVoiceCapture } from '../lib/voice-turn.js'
 
 function browserReducedMotion() {
   return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
@@ -17,6 +18,11 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
   const [reducedMotion] = useState(browserReducedMotion)
   const [playbackStatus, setPlaybackStatus] = useState('idle')
   const [greetingAttempt, setGreetingAttempt] = useState(0)
+  const [automatic, setAutomatic] = useState(false)
+  const [autoStarting, setAutoStarting] = useState(false)
+  const automaticRef = useRef(null)
+  const automaticEventsRef = useRef({})
+  const outputActiveRef = useRef(false)
   const controllerRef = useRef(null)
   const recognitionRef = useRef(null)
   const playbackRef = useRef(null)
@@ -35,6 +41,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
   const serverCapture = capability?.serverInput === true && typeof onTranscribe === 'function'
   greetingStateRef.current = greeting
   onGreetingRef.current = onGreeting
+  outputActiveRef.current = state.status === 'speaking' || greeting.status === 'speaking'
 
   const visualStatus = state.status !== 'idle' ? state.status : ['speaking', 'ready', 'blocked', 'error'].includes(greeting.status) ? greeting.status : 'idle'
 
@@ -48,8 +55,22 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
     if (greeting.status === 'loading') return copy.voiceGreetingLoading || copy.voiceProcessing
     if (greeting.status === 'speaking') return copy.voiceSpeaking
     if (greeting.status === 'blocked' || greeting.status === 'error') return greeting.error || copy.voiceGreetingUnavailable || copy.voiceUnavailable
+    if (automatic) return copy.voiceAutoListening
     return capability?.enabled ? copy.voiceModeTitle : copy.voiceNeedProvider
-  }, [capability?.enabled, copy, greeting, state])
+  }, [automatic, capability?.enabled, copy, greeting, state])
+
+  useEffect(() => {
+    const capture = createAutomaticVoiceCapture({
+      isOutputActive: () => outputActiveRef.current,
+      onSpeechStart: event => automaticEventsRef.current.start?.(event),
+      onSpeechEnd: blob => automaticEventsRef.current.end?.(blob),
+      onStop: reason => automaticEventsRef.current.stop?.(reason),
+    })
+    automaticRef.current = capture
+    const suspend = () => { if (document.hidden) { void capture.stop(); setAutomatic(false); setAutoStarting(false); automaticEventsRef.current.suspend?.() } }
+    document.addEventListener('visibilitychange', suspend)
+    return () => { document.removeEventListener('visibilitychange', suspend); automaticEventsRef.current = {}; void capture.dispose() }
+  }, [])
 
   useEffect(() => {
     pcmPlayer?.setOnStateChange(event => {
@@ -60,6 +81,11 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
         setState(current => transitionVoiceState(current, { type: 'start-speaking', stream: true }))
       } else if (event.status === 'processing') {
         setState(current => ({ ...current, status: 'processing' }))
+      } else if (event.status === 'blocked') {
+        voiceTurnRef.current += 1
+        requestAbortRef.current?.abort()
+        streamedReplyRef.current = false
+        setState(current => ({ ...current, status: 'error', error: copy.voicePlaybackInterrupted }))
       } else if (event.status === 'idle') {
         setAnalyser(null)
         setState(current => current.status === 'speaking' ? transitionVoiceState(current, { type: 'finish-speaking' }) : current)
@@ -201,6 +227,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
     const requestId = ++voiceTurnRef.current
     requestAbortRef.current?.abort()
     pcmPlayer?.stop()
+    playbackRef.current?.stop?.()
     streamedReplyRef.current = false
     const abort = new AbortController()
     requestAbortRef.current = abort
@@ -240,6 +267,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
     const abort = new AbortController()
     requestAbortRef.current = abort
     pendingRecordingRef.current = blob
+    setState(current => current.status === 'listening' ? transitionVoiceState(current, { type: 'finish-listening', transcript: inputText }) : current)
     setState(current => transitionVoiceState(current, { type: 'start-processing', transcript: inputText }))
     try {
       const response = await onTranscribe(blob, { signal: abort.signal })
@@ -251,6 +279,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
     } catch (error) {
       if (requestId === voiceTurnRef.current) {
         if (['voice_input', 'voice_no_speech'].includes(error.code)) pendingRecordingRef.current = null
+        if (error.code === 'voice_no_speech' && automatic) { setState(createVoiceState()); return }
         setState(current => transitionVoiceState(current, { type: 'fail', error: formatVoiceRequestError(error, copy) }))
       }
     }
@@ -297,8 +326,54 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
   }
   stopListeningRef.current = stopListening
 
+  const interruptOutput = () => {
+    voiceTurnRef.current += 1
+    greetingRequestRef.current += 1
+    requestAbortRef.current?.abort()
+    pcmPlayer?.stop()
+    streamedReplyRef.current = false
+    playbackRef.current?.stop?.()
+    greetingAudioRef.current = ''
+    pendingRecordingRef.current = null
+    setGreeting(current => transitionVoiceGreeting(current, { type: 'reset' }))
+    setState(createVoiceState())
+  }
+  automaticEventsRef.current = {
+    start: ({ analyser: inputAnalyser }) => {
+      interruptOutput()
+      setInputText('')
+      setAnalyser(inputAnalyser)
+      setState(current => transitionVoiceState(current, { type: 'start-listening' }))
+    },
+    end: blob => { setAnalyser(null); void transcribeRecording(blob) },
+    stop: () => { setAutomatic(false); setAutoStarting(false); setState(current => current.status === 'listening' ? createVoiceState() : current); setAnalyser(null) },
+    suspend: interruptOutput,
+  }
+  const toggleAutomatic = async () => {
+    if (automatic || autoStarting) {
+      await automaticRef.current?.stop()
+      setAutomatic(false); setAutoStarting(false)
+      setAnalyser(null)
+      setState(current => current.status === 'listening' ? createVoiceState() : current)
+      return
+    }
+    if (!capability?.enabled && !preview) return
+    void pcmPlayer?.unlock()
+    setAutoStarting(true)
+    const result = await automaticRef.current?.start()
+    setAutoStarting(false)
+    if (result?.status === 'cancelled') return
+    if (result?.status !== 'recording') {
+      setState(current => transitionVoiceState(current, { type: 'fail', error: result?.error === 'permission-denied' ? copy.voicePermissionDenied : copy.voiceAutoUnavailable }))
+      return
+    }
+    setAutomatic(true)
+    setState(current => current.status === 'error' ? createVoiceState() : current)
+  }
+
   const submitText = async () => {
     pendingRecordingRef.current = null
+    if (automatic || autoStarting) { await automaticRef.current?.stop(); setAutomatic(false); setAutoStarting(false) }
     if (state.status === 'listening') {
       recognitionRef.current?.stop?.()
       await controllerRef.current?.cancel?.()
@@ -321,6 +396,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
 
   const handleOrb = () => {
     if (greeting.status === 'loading') return
+    if (serverCapture) { void toggleAutomatic(); return }
     if (greeting.status === 'speaking') {
       playbackRef.current?.stop?.()
       setGreeting(current => transitionVoiceGreeting(current, { type: 'reset' }))
@@ -349,6 +425,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
     greetingRequestRef.current += 1
     voiceTurnRef.current += 1
     requestAbortRef.current?.abort()
+    void automaticRef.current?.stop()
     pcmPlayer?.stop()
     pendingRecordingRef.current = null
     controllerRef.current?.cancel?.()
@@ -362,10 +439,10 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
   const greetingPlayable = ['ready', 'blocked'].includes(greeting.status) && Boolean(greeting.audioUrl)
   const replyPlayable = ['ready', 'blocked'].includes(state.status) && Boolean(state.audioUrl)
 
-  return <div className="voice-mode" data-voice-status={visualStatus} data-reduced-motion={reducedMotion ? 'true' : 'false'} role="dialog" aria-modal="true" aria-label={copy.voiceModeTitle}>
+  return <div className="voice-mode" data-voice-status={visualStatus} data-auto-listening={automatic ? 'true' : 'false'} data-auto-starting={autoStarting ? 'true' : 'false'} data-reduced-motion={reducedMotion ? 'true' : 'false'} role="dialog" aria-modal="true" aria-label={copy.voiceModeTitle}>
     <div className="voice-mode-panel">
       <div className="voice-mode-head"><div><span className="eyebrow">ZT.AI · VOICE MODE</span><h2>{copy.voiceModeTitle}</h2></div><button className="voice-mode-close" type="button" onClick={close} aria-label={copy.voiceClose}><X size={18} /></button></div>
-      <div className="voice-mode-status" data-status={visualStatus} aria-live="polite">{statusText}</div>
+      <div className="voice-mode-status" data-status={visualStatus} aria-live="polite">{autoStarting ? copy.voiceAutoLoading : statusText}</div>
       <div className="voice-mode-greeting" aria-live="polite">{greeting.status !== 'idle' ? greetingText : ''}</div>
       <VoiceOrb status={visualStatus} analyser={analyser} onClick={handleOrb} disabled={greeting.status === 'loading'} reducedMotion={reducedMotion} />
       <div className="voice-mode-input-row">
@@ -373,9 +450,10 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
         <button className="voice-mode-submit" type="button" onClick={() => { void submitText() }} disabled={!inputText.trim() || greeting.status === 'loading' || ['processing'].includes(state.status)} aria-label={copy.voiceTextSend || copy.send}><Send size={16} /></button>
       </div>
       <div className="voice-mode-transcript-hint" aria-live="polite">{inputText ? copy.voiceTextHint : greeting.status !== 'idle' ? transcriptText : copy.voiceTranscriptPlaceholder}</div>
+      {serverCapture && <div className="voice-mode-auto-hint">{automatic ? copy.voiceAutoHint : copy.voiceAutoStartHint}</div>}
       <div className="voice-mode-actions">
         {state.status === 'error' && pendingRecordingRef.current && <button className="voice-mode-action" type="button" aria-label={copy.voiceRetryRecognition || copy.retry} onClick={() => { void transcribeRecording(pendingRecordingRef.current) }}>{copy.retry}</button>}
-        <button className="voice-mode-action" type="button" onClick={handleOrb} disabled={greeting.status === 'loading'} aria-label={state.status === 'listening' ? copy.voiceStop : copy.voiceInput}>{state.status === 'listening' ? <Square size={16} /> : <Mic size={17} />}</button>
+        <button className="voice-mode-action" type="button" onClick={handleOrb} disabled={greeting.status === 'loading'} aria-pressed={automatic} aria-label={serverCapture ? (automatic || autoStarting ? copy.voiceAutoStop : copy.voiceAutoStart) : state.status === 'listening' ? copy.voiceStop : copy.voiceInput}>{automatic || autoStarting || state.status === 'listening' ? <Square size={16} /> : <Mic size={17} />}</button>
         {greeting.status === 'speaking' || (state.status === 'speaking' && playbackStatus === 'speaking') ? <button className="voice-mode-action" type="button" onClick={() => { if (streamedReplyRef.current) { voiceTurnRef.current += 1; requestAbortRef.current?.abort(); pcmPlayer?.stop(); streamedReplyRef.current = false; setState(createVoiceState()) }; playbackRef.current?.pause?.(); if (greeting.status === 'speaking') setGreeting(current => transitionVoiceGreeting(current, { type: 'pause' })) }} aria-label={copy.voicePause}><Pause size={16} /></button> : <button className="voice-mode-action" type="button" onClick={() => { if (greeting.status === 'error') setGreetingAttempt(current => current + 1); else if (greetingPlayable) void playGreeting(); else if (replyPlayable) void playReply() }} aria-label={greeting.status === 'error' ? copy.retry : copy.voicePlay} disabled={greeting.status === 'loading' || (greeting.status !== 'error' && !greetingPlayable && !replyPlayable)}><Play size={16} /></button>}
       </div>
       <div className="voice-mode-disclosure">{copy.voiceAiDisclosure}</div>
