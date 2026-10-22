@@ -53,3 +53,13 @@ test('cancellation aborts in-flight transfers without retries or late progress',
   await assert.rejects(pending, { name: 'AbortError' })
   assert.ok(calls <= 4); assert.equal(progress, 0)
 })
+
+test('a stalled response body times out and retries at most once', async () => {
+  const { manifest } = fixture(); let calls = 0
+  const onePart = { ...manifest, parts: manifest.parts.slice(0, 1), size: manifest.parts[0].size }
+  await assert.rejects(loadVoiceParts('/voice/', onePart, { cache: new Map(), timeoutMs: 10, fetchImpl: async (_url, { signal }) => {
+    calls++
+    return { ok: true, arrayBuffer: () => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })) }
+  } }), { name: 'TimeoutError' })
+  assert.equal(calls, 2)
+})
