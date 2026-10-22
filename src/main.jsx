@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { preparedVoiceGreeting } from './lib/voice-greeting.js'
 import {
   ArrowUpRight, BriefcaseBusiness, Check, ChevronDown, Download, FileText, GitBranch, History, Home,
   AudioLines, LockKeyhole, Menu, MessageCircle, Mic, MoreHorizontal, MoveUpRight, Orbit,
@@ -422,6 +423,11 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     if (!body.url) throw new Error(copy.voiceUnavailable)
     return body
   }
+  const prepareVoiceGreeting = async (text, options) => {
+    const audio = await preparedVoiceGreeting(text, language, options)
+      || await synthesizeVoice(text, language, { leadingPause: true, ...options })
+    return { audioUrl: audio.url, preRollMs: VOICE_GREETING_PREROLL_MS, release: audio.release }
+  }
   const submitVoiceReply = async (text, detectedLanguage, options = {}) => {
     const cached = voiceAnswerRef.current
     const reuse = cached?.text === text && cached?.language === detectedLanguage && cached?.sessionId === session.id
@@ -614,7 +620,7 @@ function ChatBox({ session, visitorId, sessions, onSessionChange, onSelectSessio
     <div className="chat-footer"><ModelSwitch model={model} setModel={setModel} /><span className="chat-note"><MessageCircle size={14} /> {copy.publicNote}</span></div>
     {historyOpen && <ChatHistoryDrawer visitorId={visitorId} sessions={sessions} activeSessionId={session.id} copy={copy} language={language} onSelectSession={id => { onSelectSession(id); setHistoryOpen(false) }} onNewChat={() => { onNewChat(); setHistoryOpen(false) }} onClose={() => setHistoryOpen(false)} />}
     {previewAttachment && <div className="attachment-lightbox" role="dialog" aria-modal="true" aria-label={`预览 ${previewAttachment.name}`} onClick={() => setPreviewAttachment(null)}><button type="button" onClick={() => setPreviewAttachment(null)} aria-label="关闭预览"><X size={18} /></button><img src={previewAttachment.preview} alt={previewAttachment.name} onClick={event => event.stopPropagation()} /></div>}
-    {voiceOpen && <VoiceMode copy={copy} language={language} preview={isVoicePreview} capability={voiceCapability} audioElement={voiceAudioRef.current} pcmPlayer={voicePcmRef.current} onGreeting={async (text, options) => ({ audioUrl: (await synthesizeVoice(text, language, { leadingPause: true, ...options })).url, preRollMs: VOICE_GREETING_PREROLL_MS })} onTranscribe={(blob, options) => voiceClient.transcribe(blob, options)} onSubmit={submitVoiceReply} onClose={() => { setVoiceOpen(false); voiceAudioRef.current = null; voicePcmRef.current?.dispose(); voicePcmRef.current = null }} />}
+    {voiceOpen && <VoiceMode copy={copy} language={language} preview={isVoicePreview} capability={voiceCapability} audioElement={voiceAudioRef.current} pcmPlayer={voicePcmRef.current} onGreeting={prepareVoiceGreeting} onTranscribe={(blob, options) => voiceClient.transcribe(blob, options)} onSubmit={submitVoiceReply} onClose={() => { setVoiceOpen(false); voiceAudioRef.current = null; voicePcmRef.current?.dispose(); voicePcmRef.current = null }} />}
   </section>
 }
 

@@ -57,6 +57,22 @@ test('cross-origin audio keeps native output instead of routing through a CORS-l
   }
 })
 
+test('playback accepts local audio blobs but rejects foreign and opaque blobs', () => {
+  const previousLocation = globalThis.location
+  globalThis.location = { origin: 'https://site.test', href: 'https://site.test/' }
+  const audio = { addEventListener() {}, removeEventListener() {}, pause() {}, load() {} }
+  const playback = createVoicePlayback({ audioFactory: () => audio, audioContextFactory: null })
+  try {
+    playback.load('blob:https://site.test/verified-audio')
+    assert.equal(audio.src, 'blob:https://site.test/verified-audio')
+    for (const url of ['blob:https://other.test/audio', 'blob:null/audio', 'data:audio/mpeg;base64,AA==', 'http://site.test/audio']) assert.throws(() => playback.load(url), /HTTPS/)
+  } finally {
+    playback.dispose()
+    if (previousLocation === undefined) delete globalThis.location
+    else globalThis.location = previousLocation
+  }
+})
+
 test('replaying a completed voice answer starts from the beginning', async () => {
   const audio = {
     preload: '', src: '', currentTime: 0, paused: true, ended: false,

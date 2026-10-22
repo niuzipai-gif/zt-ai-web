@@ -1,0 +1,30 @@
+{
+  "sourceRevision": "f1949961a95fd5318167d70b8d9898912995f76a",
+  "protectedHashes": {
+    "render.yaml": "4a946142a57d00c83a4bc122f007b04f34a8428b64df4fd418e3862ec73f832d",
+    "server/src/providers/mmx.js": "c8c105cd0f816474eebb124463f9e164b707d4080cfad54d545476990901924c",
+    "server/src/providers/japanese-speech.js": "f0d56ae81b37f780b0de0b4e16c39fe6b945fb32eb5228be96de8ba4dd9d726a",
+    "server/src/voice-service.js": "37d86b550a4525db679e5a039104a0010ca367108d80aafded1489a352e16a7f",
+    "src/lib/i18n.js": "ff9e7b1333d512ff53960fb6eb72432df38202a7bbd0e687af09976487d8b8ed"
+  },
+  "greetings": {
+    "zh": {
+      "text": "你好，我是蔡宙廷的 ZT.AI。现在可以直接点击光球和我说话。",
+      "path": "voice-greetings/zh-44e4533f0479f6ec.mp3",
+      "bytes": 120372,
+      "sha256": "44e4533f0479f6ec1d8e374f38f51af640a3b1cb95487e683983f65508099aa2"
+    },
+    "en": {
+      "text": "Hi, I’m ZT.AI, Cai Zhouting’s digital twin. Tap the orb whenever you’re ready to talk.",
+      "path": "voice-greetings/en-01b31393fbdd32e3.mp3",
+      "bytes": 119220,
+      "sha256": "01b31393fbdd32e3e96b6f2516e591542894ca5832733f7c23725b7f5bd56d5d"
+    },
+    "ja": {
+      "text": "こんにちは、蔡宙廷のZT.AIです。準備ができたらオーブをタップして話しかけてください。",
+      "path": "voice-greetings/ja-dec2e2dc92f3da1a.mp3",
+      "bytes": 135348,
+      "sha256": "dec2e2dc92f3da1a6855a08b6a12e5c61aacdddb2cb995b2da578f5349c67f50"
+    }
+  }
+}
