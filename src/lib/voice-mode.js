@@ -1,3 +1,5 @@
+import { isLocalVoiceAudioBlob } from './voice-audio-url.js'
+
 const STATUSES = new Set(['idle', 'listening', 'processing', 'ready', 'speaking', 'blocked', 'error'])
 const GREETING_STATUSES = new Set(['idle', 'loading', 'ready', 'speaking', 'blocked', 'error'])
 
@@ -17,7 +19,7 @@ export function transitionVoiceGreeting(current, event = {}) {
   if (type === 'start') return { ...state, status: 'loading', text: String(event.text || state.text).trim(), audioUrl: '', error: '' }
   if (type === 'ready') {
     const audioUrl = String(event.audioUrl || '').trim()
-    if (!/^https:\/\//i.test(audioUrl)) return { ...state, status: 'error', error: '开场问候没有可播放的音频。', audioUrl: '' }
+    if (!/^https:\/\//i.test(audioUrl) && !isLocalVoiceAudioBlob(audioUrl)) return { ...state, status: 'error', error: '开场问候没有可播放的音频。', audioUrl: '' }
     return { ...state, status: 'ready', audioUrl, error: '' }
   }
   if (type === 'start-speaking' && (state.status === 'ready' || state.status === 'blocked')) return { ...state, status: 'speaking', error: '' }
