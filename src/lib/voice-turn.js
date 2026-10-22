@@ -17,7 +17,7 @@ export function createAutomaticVoiceCapture({
   mediaDevices = globalThis.navigator?.mediaDevices,
   loadVad = () => import('@ricky0123/vad-web'),
   loadWasm = loadVoiceWasm, startupTimeoutMs = 120000, onLoadProgress = () => {},
-  assetPath = `${import.meta.env?.BASE_URL || '/'}voice-vad/`,
+  assetPath = import.meta.env?.VITE_VOICE_ASSET_BASE_URL || `${import.meta.env?.BASE_URL || '/'}voice-vad/`,
   isOutputActive = () => false, onSpeechStart = () => {}, onSpeechEnd = () => {}, onStop = () => {},
 } = {}) {
   let generation = 0, resources = null
