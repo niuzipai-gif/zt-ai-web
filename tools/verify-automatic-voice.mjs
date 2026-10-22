@@ -4,7 +4,7 @@ import { chromium } from 'playwright-core'
 
 const base = process.env.VOICE_QA_URL || 'http://127.0.0.1:5182'
 const fixture = await fs.readFile(process.env.VOICE_QA_AUDIO || 'output/voice-network-2026-10-14/capture.wav')
-const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--autoplay-policy=user-gesture-required'] })
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--autoplay-policy=user-gesture-required'], ...(process.env.VOICE_QA_PROXY ? { proxy: { server: process.env.VOICE_QA_PROXY } } : {}) })
 const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
 const silence = Buffer.alloc(32000 * 2 * 8).toString('base64')
 try {
