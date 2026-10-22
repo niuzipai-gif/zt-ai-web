@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { gzipSync } from 'node:zlib'
+import { createHash } from 'node:crypto'
 const require = createRequire(import.meta.url)
 
 // Exact pinned assets, self-hosted. No CDN or arbitrary filesystem serving.
@@ -15,12 +16,23 @@ export function voiceVadAssets() {
   ])
   const gzipName = 'ort-wasm-simd-threaded.wasm.gz'
   const gzip = gzipSync(fs.readFileSync(files.get('ort-wasm-simd-threaded.wasm')), { level: 9 })
+  const generated = new Map([[gzipName, gzip]])
+  const parts = []
+  for (let offset = 0; offset < gzip.length; offset += 131072) {
+    const bytes = gzip.subarray(offset, offset + 131072)
+    const name = `${createHash('sha256').update(bytes).digest('hex')}.bin`
+    generated.set(`parts/${name}`, bytes); parts.push({ name, size: bytes.length })
+  }
+  generated.set('runtime-parts.json', Buffer.from(JSON.stringify({ version: 1, size: gzip.length, parts })))
   return {
     name: 'self-hosted-voice-vad',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        const match = req.url?.split('?')[0].match(/\/voice-vad\/([^/]+)$/)
-        if (match?.[1] === gzipName) { res.setHeader('Content-Type', 'application/gzip'); res.end(gzip); return }
+        const match = req.url?.split('?')[0].match(/\/voice-vad\/(.+)$/)
+        if (generated.has(match?.[1])) {
+          res.setHeader('Content-Type', match[1].endsWith('.json') ? 'application/json' : 'application/octet-stream')
+          res.end(generated.get(match[1])); return
+        }
         const file = match && files.get(match[1])
         if (!file) return next()
         res.setHeader('Content-Type', match[1].endsWith('.wasm') ? 'application/wasm' : /\.(mjs|js)$/.test(match[1]) ? 'text/javascript' : 'application/octet-stream')
@@ -29,7 +41,7 @@ export function voiceVadAssets() {
     },
     generateBundle() {
       for (const [name, file] of files) this.emitFile({ type: 'asset', fileName: `voice-vad/${name}`, source: fs.readFileSync(file) })
-      this.emitFile({ type: 'asset', fileName: `voice-vad/${gzipName}`, source: gzip })
+      for (const [name, source] of generated) this.emitFile({ type: 'asset', fileName: `voice-vad/${name}`, source })
     },
   }
 }

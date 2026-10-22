@@ -20,6 +20,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
   const [greetingAttempt, setGreetingAttempt] = useState(0)
   const [automatic, setAutomatic] = useState(false)
   const [autoStarting, setAutoStarting] = useState(false)
+  const [autoProgress, setAutoProgress] = useState(null)
   const automaticRef = useRef(null)
   const automaticEventsRef = useRef({})
   const outputActiveRef = useRef(false)
@@ -65,6 +66,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
       onSpeechStart: event => automaticEventsRef.current.start?.(event),
       onSpeechEnd: blob => automaticEventsRef.current.end?.(blob),
       onStop: reason => automaticEventsRef.current.stop?.(reason),
+      onLoadProgress: progress => setAutoProgress(Math.floor(progress * 100)),
     })
     automaticRef.current = capture
     const suspend = () => { if (document.hidden) { void capture.stop(); setAutomatic(false); setAutoStarting(false); automaticEventsRef.current.suspend?.() } }
@@ -360,6 +362,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
     if (!capability?.enabled && !preview) return
     void pcmPlayer?.unlock()
     setAutoStarting(true)
+    setAutoProgress(null)
     const result = await automaticRef.current?.start()
     setAutoStarting(false)
     if (result?.status === 'cancelled') return
@@ -442,7 +445,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
   return <div className="voice-mode" data-voice-status={visualStatus} data-auto-listening={automatic ? 'true' : 'false'} data-auto-starting={autoStarting ? 'true' : 'false'} data-reduced-motion={reducedMotion ? 'true' : 'false'} role="dialog" aria-modal="true" aria-label={copy.voiceModeTitle}>
     <div className="voice-mode-panel">
       <div className="voice-mode-head"><div><span className="eyebrow">ZT.AI · VOICE MODE</span><h2>{copy.voiceModeTitle}</h2></div><button className="voice-mode-close" type="button" onClick={close} aria-label={copy.voiceClose}><X size={18} /></button></div>
-      <div className="voice-mode-status" data-status={visualStatus} aria-live="polite">{autoStarting ? copy.voiceAutoLoading : statusText}</div>
+      <div className="voice-mode-status" data-status={visualStatus} aria-live="polite">{autoStarting ? `${copy.voiceAutoLoading}${autoProgress !== null && autoProgress < 100 ? ` ${autoProgress}%` : ''}` : statusText}</div>
       <div className="voice-mode-greeting" aria-live="polite">{greeting.status !== 'idle' ? greetingText : ''}</div>
       <VoiceOrb status={visualStatus} analyser={analyser} onClick={handleOrb} disabled={greeting.status === 'loading'} reducedMotion={reducedMotion} />
       <div className="voice-mode-input-row">
