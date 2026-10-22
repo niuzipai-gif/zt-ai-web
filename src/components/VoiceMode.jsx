@@ -161,13 +161,15 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
   useEffect(() => {
     if (!copy.voiceGreeting || typeof onGreetingRef.current !== 'function' || (!capability?.enabled && !preview)) return undefined
     let active = true
+    let releaseAudio = () => {}
     const abort = new AbortController()
     const requestId = ++greetingRequestRef.current
     setGreeting(current => transitionVoiceGreeting({ ...current, text: copy.voiceGreeting }, { type: 'start', text: copy.voiceGreeting }))
     void (async () => {
       try {
         const reply = await onGreetingRef.current(copy.voiceGreeting, { signal: abort.signal })
-        if (!active || requestId !== greetingRequestRef.current) return
+        if (!active || requestId !== greetingRequestRef.current) { reply?.release?.(); return }
+        releaseAudio = reply?.release || releaseAudio
         if (!reply?.audioUrl) throw new Error('开场问候没有可播放的音频。')
         greetingAudioRef.current = reply.audioUrl
         playbackRef.current?.load(reply.audioUrl, { preRollMs: reply.preRollMs })
@@ -180,6 +182,7 @@ export function VoiceMode({ copy, preview = false, capability, language = 'zh', 
     return () => {
       active = false
       abort.abort()
+      releaseAudio()
       if (greetingRequestRef.current === requestId) greetingRequestRef.current += 1
       greetingAudioRef.current = ''
     }

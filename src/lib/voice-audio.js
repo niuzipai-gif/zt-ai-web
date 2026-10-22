@@ -353,7 +353,8 @@ export function createVoiceRecognition({ language = 'zh', recognitionFactory = d
 
 function secureAudioUrl(url) {
   const parsed = new URL(String(url || ''), globalThis.location?.href || 'https://zt.ai.invalid')
-  if (parsed.protocol !== 'https:') throw new Error('音频地址必须使用 HTTPS')
+  const localBlob = parsed.protocol === 'blob:' && parsed.origin !== 'null' && parsed.origin === globalThis.location?.origin
+  if (parsed.protocol !== 'https:' && !localBlob) throw new Error('音频地址必须使用 HTTPS 或本站的本地音频')
   return parsed.href
 }
 

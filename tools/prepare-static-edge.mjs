@@ -18,5 +18,5 @@ for (const [name, entry] of Object.entries(manifest)) {
 }
 for (const name of ['ort-wasm-simd-threaded.wasm.gz', 'LICENSE.txt']) await fs.copyFile(`dist/voice-vad/${name}`, path.join(target, name))
 await fs.writeFile(path.join(root, '_redirects'), '/ /zt-ai-web/ 302\n')
-await fs.writeFile(path.join(root, '_headers'), '/voice-vad/v1/*\n  Access-Control-Allow-Origin: *\n  Cache-Control: public, max-age=31536000, immutable\n  X-Content-Type-Options: nosniff\n/zt-ai-web/assets/*\n  Access-Control-Allow-Origin: *\n  Cache-Control: public, max-age=31536000, immutable\n')
+await fs.writeFile(path.join(root, '_headers'), '/voice-vad/v1/*\n  Access-Control-Allow-Origin: *\n  Cache-Control: public, max-age=31536000, immutable\n  X-Content-Type-Options: nosniff\n/zt-ai-web/assets/*\n  Access-Control-Allow-Origin: *\n  Cache-Control: public, max-age=31536000, immutable\n/zt-ai-web/voice-greetings/*\n  Cache-Control: public, max-age=31536000, immutable\n')
 console.log('Prepared asset-only mirror; pinned voice hashes match. No API function, paid resource or secret is included.')
