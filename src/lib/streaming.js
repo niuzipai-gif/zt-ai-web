@@ -1,6 +1,5 @@
 export function getStreamBatchSize(queueLength) {
-  if (queueLength < 5) return 1
-  if (queueLength < 20) return 2
-  if (queueLength < 60) return 4
-  return 8
+  // Network streaming already controls the reveal rate. Flush each UI tick so
+  // completed answers do not sit behind a second, artificial typing queue.
+  return Math.max(1, queueLength)
 }

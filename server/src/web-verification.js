@@ -13,7 +13,11 @@ const MAX_CONTEXT_SOURCES = 12
 const MAX_SOURCE_PAYLOAD = 24
 
 export function requiresWebVerification(task) {
+  // A negated search verb is not a request to browse. Keep all other factual
+  // checks active, including news/prices elsewhere in the same message.
   const text = String(task || '').trim()
+    .replace(/(?:不要|无需|不必|不用|不需要)\s*(?:联网|搜索|上网(?:搜|查)?|检索|查资料)/gu, '')
+    .replace(/\b(?:do\s+not|don't|no\s+need\s+to)\s+(?:search|look\s*up)(?:\s+the\s+web)?\b/giu, '')
   if (!text) return false
   if (!EXPLICIT_RESEARCH.test(text) && PRIVATE_PROFILE.test(text)) return false
   if (EXPLICIT_RESEARCH.test(text) || UNKNOWN_ENTITY.test(text)) return true
