@@ -43,6 +43,6 @@ test('resume download paths point to published DOCX files', () => {
 })
 
 test('Japanese chat starter is Japanese rather than a copied Chinese prompt', () => {
-  assert.match(siteCopy.ja.chat.startPrompt, /蔡宙廷の現在のAIプロダクト開発経験/)
+  assert.match(siteCopy.ja.chat.startPrompt, /蔡宙廷のAIプロダクト開発経験/)
   assert.doesNotMatch(siteCopy.ja.chat.startPrompt, /请介绍/)
 })

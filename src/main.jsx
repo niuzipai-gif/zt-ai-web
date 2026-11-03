@@ -44,11 +44,11 @@ const resumeMetrics = [
 
 const resumeWork = [
   {
-    date: '2026-04 至 2027-04',
+    date: '2026-04 至 2026-11',
     company: '深圳市坤信科技有限公司',
     role: 'AI 产品开发',
     detail: '负责 AI 产品开发与 Amazon 精铺跨境电商流程落地；每月精铺 8 个品以上，负责品月度利润贡献 ≥ 2 万元且持续不亏损。',
-    current: true,
+    current: false,
   },
   {
     date: '2025-09 至 2026-01',

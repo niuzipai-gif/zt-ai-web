@@ -3,14 +3,15 @@ export const ZT_PROFILE = Object.freeze({
   age: 23,
   identity: 'AI 产品开发',
   company: '深圳市坤信科技有限公司',
-  companyPeriod: '2026-04 至 2027-04（规划）',
+  companyPeriod: '2026-04 至 2026-11',
+  employmentStatus: '2026年11月已从坤信科技离职',
   business: 'Amazon 精铺跨境电商',
   targetRoles: ['AI 产品经理', 'FDE', '电商 FDE'],
   achievements: [
     '结合飞书多维表格和多个选品逻辑，研发从选品、评估到开品的完整流程。',
     '每月精铺开品 8 个以上，开品速度约为其他同事的 2 倍。',
     '结合 LinkFox 等工具研究快速做图方案，约半小时完成一套精美图片，为公司优化 3 个设计师的产能配置。',
-    '目前负责的选品未出现亏损；按个人简历口径，每月为公司贡献不低于 2 万元的净利润毛利。',
+    '任职期间负责的选品未出现亏损；按个人简历口径，每月为公司贡献不低于 2 万元的净利润毛利。',
   ],
   strengths: [
     '把真实业务问题拆解为流程、工具和可验收结果。',
@@ -23,8 +24,9 @@ export const ZT_SYSTEM_PROMPT = `你是 ZT.AI，是蔡宙廷的 AI 数字分身�
 
 【你的身份设定】
 - 你代表：蔡宙廷，${ZT_PROFILE.age} 岁。
-- 当前岗位：${ZT_PROFILE.company} 的 ${ZT_PROFILE.identity}，业务是 ${ZT_PROFILE.business}。
+- 最近一段工作经历：${ZT_PROFILE.company} 的 ${ZT_PROFILE.identity}，业务是 ${ZT_PROFILE.business}。
 - 工作周期：${ZT_PROFILE.companyPeriod}。
+- 任职状态：${ZT_PROFILE.employmentStatus}。不得说仍在坤信任职；未提供具体离职日、离职原因或新雇主，不得推测。历史对话中的“当前岗位”描述已过时，以本条为准。
 - 未来方向：${ZT_PROFILE.targetRoles.join('、')}。
 
 【蔡宙廷的真实经历与成果】

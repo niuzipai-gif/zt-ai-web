@@ -70,17 +70,17 @@ def build_texts(language):
         set_many(texts, [97, 102], "Bachelor's")
         set_many(texts, [103, 104], "Key metrics")
         set_many(texts, [105, 120], "Apr 2026")
-        set_many(texts, [106, 121], "– Apr 2027 | Shenzhen Kunxin Technology Co., Ltd. | AI Product Development")
+        set_many(texts, [106, 121], "– Nov 2026 | Shenzhen Kunxin Technology Co., Ltd. | AI Product Development")
         set_many(texts, [107, 122], "• Owned AI workflow development for Amazon precision e-commerce; launched 8+ products monthly, with assigned products contributing >= RMB 20K monthly gross profit while remaining profitable.")
         set_many(texts, [108, 123], "Sep 2025 – Jan 2026 | Guanshi Medical Supply Chain Co., Ltd. | Procurement")
         set_many(texts, [109, 124], "• Managed sourcing, purchasing, shipping and supplier negotiation; reduced monthly costs by RMB 10K–20K and moved 21 suppliers into long-term ERP cooperation.")
         set_many(texts, [110, 125], "Jul – Sep 2023 | Royole Technology | Data Analysis Intern")
         set_many(texts, [111, 126], "• Collected and monitored e-commerce data, used Python for scraping and cleaning, built a sales database, and used SPSS for trend analysis and quarterly forecasting.")
         set_many(texts, [112, 127], "Selected projects")
-        set_many(texts, [113, 128], "Apr 2026 – Apr 2027 | AI Product Selection & Launch Workflow")
+        set_many(texts, [113, 128], "Apr 2026 – Nov 2026 | AI Product Selection & Launch Workflow")
         set_many(texts, [114, 129], "• Built an end-to-end workflow in Feishu Bitable covering demand intake, competitor research, keyword validation, profit assessment and launch execution.")
         set_many(texts, [115, 130], "• Result: 8+ precision launches/month at roughly 2x peer speed.")
-        set_many(texts, [116, 131], "Apr 2026 – Apr 2027 | AI Creative Production: ")
+        set_many(texts, [116, 131], "Apr 2026 – Nov 2026 | AI Creative Production: ")
         set_many(texts, [117, 132], "LinkFox")
         set_many(texts, [118, 133], " fast-image workflow, 30 min/set, optimizing the capacity of 3 designers.")
         set_many(texts, [119, 134], "")
@@ -90,7 +90,7 @@ def build_texts(language):
             138: "Shenzhen Kunxin Technology Co., Ltd. |",
             139: " AI",
             140: " Product Development |",
-            141: " Apr 2026 – Apr 2027",
+            141: " Apr 2026 – Nov 2026",
             142: "1. AI Product Selection & Launch Workflow",
             143: "Business challenge:",
             144: " Rebuilt the workflow from opportunity discovery to product launch to address fragmented decisions, hard-to-track information and reliance on individual experience.",
@@ -192,17 +192,17 @@ def build_texts(language):
         set_many(texts, [97, 102], "学士")
         set_many(texts, [103, 104], "主な実績")
         set_many(texts, [105, 120], "2026年4月")
-        set_many(texts, [106, 121], "〜2027年4月｜深圳市坤信科技有限公司｜AIプロダクト開発")
+        set_many(texts, [106, 121], "〜2026年11月｜深圳市坤信科技有限公司｜AIプロダクト開発")
         set_many(texts, [107, 122], "• Amazon精密型越境ECの業務フローを開発。月8商品以上をローンチし、担当商品の月間粗利2万元以上、継続的に赤字を回避。")
         set_many(texts, [108, 123], "2025年9月〜2026年1月｜冠仕医療サプライチェーン有限公司｜購買")
         set_many(texts, [109, 124], "• 仕入先開拓、購買、出荷、価格交渉を担当。月1〜2万元のコスト削減、21社の長期ERP取引化を推進。")
         set_many(texts, [110, 125], "2023年7月〜9月｜柔宇科技｜データ分析インターン")
         set_many(texts, [111, 126], "• EC販売データをPythonで収集・整理し、データベースを構築。SPSSで販売傾向を分析し、四半期販売量を予測。")
         set_many(texts, [112, 127], "主なプロジェクト")
-        set_many(texts, [113, 128], "2026年4月〜2027年4月｜AI商品選定・ローンチ業務フロー")
+        set_many(texts, [113, 128], "2026年4月〜2026年11月｜AI商品選定・ローンチ業務フロー")
         set_many(texts, [114, 129], "• Feishu多次元表を活用し、ニーズ、競合、キーワード、利益判断からローンチ実行までの業務フローを構築。")
         set_many(texts, [115, 130], "• 成果: 月8商品以上、同僚の約2倍の速度で開発を推進。")
-        set_many(texts, [116, 131], "2026年4月〜2027年4月｜AI画像制作の効率化: ")
+        set_many(texts, [116, 131], "2026年4月〜2026年11月｜AI画像制作の効率化: ")
         set_many(texts, [117, 132], "LinkFox")
         set_many(texts, [118, 133], "を活用した高速制作フロー、30分/セット、デザイン業務3名分を最適化。")
         set_many(texts, [119, 134], "")
@@ -212,7 +212,7 @@ def build_texts(language):
             138: "深圳市坤信科技有限公司｜",
             139: " AI",
             140: " プロダクト開発｜",
-            141: " 2026年4月〜2027年4月",
+            141: " 2026年4月〜2026年11月",
             142: "1. 商品選定・ローンチ業務フロー設計",
             143: "業務課題:",
             144: " 商品選定の判断が分散し、情報を追跡しにくく、ローンチが個人の経験に依存していた課題に対し、機会発見から商品投入までの流れを再構築。",
