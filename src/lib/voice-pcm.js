@@ -35,7 +35,8 @@ export function createPcmSpeechPlayer({ Context = globalThis.AudioContext || glo
       stop()
       if (context?.state !== 'running') throw new Error('请点击语音按钮启用播放。')
       sequence = 0; received = false; finished = false
-      nextTime = context.currentTime + Math.max(0.25, Number(context.baseLatency || 0) + 0.1)
+      // The reserve starts when PCM arrives, not while the model is thinking.
+      nextTime = 0
       completion = new Promise((resolve, reject) => { resolveDone = resolve; rejectDone = reject })
       completion.catch(() => {})
       notify('processing')
@@ -47,7 +48,8 @@ export function createPcmSpeechPlayer({ Context = globalThis.AudioContext || glo
       if (sampleRate !== 32000 || typeof audio !== 'string' || audio.length > 3_000_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(audio) || audio.length % 4) throw new Error('音频格式异常。')
       const raw = atob(audio)
       if (raw.length % 2 || !raw.length) throw new Error('音频格式异常。')
-      const start = Math.max(context.currentTime + 0.04, nextTime)
+      const reserve = Math.max(received ? 0.7 : 0.45, Number(context.baseLatency || 0) + 0.1)
+      const start = nextTime > context.currentTime + 0.04 ? nextTime : context.currentTime + reserve
       if (start - context.currentTime + raw.length / 2 / sampleRate > 120) throw new Error('语音播放队列过长。')
       const buffer = context.createBuffer(1, raw.length / 2, sampleRate)
       const data = buffer.getChannelData(0)

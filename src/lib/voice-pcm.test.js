@@ -86,3 +86,24 @@ test('an empty playback queue returns to processing while awaiting more audio', 
   assert.equal(f.events.at(-1), 'idle')
   f.player.dispose()
 })
+
+test('network jitter is buffered from audio arrival even after a long model wait', async () => {
+  const f = fixture(); let context
+  class Context extends f.Context { constructor() { super(); context = this } }
+  const player = createPcmSpeechPlayer({ Context })
+  await player.unlock(); player.begin()
+  const frame = sequence => ({ audio: Buffer.alloc(25600).toString('base64'), sampleRate: 32000, sequence })
+  context.currentTime = 8
+  player.push(frame(0))
+  assert.ok(f.sources[0].time - 8 >= 0.4, 'the model wait must not consume the jitter buffer')
+  assert.ok(f.sources[0].time - 8 <= 0.8, 'startup buffer must remain bounded')
+  context.currentTime = 8.52
+  player.push(frame(1))
+  assert.equal(f.sources[1].time, f.sources[0].time + 0.4, 'moderate arrival jitter must not insert silence')
+  context.currentTime = 10
+  player.push(frame(2))
+  assert.ok(f.sources[2].time - 10 >= 0.6, 'after a real underrun accumulate a larger reserve')
+  player.stop()
+  assert.ok(f.sources.every(source => source.stopped), 'interrupt cancels buffered audio immediately')
+  player.dispose()
+})

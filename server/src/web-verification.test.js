@@ -2,6 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildWebVerificationContext, buildWebVerificationQuery, requiresWebVerification, sourcePayload } from './web-verification.js'
 
+test('negated research words do not send ordinary writing and profile requests to search', () => {
+  for (const text of ['请用三句话说明你能怎样帮我整理工作经历，不要联网。', '我的简历请帮忙润色，无需搜索。', 'In three sentences explain how you can help organize my work experience. Do not search the web.', "Polish my resume; don't look up anything."]) assert.equal(requiresWebVerification(text), false, text)
+  // Removing the negated phrase must not weaken independent factual checks.
+  for (const text of ['不要联网，今天美元汇率多少？', '不需要联网，但请查证这个说法是否属实', '不要只搜索摘要，请查一下最新新闻']) assert.equal(requiresWebVerification(text), true, text)
+})
+
 test('routes current, news, explicit research, and unfamiliar facts to web verification', () => {
   assert.equal(requiresWebVerification('总结一下最近一周日本外国人的大新闻'), true)
   assert.equal(requiresWebVerification('帮我上网搜一下 Firecrawl 最新定价'), true)
